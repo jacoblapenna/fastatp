@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fastatp"
-version = "0.1.0"
+version = "0.1.0rc1"
 description = "AT Protocol identity and signed records for agents, workloads, and IoT — transport-agnostic."
 readme = "README.md"
 license = { text = "MIT" }
