@@ -1,5 +1,7 @@
 """FastATP: AT Protocol identity and signed records, transport-agnostic."""
 
+from importlib import metadata as _metadata
+
 from fastatp import exceptions
 from fastatp.authz.attestation import Attestation
 from fastatp.did.document import DIDDocument, build_did_document
@@ -36,7 +38,10 @@ from fastatp.repo.sync import RepoMirror
 from fastatp.server.did_server import DIDServer
 from fastatp.server.peer_server import PeerServer, RepoHandle
 
-__version__ = "0.1.0"
+try:
+    __version__ = _metadata.version("fastatp")  # pyproject.toml is the single source
+except _metadata.PackageNotFoundError:  # pragma: no cover - source tree without an install
+    __version__ = "0.0.0"
 
 __all__ = [
     "Attestation",

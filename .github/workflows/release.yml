@@ -131,3 +131,34 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+
+  github-release:
+    # one tag drives both outputs: the package on (Test)PyPI and the GitHub
+    # release with the changelog section as notes and the artifacts attached
+    name: GitHub release
+    needs: [testpypi, pypi]
+    if: ${{ !cancelled() && (needs.pypi.result == 'success' || needs.testpypi.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {p=1; next} /^## \[/ {p=0} p' CHANGELOG.md > notes.md
+          if ! [ -s notes.md ]; then
+            echo "Release candidate $v. See CHANGELOG.md on main for the upcoming release notes." > notes.md
+          fi
+          cat notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in *rc*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md "${flags[@]}"
