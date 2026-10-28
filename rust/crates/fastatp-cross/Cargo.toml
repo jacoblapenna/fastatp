@@ -1,0 +1,13 @@
+[package]
+name = "fastatp-cross"
+version = "0.1.0"
+description = "Cross-implementation test bridge: produce/verify FastATP artifacts from the CLI (never published)"
+publish = false
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+fastatp-core = { path = "../fastatp-core" }
+serde_json = "1"
+pollster = "0.4"

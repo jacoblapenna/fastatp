@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/fastatp-core", "crates/fastatp-cross", "crates/fastatp-wasm"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Jacob Lapenna"]

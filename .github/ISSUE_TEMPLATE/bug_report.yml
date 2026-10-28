@@ -1,0 +1,42 @@
+name: Bug report
+description: Something behaves differently from what the docs, the atproto specs, or the interop vectors say it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Wire-format and crypto conformance bugs are security-relevant even when they look cosmetic. If this could let a forged record verify, a high-S signature pass, or a DID resolve to the wrong keys, use the private security advisory instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest script or test that shows it. Generic identifiers only (example.com, com.example.*).
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: FastATP version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and platform
+      placeholder: "3.12 on Linux"
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: Spec or vector reference
+      description: If this is a conformance question, which part of the atproto spec or which interop vector is the authority.

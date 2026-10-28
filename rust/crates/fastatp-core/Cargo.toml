@@ -1,0 +1,29 @@
+[package]
+name = "fastatp-core"
+version = "0.1.0"
+description = "AT Protocol wire-format core: dag-cbor, CID, TID, MST, CAR, signed commits (FastATP)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+# `rand` enables OS-randomness key generation (native). The wasm32 build of
+# the core uses --no-default-features: browser keys come from WebCrypto,
+# never from linear-memory keygen.
+default = ["rand"]
+rand = ["dep:rand_core"]
+
+[dependencies]
+sha2 = "0.10"
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "alloc"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "alloc"] }
+bs58 = "0.5"
+data-encoding = "2"
+thiserror = "2"
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+pollster = "0.4"
+hex = "0.4"

@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a change to the library.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        FastATP ships primitives, never application schemas, and every addition is measured against `PHILOSOPHY.md`. Read it before filing. If you want something that seems to conflict with a tenet, file a philosophy question instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, in terms of records, peers, and keys.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: The API or behaviour you have in mind.
+    validations:
+      required: true
+  - type: dropdown
+    id: tenet
+    attributes:
+      label: Which tenet does this serve?
+      description: Required. If none fits, this is a philosophy question, not a feature request.
+      multiple: true
+      options:
+        - No trusted third party
+        - Data, not calls
+        - Symmetric peers
+        - Ship primitives, not applications
+        - The market emerges above the library
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: What you tried or considered, including building it on top of FastATP outside the package.

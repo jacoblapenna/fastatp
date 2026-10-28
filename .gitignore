@@ -1,0 +1,19 @@
+reference/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.vscode/
+dist/
+build/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+rust/target/
+fastatp/browser/static/
+# minted identity state (contains signing.key) + emitted publish trees
+examples/**/state/
+examples/**/static/

@@ -1,0 +1,28 @@
+name: Philosophy question
+description: You want something that seems off-philosophy, or you think a tenet is wrong. This is the honest channel for that.
+labels: ["philosophy"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `PHILOSOPHY.md` is canonical. It changes only by a deliberate decision record, never by a workaround in code. This template is for arguing the case in the open.
+  - type: textarea
+    id: want
+    attributes:
+      label: What you want to achieve
+      description: The outcome, not the mechanism. There is often an on-philosophy shape for the same goal.
+    validations:
+      required: true
+  - type: textarea
+    id: conflict
+    attributes:
+      label: Which tenet it seems to collide with, and why
+    validations:
+      required: true
+  - type: textarea
+    id: case
+    attributes:
+      label: Your case
+      description: Either the on-philosophy shape you'd propose, or the argument that the tenet itself should be revised.
+    validations:
+      required: true
