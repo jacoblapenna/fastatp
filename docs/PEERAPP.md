@@ -115,21 +115,25 @@ class QuoteRequest(Lexicon):
     pair: str
     notional: int
 
+
 class Quote(Lexicon):
     nsid = "com.acme.fx.quote"
     context_id: Tid
     price: str
 
-# The framework we ship:
-app = PeerApp(peer, server, reconciler)     # one DID's peer + PeerServer + reconciler
 
-@app.on(QuoteRequest)                        # dispatch by $type — any Lexicon subclass
+# The framework we ship:
+app = PeerApp(peer, server, reconciler)  # one DID's peer + PeerServer + reconciler
+
+
+@app.on(QuoteRequest)  # dispatch by $type — any Lexicon subclass
 async def price_it(req: QuoteRequest, ctx: Envelope) -> None:
     # ctx: issuer_did, record_cid, received_at — the record is already
     # verified (commit signature, MST membership, rotation-key ban, authorize
     # hook) and parsed. The handler just does work.
-    app.emit("com.acme.fx.quote", generate_tid(),
-             Quote(context_id=req.context_id, price=quote(req)))
+    app.emit(
+        "com.acme.fx.quote", generate_tid(), Quote(context_id=req.context_id, price=quote(req))
+    )
 ```
 
 Required surface — all generic, nothing domain-specific:
@@ -363,9 +367,11 @@ two calls — the developer never touches `did:key`, WireGuard, or attestations:
 async def handle(req, ctx):
     await app.reply_private(ctx, InspectionResult(...), ttl=120)
 
+
 # Consumer — same call site as the public path:
-reply = await agent.call(tool_did, request, reply_type=Result, private=True,
-                         self_attestation=my_coords)
+reply = await agent.call(
+    tool_did, request, reply_type=Result, private=True, self_attestation=my_coords
+)
 ```
 
 Seams underneath: `app.open_private_channel(issuer_did, ...)`, `app.attest(

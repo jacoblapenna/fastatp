@@ -67,7 +67,7 @@ _EVICTED = -1  # queue sentinel: subscriber fell behind and was evicted
 _LOOPBACK = frozenset({None, "127.0.0.1", "::1", "localhost"})
 _PROXY_TRACK_MAX = 4096  # LRU cap on the diagnostic proxy-detection tracking
 
-CallerResolver = Callable[[HTTPConnection], "str | None | Awaitable[str | None]"]
+CallerResolver = Callable[[HTTPConnection], "str | Awaitable[str | None] | None"]
 """``resolve(connection) -> did | None`` (sync or async): the doorman's identity
 seam. Maps an inbound firehose/getRepo connection to the admitted caller's DID,
 or ``None`` if it cannot be tied to one. Default: ``TunnelIdentityResolver``

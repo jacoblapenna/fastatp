@@ -66,7 +66,7 @@ RepoLike = object
 """Anything with ``list_records(collection)`` and ``get_record(collection,
 rkey)`` — ``Repo``, ``RepoMirror``, and ``PeerServer.repo`` all qualify."""
 
-RepoSource = Callable[[str], "RepoLike | None | Awaitable[RepoLike | None]"]
+RepoSource = Callable[[str], "RepoLike | Awaitable[RepoLike | None] | None"]
 """``repo_source(did) -> repo_like | None`` (sync or async): read access to a
 DID's repo, or ``None`` when it cannot be reached or the caller is not allowed
 to see it. ``None`` always fails closed — the walk makes no distinction between
