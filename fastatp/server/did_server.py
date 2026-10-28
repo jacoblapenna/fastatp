@@ -33,7 +33,7 @@ from fastatp.exceptions import DIDDocumentInvalid
 SlugResolver = Callable[[str], Awaitable[DIDDocument | None]]
 ChainResolver = Callable[[str], Awaitable["dict[str, Any] | None"]]
 
-ShelfStore = Callable[[str, ContinuityChain], "None | Awaitable[None]"]
+ShelfStore = Callable[[str, ContinuityChain], "Awaitable[None] | None"]
 """``store(slug, verified_chain)`` — persist an accepted chain so the caller's
 ``resolver``/``chain_resolver`` can serve it. Called only after the chain fully
 self-certifies, the domain matches, rollback is refused, and the accept policy

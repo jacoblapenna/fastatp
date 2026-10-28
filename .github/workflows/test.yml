@@ -118,6 +118,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install WireGuard userspace tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wireguard-tools iproute2
+      - name: Allow unprivileged user namespaces
+        # Ubuntu 24.04 runners restrict them via AppArmor by default; the test
+        # itself stays rootless, this only lifts the namespace restriction
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Confirm rootless WireGuard netns works on this runner
         run: |
           unshare --user --net --map-root-user bash -c \

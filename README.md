@@ -133,17 +133,18 @@ async def main() -> None:
     producer = Peer(did=did, signing_key=key)
     repo = producer.create_repo()
     repo.put_record(
-        PressureReading.nsid, "boot",
+        PressureReading.nsid,
+        "boot",
         PressureReading(pressure_psi=1450, timestamp=datetime.now(timezone.utc)),
     )
-    proof = repo.prove(PressureReading.nsid, "boot")   # bytes; ride any transport
+    proof = repo.prove(PressureReading.nsid, "boot")  # bytes; ride any transport
 
     # In production the verifier resolves DIDs over HTTPS (web_resolver).
     async def resolver(d: str):
         return doc if d == did else None
 
     record = await Peer(resolver=resolver).verify(proof, expected_signer=did)
-    print(record.pressure_psi)   # 1450 — proven to come from device-1's key
+    print(record.pressure_psi)  # 1450 — proven to come from device-1's key
 
 
 asyncio.run(main())
@@ -159,14 +160,15 @@ request/reply lexicons.
 ```python
 from fastatp import PeerApp
 
-app = PeerApp(server)   # a PeerServer for this peer's DID
+app = PeerApp(server)  # a PeerServer for this peer's DID
 
 
-@app.on(InspectionRequest)                 # your lexicon, in your namespace
+@app.on(InspectionRequest)  # your lexicon, in your namespace
 async def handle(req, ctx):
     # work happens on your clock — there is no call waiting on the other side
     result = InspectionResult(context_id=req.context_id, finding="within spec")
-    app.emit(InspectionResult.nsid, generate_tid(), result)   # a durable signed reply
+    app.emit(InspectionResult.nsid, generate_tid(), result)  # a durable signed reply
+
 
 # a private, one-shot reply on an ephemeral channel only the requester can read:
 #     await app.reply_private(ctx, result, ttl=120)
