@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # update uv.lock only; the install floors in pyproject.toml are a
+    # compatibility promise to users and change by hand, not by bot
+    versioning-strategy: lockfile-only
     groups:
       python:
         patterns: ["*"]
@@ -14,6 +17,15 @@ updates:
     groups:
       rust:
         patterns: ["*"]
+    # the RustCrypto 0.14 line (k256/p256, ecdsa 0.17) and sha2 0.11 change
+    # the signing API; migrating is deliberate work, not a bot bump
+    ignore:
+      - dependency-name: k256
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: p256
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: sha2
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
