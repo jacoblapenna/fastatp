@@ -2,6 +2,8 @@
 name = "fastatp-core"
 version = "0.1.0"
 description = "AT Protocol wire-format core: dag-cbor, CID, TID, MST, CAR, signed commits (FastATP)"
+# Not published yet; remove when fastatp-core ships to crates.io.
+publish = false
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
