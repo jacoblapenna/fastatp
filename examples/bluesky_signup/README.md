@@ -37,3 +37,11 @@ the root is exactly as sovereign as the user's existing arrangement. Apps
 should say so. `did:plc` roots resolve via the sanctioned read-only
 `plc_resolver` plug-in — resolution only, never lifecycle
 writes.
+
+## How this example is checked
+
+`signup.example.js` can't run in this repo: it needs a real OAuth sign-in
+at the user's own host and the builder's `@atproto/oauth-client-browser`
+dependency. So CI only checks that it is valid JavaScript (`node --check`,
+in `tests/test_examples_smoke.py`). Every other example runs to completion
+in CI.
