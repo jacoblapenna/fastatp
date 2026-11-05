@@ -1,7 +1,10 @@
 # Build and publish a release from a version tag.
 #
-#   v0.1.0rc1  -> TestPyPI (environment: testpypi)
-#   v0.1.0     -> PyPI     (environment: pypi)
+#   v0.2.0rc1  -> TestPyPI (environment: testpypi), built as 0.2.0rc1
+#   v0.2.0     -> PyPI     (environment: pypi)
+#
+# Both tags go on the same release commit, whose pyproject.toml says 0.2.0;
+# see scripts/release_tag_version.py and CONTRIBUTING.md.
 #
 # Publishing uses PyPI trusted publishing (OpenID Connect): the publish job
 # proves its identity with a short-lived token minted for this workflow run.
@@ -29,15 +32,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Tag must equal the package version
-        run: |
-          v="$(python3 - <<'PY'
-          import re, pathlib
-          print(re.search(r'^version\s*=\s*"([^"]+)"', pathlib.Path("pyproject.toml").read_text(), re.M).group(1))
-          PY
-          )"
-          echo "pyproject version: $v   tag: $GITHUB_REF_NAME"
-          test "v$v" = "$GITHUB_REF_NAME"
+      - name: Tag must match the package version (an rc tag builds as its rc)
+        # vX.Y.Z publishes X.Y.Z; vX.Y.ZrcN builds the same commit as X.Y.ZrcN
+        # for TestPyPI (stamped into pyproject.toml and uv.lock, this build
+        # only); anything else, including a dev version, is refused
+        run: python3 scripts/release_tag_version.py "$GITHUB_REF_NAME"
 
       # the browser peer bundle is built first so it ships inside both
       # artifacts; installing the package never needs a Rust toolchain
