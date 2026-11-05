@@ -5,24 +5,32 @@ build-backend = "hatchling.build"
 [project]
 name = "fastatp"
 version = "0.1.0"
-description = "AT Protocol identity and signed records for agents, workloads, and IoT — transport-agnostic."
+description = "Composable atproto (AT Protocol) signed records, authentication and authorization without OAuth or tokens, for agents, workloads, IoT, and people. Public or private via WireGuard-gated peers. An alternative to MCP and A2A."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Jacob Lapenna" }]
 requires-python = ">=3.11"
 keywords = [
     "atproto",
+    "atprotocol",
     "at-protocol",
+    "private-atproto",
     "did",
-    "did-web",
-    "did-key",
+    "decentralized-identity",
     "signed-records",
-    "identity",
+    "authn",
+    "authz",
+    "declarative-authorization",
+    "capability-based-security",
+    "oauth-alternative",
+    "zero-trust",
+    "wireguard",
     "lexicon",
-    "merkle-search-tree",
-    "dag-cbor",
-    "agents",
     "iot",
+    "machine-to-machine",
+    "mcp-alternative",
+    "a2a-alternative",
+    "agent-to-agent",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
