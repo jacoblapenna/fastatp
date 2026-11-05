@@ -15,6 +15,8 @@ To upgrade safely within one minor line, pin with `~=`, for example
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-05
+
 ### Breaking
 - Python 3.11 or newer is required. Python 3.10 reached end of life in
   October 2026 and no longer receives security fixes, and current releases
@@ -32,6 +34,33 @@ To upgrade safely within one minor line, pin with `~=`, for example
   (2026-10-27). Upstream only reformatted the JSON; every vector is
   unchanged. The atproto interop vectors are already at upstream HEAD
   (`056e574`).
+
+### Release and supply chain
+- Everything the CI and release pipelines download is pinned: actions by
+  commit SHA, the Rust toolchain by `rust-toolchain.toml`, Python
+  dependencies by `uv.lock`, and the wasm build tools (wasm-pack,
+  wasm-bindgen, wasm-opt) and Bluesky's `goat` by version and SHA-256. The
+  release build runs no third-party action, and its build backend comes
+  from the lockfile.
+- Dependency updates wait seven days after an upstream release before they
+  are proposed (security updates excepted).
+- Release candidates (`vX.Y.ZrcN`) are built from the same commit as the
+  release they precede, and a development version can never be published.
+- The versioning rule is stated in the README, the CHANGELOG and
+  CONTRIBUTING: while FastATP is 0.x, a minor release may break and a patch
+  release never does. Pin with `fastatp~=0.2.0`.
+
+### Testing
+- Every test now runs in CI, and a final `all tests ran` check fails a pull
+  request if any test never passed in any job. This brought in Bluesky's
+  `goat` firehose validator and the `atproto-sensorthings` reader as
+  external checks, the root-mode WireGuard enforcement test, smoke runs of
+  every example, and the full `com.atproto` lexicon corpus (96 schemas,
+  vendored), which every lexicon round-trips and generates models for.
+- The WireGuard tests pass private keys to `wg` over stdin instead of
+  temporary files. Ubuntu 26.04's AppArmor profile for `wg` blocks reading
+  key files outside `/etc/wireguard`; the library itself never passed `wg` a
+  file and is unaffected.
 
 ### Rust core and browser bundle
 - Moved to the RustCrypto 0.14 line: `k256` and `p256` 0.14, `ecdsa` 0.17,
@@ -93,5 +122,6 @@ First release.
 - A WebAssembly build of the wire-format core (Rust) ships pre-built inside
   the package. Installing never needs a Rust toolchain.
 
-[Unreleased]: https://github.com/jacoblapenna/fastatp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jacoblapenna/fastatp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jacoblapenna/fastatp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jacoblapenna/fastatp/releases/tag/v0.1.0
