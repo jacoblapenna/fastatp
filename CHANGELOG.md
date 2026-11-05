@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+- Python 3.11 or newer is required. Python 3.10 reached end of life in
+  October 2026 and no longer receives security fixes, and current releases
+  of some dependencies have dropped it.
+
+### Security
+- `cryptography` now requires 50.0 or newer (was 42). Older releases bundle
+  an OpenSSL affected by the 9 June 2026 OpenSSL advisory
+  (GHSA-537c-gmf6-5ccf) and carry four further cryptography advisories.
+  FastATP only uses ECDSA signing and verification, which none of these
+  touch, but the floor keeps installs off known-vulnerable versions.
+
 ### Conformance
 - did:plc audit-log vectors re-vendored from `did-method-plc` at `29f1a70`
   (2026-10-27). Upstream only reformatted the JSON; every vector is

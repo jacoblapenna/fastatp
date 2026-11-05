@@ -29,7 +29,7 @@ import inspect
 import logging
 from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from starlette.applications import Starlette
@@ -76,7 +76,7 @@ supply a fake and other enforcement planes (e.g. a tailnet) supply their own."""
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 class _HostedRepo:
@@ -116,7 +116,7 @@ class _HostedRepo:
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
             return False
-        return self.expires_at <= (now or datetime.now(timezone.utc))
+        return self.expires_at <= (now or datetime.now(UTC))
 
     def _emit_frame(self, build: Callable[[int], bytes]) -> None:
         """Allocate the next seq, build the frame, backfill it, fan it out."""
@@ -375,7 +375,7 @@ class PeerServer:
         if ttl is not None and expires_at is not None:
             raise ValueError("pass ttl or expires_at, not both")
         if ttl is not None:
-            expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+            expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
         host = _HostedRepo(
             repo, backfill_window or self.backfill_window, public=public, expires_at=expires_at
         )
@@ -431,7 +431,7 @@ class PeerServer:
         ephemeral repo with no further reads would otherwise linger until
         touched; call this periodically to reclaim eagerly.
         """
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         reaped = [h for h in self._hosts.values() if h.is_expired(moment)]
         for host in reaped:
             self._drop(host)

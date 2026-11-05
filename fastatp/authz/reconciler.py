@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from fastatp.authz.capability import (
@@ -261,7 +261,7 @@ class WireGuardReconciler:
            grant-time resolution is the strict gate.
         """
         report = ReconcileReport()
-        await self._sweep_expired(report, now or datetime.now(timezone.utc))
+        await self._sweep_expired(report, now or datetime.now(UTC))
         await self._apply_desired(report, now)
         return report
 
@@ -301,7 +301,7 @@ class WireGuardReconciler:
 
     async def _apply_desired(self, report: ReconcileReport, now: datetime | None = None) -> None:
         repo = _repo_of(self.writer)
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
 
         desired: dict[str, str] = {}  # pubkey -> allowed_ips
         pubkey_to_did: dict[str, str] = {}

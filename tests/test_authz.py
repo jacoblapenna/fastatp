@@ -1,7 +1,7 @@
 """v0.4: capability records + WireGuard enforcement + the reconciler."""
 
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -192,10 +192,10 @@ async def test_reconcile_respects_pinned_pubkeys():
 
 async def test_expiry_is_a_lifecycle_revocation(grantor):
     server, interface, reconciler = grantor
-    soon = (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat()
+    soon = (datetime.now(UTC) + timedelta(seconds=1)).isoformat()
     await reconciler.grant(ALICE, expires_at=soon)
     assert interface.peers()  # tunnel open while live
-    later = datetime.now(timezone.utc) + timedelta(hours=1)
+    later = datetime.now(UTC) + timedelta(hours=1)
     report = await reconciler.reconcile(now=later)
     assert report.expired == [ALICE]
     assert interface.peers() == {}  # sweep removed the peer
@@ -305,7 +305,7 @@ async def test_reconcile_aborts_on_expiry_sweep_failure(grantor):
     """If the expiry sweep commit fails, reconcile aborts before the diff so
     still-present expired records are never re-opened as tunnels."""
     server, interface, reconciler = grantor
-    soon = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    soon = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
     await reconciler.grant(ALICE, expires_at=soon)  # already expired
     # tunnel is open from the grant; the sweep would normally close it
     assert ALICE_KEY in interface.peers()
@@ -406,7 +406,7 @@ async def test_by_key_revoke_removes_the_right_peer(grantor):
 async def test_by_key_expiry_is_a_lifecycle_revocation(grantor):
     server, interface, reconciler = grantor
     did = _did_key_subject()
-    soon = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    soon = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
     await reconciler.grant(did, wg_public_key=CAROL_KEY, tunnel_ip="10.100.0.3", expires_at=soon)
     report = await reconciler.reconcile()
     assert report.expired == [did]

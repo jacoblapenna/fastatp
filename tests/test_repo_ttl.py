@@ -8,7 +8,7 @@ import asyncio
 import gc
 import weakref
 from collections.abc import Awaitable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import httpx
@@ -36,12 +36,12 @@ def _channel_repo() -> Repo:
 def test_ttl_and_expires_at_are_mutually_exclusive():
     srv = PeerServer(_peer())
     with pytest.raises(ValueError, match="not both"):
-        srv.register(_channel_repo(), ttl=60, expires_at=datetime.now(timezone.utc))
+        srv.register(_channel_repo(), ttl=60, expires_at=datetime.now(UTC))
 
 
 def test_expired_repo_is_unroutable_and_reaped_lazily():
     srv = PeerServer(_peer())
-    past = datetime.now(timezone.utc) - timedelta(seconds=1)
+    past = datetime.now(UTC) - timedelta(seconds=1)
     handle = srv.register(_channel_repo(), public=True, expires_at=past)
     did = handle.did
     assert did in srv.hosts()
@@ -53,7 +53,7 @@ def test_expired_repo_is_unroutable_and_reaped_lazily():
 def test_reap_expired_returns_and_drops_due_repos():
     srv = PeerServer(_peer())
     live = srv.register(_channel_repo(), ttl=3600)
-    past = datetime.now(timezone.utc) - timedelta(seconds=1)
+    past = datetime.now(UTC) - timedelta(seconds=1)
     dead = srv.register(_channel_repo(), expires_at=past)
     reaped = srv.reap_expired()
     assert reaped == [dead.did]
@@ -86,7 +86,7 @@ async def test_expired_repo_cuts_live_subscriber(serve_app):
             assert body["seq"] == 3
             # force expiry and reap: a hosting farewell, then the live
             # subscriber is poisoned
-            handle._host.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            handle._host.expires_at = datetime.now(UTC) - timedelta(seconds=1)
             assert srv.reap_expired() == [handle.did]
             header, body = decode_frame(
                 await asyncio.wait_for(cast("Awaitable[bytes]", ws.recv()), 5.0)

@@ -24,7 +24,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastatp.authz.capability import AUTH_NAMESPACE, rkey_sort_key
 from fastatp.lex.types import Datetime, Did
@@ -54,7 +54,7 @@ class Delegation(Lexicon):
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
             return False
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         try:
             expiry = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
         except ValueError:

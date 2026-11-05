@@ -9,7 +9,7 @@ description = "AT Protocol identity and signed records for agents, workloads, an
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Jacob Lapenna" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = [
     "atproto",
     "at-protocol",
@@ -31,7 +31,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -44,7 +43,7 @@ classifiers = [
 dependencies = [
     "starlette>=0.37",
     "pydantic>=2.0",
-    "cryptography>=42",
+    "cryptography>=50",
     "httpx>=0.27",
     "uvicorn>=0.29",
     "regex>=2024.4.16",
@@ -95,7 +94,7 @@ packages = ["fastatp"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 # tests/vectors/ is the vendored CC-0 conformance corpus (see its
 # PROVENANCE.md) — third-party files, not ours to lint or reformat
 extend-exclude = ["tests/vectors/"]
@@ -108,7 +107,7 @@ ignore = [
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
-python_version = "3.10"
+python_version = "3.11"
 strict = false
 warn_unused_ignores = true
 warn_redundant_casts = true

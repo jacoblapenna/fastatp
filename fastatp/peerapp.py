@@ -30,7 +30,7 @@ import random
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from fastatp.authz.attestation import Attestation, build_attestation
@@ -262,7 +262,7 @@ class WebSocketFrameSource(FrameSource):
                         yield message
             except ws_exc.ConnectionClosedOK:
                 return  # clean shutdown from the producer
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning(
                     "peerapp: no frame from %s in %.0fs; reconnecting (alive-but-"
                     "silent servers are invisible to WS pings)",
@@ -464,7 +464,7 @@ class PeerApp:
             await recon.grant(issuer_did, actions=(ACTION_SUBSCRIBE,))  # resolve the doc
 
         wg_private, wg_public = generate_wireguard_keypair()
-        expires_at = _iso(datetime.now(timezone.utc) + timedelta(seconds=ttl))
+        expires_at = _iso(datetime.now(UTC) + timedelta(seconds=ttl))
         channel = PrivateChannel(
             handle=handle,
             ephemeral_did=ephemeral_did,
@@ -643,7 +643,7 @@ class PeerApp:
     ) -> Attestation | None:
         """Newest unexpired attestation for ``context_id`` (optionally from a
         specific issuer). Discovery for both reply_private and call(private)."""
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         for cached_issuer, att in reversed(self._attestations.get(context_id, [])):
             if issuer_did is not None and cached_issuer != issuer_did:
                 continue
@@ -724,7 +724,7 @@ class PeerApp:
         entries = MST(store).load_partial(commit.data)
         path = next((p for p, c in entries.items() if c == record_cid), f"{type(record).nsid}/")
         collection, _, rkey = path.partition("/")
-        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         await self._enqueue(
             issuer,
             Envelope(
@@ -850,7 +850,7 @@ class PeerApp:
     ) -> list[Envelope]:
         header, body = decode_frame(frame)
         t = header.get("t")
-        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         if t == "#commit":
             records = await mirror.apply_commit(body)
             out = []

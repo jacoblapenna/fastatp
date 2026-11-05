@@ -145,7 +145,7 @@ the wire follow atproto.
   (`docs/decisions/`). PRs are expected to say which tenet(s) the change
   serves.
 - Ambiguous design calls → short ADR; don't block on it.
-- Python ≥ 3.10, Pydantic v2, async-first; `ruff` + `mypy` clean; tests
+- Python ≥ 3.11, Pydantic v2, async-first; `ruff` + `mypy` clean; tests
   green (`uv run pytest`). Wire-format work is vector-first against
   `reference/`.
 - Never commit anything under `reference/` (vendored, gitignored) and never

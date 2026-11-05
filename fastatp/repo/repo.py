@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Union
 
 from fastatp import dagcbor, datamodel
@@ -270,7 +270,7 @@ class Repo:
             prev_data=prev_data,
             ops=ops,
             blocks=event_blocks,
-            time=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            time=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
         # persist the new head BEFORE GC deletes the old commit block: a crash
         # between the two must never leave repo_head naming a block GC removed.

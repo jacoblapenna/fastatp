@@ -9,7 +9,7 @@ Run: python examples/wireguard_authz.py
 
 import asyncio
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastatp import Peer, PeerServer, build_did_document
 from fastatp.authz import (
@@ -42,7 +42,7 @@ async def main() -> None:
     guard = WireGuardReconciler(server, interface, resolver)
 
     # grant: signed capability (firehosed) + WG peer added
-    expiry = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    expiry = (datetime.now(UTC) + timedelta(days=30)).isoformat()
     rkey, cap = await guard.grant(DEVICE, expires_at=expiry, note="field gateway")
     print(f"granted {cap.subject}: capability {rkey}, tunnel {interface.peers()}")
 
