@@ -8,15 +8,15 @@ import pytest
 
 from fastatp.exceptions import LexiconValidationError
 from fastatp.lex.schema import LexiconDoc
-from tests.conftest import REPO_ROOT
+from tests.conftest import ATPROTO_LEXICONS
 
-_ATPROTO_LEXICONS = REPO_ROOT / "reference" / "atproto" / "lexicons" / "com" / "atproto"
-CORPUS = sorted(_ATPROTO_LEXICONS.rglob("*.json")) if _ATPROTO_LEXICONS.is_dir() else []
+CORPUS = sorted(ATPROTO_LEXICONS.rglob("*.json"))
 
 
 def test_corpus_present():
-    if not _ATPROTO_LEXICONS.is_dir():
-        pytest.skip("reference/atproto/lexicons not present")
+    # vendored, so a missing or emptied corpus is a failure, not a skip (an
+    # empty CORPUS would otherwise parametrize test_corpus_round_trip to zero)
+    assert ATPROTO_LEXICONS.is_dir(), f"lexicon corpus missing at {ATPROTO_LEXICONS}"
     assert len(CORPUS) > 50
 
 

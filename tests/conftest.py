@@ -15,6 +15,12 @@ _VENDORED = REPO_ROOT / "tests" / "vectors"
 _CLONE = REPO_ROOT / "reference" / "atproto-interop-tests"
 INTEROP = _VENDORED if _VENDORED.is_dir() else _CLONE
 
+# The com.atproto.* protocol lexicon corpus, vendored at a pinned upstream
+# commit (see tests/vectors/PROVENANCE.md). The lexicon layer round-trips and
+# generates models for every one of these, so it is required, never skipped:
+# tests that read it fail if it is missing. app.bsky.* is deliberately absent.
+ATPROTO_LEXICONS = _VENDORED / "lexicons" / "com" / "atproto"
+
 
 @pytest.fixture
 def serve_app():

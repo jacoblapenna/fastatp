@@ -19,15 +19,12 @@ from fastatp.lex.types import (
     Tid,
 )
 from fastatp.lexicon import Lexicon, lookup_lexicon, parse_record
-from tests.conftest import REPO_ROOT
-
-ATPROTO_LEXICONS = REPO_ROOT / "reference" / "atproto" / "lexicons" / "com" / "atproto"
+from tests.conftest import ATPROTO_LEXICONS
 
 
 @pytest.fixture(scope="module")
 def catalog() -> LexiconCatalog:
-    if not ATPROTO_LEXICONS.is_dir():
-        pytest.skip("reference/atproto/lexicons not present")
+    assert ATPROTO_LEXICONS.is_dir(), f"lexicon corpus missing at {ATPROTO_LEXICONS}"
     cat = LexiconCatalog()
     count = cat.add_directory(ATPROTO_LEXICONS)
     assert count > 50
