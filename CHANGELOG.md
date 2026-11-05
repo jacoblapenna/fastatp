@@ -12,6 +12,16 @@ uses [Semantic Versioning](https://semver.org/).
   unchanged. The atproto interop vectors are already at upstream HEAD
   (`056e574`).
 
+### Rust core and browser bundle
+- Moved to the RustCrypto 0.14 line: `k256` and `p256` 0.14, `ecdsa` 0.17,
+  `sha2` 0.11. Signing and verification behave the same: low-S compact
+  signatures, high-S rejected on both curves, and every cross-implementation
+  vector passes unchanged.
+- The Rust crates now declare a minimum supported Rust version of 1.88
+  (required by `sha2` 0.11.1). This only matters if you build the Rust
+  crates or the wasm bundle yourself; installing the Python package never
+  needs Rust.
+
 ## [0.1.0] - 2026-10-28
 
 First release.

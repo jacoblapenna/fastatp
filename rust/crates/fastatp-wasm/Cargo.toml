@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "FastATP browser peer bindings: WebCrypto pens, connection zero, record proofs (wasm-bindgen)"
 publish = false
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
@@ -25,5 +26,5 @@ web-sys = { version = "0.3", features = [
     "EcdsaParams",
 ] }
 serde_json = "1"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "alloc"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "alloc"] }
 data-encoding = "2"
