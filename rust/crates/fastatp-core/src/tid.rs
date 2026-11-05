@@ -94,8 +94,8 @@ impl TidClock {
     /// A clock with an OS-random identifier.
     #[cfg(feature = "rand")]
     pub fn random() -> Self {
-        use rand_core::RngCore;
-        Self::new((rand_core::OsRng.next_u32() % 1024) as u16)
+        use k256::elliptic_curve::Generate;
+        Self::new((u32::generate() % 1024) as u16)
     }
 
     pub fn clock_id(&self) -> u16 {

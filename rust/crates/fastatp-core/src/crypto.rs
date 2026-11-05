@@ -90,8 +90,8 @@ impl PublicKey {
     /// SEC1 compressed point bytes (33 bytes).
     pub fn compressed_point(&self) -> Vec<u8> {
         match self {
-            Self::K256(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
-            Self::P256(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
+            Self::K256(vk) => vk.to_sec1_point(true).as_bytes().to_vec(),
+            Self::P256(vk) => vk.to_sec1_point(true).as_bytes().to_vec(),
         }
     }
 
@@ -147,9 +147,10 @@ impl PrivateKey {
     /// pens are minted by WebCrypto and never exist in this address space).
     #[cfg(feature = "rand")]
     pub fn generate(curve: Curve) -> Self {
+        use k256::elliptic_curve::Generate;
         match curve {
-            Curve::K256 => Self::K256(k256::ecdsa::SigningKey::random(&mut rand_core::OsRng)),
-            Curve::P256 => Self::P256(p256::ecdsa::SigningKey::random(&mut rand_core::OsRng)),
+            Curve::K256 => Self::K256(k256::ecdsa::SigningKey::generate()),
+            Curve::P256 => Self::P256(p256::ecdsa::SigningKey::generate()),
         }
     }
 }
@@ -202,12 +203,12 @@ pub fn sign_message(private_key: &PrivateKey, message: &[u8]) -> [u8; 64] {
     match private_key {
         PrivateKey::K256(sk) => {
             let sig: k256::ecdsa::Signature = sk.sign(message);
-            let sig = sig.normalize_s().unwrap_or(sig);
+            let sig = sig.normalize_s();
             sig.to_bytes().into()
         }
         PrivateKey::P256(sk) => {
             let sig: p256::ecdsa::Signature = sk.sign(message);
-            let sig = sig.normalize_s().unwrap_or(sig);
+            let sig = sig.normalize_s();
             sig.to_bytes().into()
         }
     }
@@ -224,7 +225,8 @@ pub fn verify_signature(public_key: &PublicKey, message: &[u8], signature: &[u8]
             let Ok(sig) = k256::ecdsa::Signature::from_slice(signature) else {
                 return false; // zero or non-canonical r/s fails closed
             };
-            if sig.normalize_s().is_some() {
+            // normalize_s() changes a signature only when s is high.
+            if sig.normalize_s() != sig {
                 return false; // high-S MUST be rejected
             }
             vk.verify(message, &sig).is_ok()
@@ -233,7 +235,7 @@ pub fn verify_signature(public_key: &PublicKey, message: &[u8], signature: &[u8]
             let Ok(sig) = p256::ecdsa::Signature::from_slice(signature) else {
                 return false;
             };
-            if sig.normalize_s().is_some() {
+            if sig.normalize_s() != sig {
                 return false;
             }
             vk.verify(message, &sig).is_ok()
@@ -252,7 +254,7 @@ pub fn verify_prehashed(public_key: &PublicKey, digest: &[u8; 32], signature: &[
             let Ok(sig) = k256::ecdsa::Signature::from_slice(signature) else {
                 return false;
             };
-            if sig.normalize_s().is_some() {
+            if sig.normalize_s() != sig {
                 return false;
             }
             vk.verify_prehash(digest, &sig).is_ok()
@@ -261,7 +263,7 @@ pub fn verify_prehashed(public_key: &PublicKey, digest: &[u8; 32], signature: &[
             let Ok(sig) = p256::ecdsa::Signature::from_slice(signature) else {
                 return false;
             };
-            if sig.normalize_s().is_some() {
+            if sig.normalize_s() != sig {
                 return false;
             }
             vk.verify_prehash(digest, &sig).is_ok()
@@ -280,12 +282,12 @@ pub fn normalize_low_s(curve: Curve, signature: &[u8]) -> Result<[u8; 64], Crypt
         Curve::K256 => {
             let sig = k256::ecdsa::Signature::from_slice(signature)
                 .map_err(|_| CryptoError::BadSignature)?;
-            Ok(sig.normalize_s().unwrap_or(sig).to_bytes().into())
+            Ok(sig.normalize_s().to_bytes().into())
         }
         Curve::P256 => {
             let sig = p256::ecdsa::Signature::from_slice(signature)
                 .map_err(|_| CryptoError::BadSignature)?;
-            Ok(sig.normalize_s().unwrap_or(sig).to_bytes().into())
+            Ok(sig.normalize_s().to_bytes().into())
         }
     }
 }
