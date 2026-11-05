@@ -166,8 +166,10 @@ jobs:
 
   wireguard-netns:
     # the enforcement proof: a capability grant/revoke gates a live WireGuard
-    # tunnel. Runs rootless in a user+network namespace on the stock ubuntu
-    # kernel, so no privileged container is needed.
+    # tunnel. Runs twice: rootless in a user+network namespace (no privileged
+    # container needed), then as root, the way an operator's host runs it.
+    # The job name stays "(rootless netns)" because the main-branch ruleset
+    # requires it by that name.
     name: wireguard enforcement (rootless netns)
     runs-on: ubuntu-24.04
     steps:
@@ -191,3 +193,11 @@ jobs:
           python-version: "3.12"
       - run: uv sync --locked --extra dev
       - run: uv run --no-sync pytest tests/test_wireguard_rootless_netns.py -v -s
+      - name: Root WireGuard enforcement (root netns, real Noise handshake)
+        # passwordless sudo on the runner; the test skips without root, so the
+        # check above it (sudo -n) makes a missing privilege fail, not skip.
+        # -p no:cacheprovider keeps root from writing into the checkout.
+        run: |
+          sudo -n true
+          sudo -n env "PATH=$PATH" .venv/bin/python -m pytest -p no:cacheprovider -v -rs \
+            tests/test_wireguard_netns.py
