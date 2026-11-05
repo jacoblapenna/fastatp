@@ -2,7 +2,16 @@
 
 All notable changes to FastATP are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
-uses [Semantic Versioning](https://semver.org/).
+uses [Semantic Versioning](https://semver.org/) the way Cargo and npm apply
+it before 1.0:
+
+- **A minor release may break** (0.1 to 0.2 can change or remove public API).
+  Breaking changes are listed under a **Breaking** heading.
+- **A patch release never breaks** (0.2.0 to 0.2.1 only fixes or adds).
+- **1.0.0 means stable**, and normal Semantic Versioning applies from there.
+
+To upgrade safely within one minor line, pin with `~=`, for example
+`fastatp~=0.2.0` (at least 0.2.0, below 0.3).
 
 ## [Unreleased]
 
