@@ -6,3 +6,6 @@ members = ["crates/fastatp-core", "crates/fastatp-cross", "crates/fastatp-wasm"]
 edition = "2021"
 license = "MIT"
 authors = ["Jacob Lapenna"]
+# Highest MSRV in the dependency graph (sha2 0.11.1); verified with
+# `cargo +1.88 check --workspace --all-targets` and the wasm32 build.
+rust-version = "1.88"
