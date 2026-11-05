@@ -17,7 +17,7 @@ The line, stated as a rule the framework must not cross:
 - **FastATP ships the type system and the framework, never application
   schemas.** This is the same rule that forbids shipping `app.bsky.*`
   ("a language example only") and that defines the library's scope as "any
-  conforming lexicon, not any Pydantic model" (CLAUDE.md).
+  conforming lexicon, not any Pydantic model" (AGENTS.md).
 - Therefore **there is no `dev.fastatp.market.*` namespace, no shipped
   `WorkOrder`/`Status`/`Result`.** Those are application semantics — every
   workload's request/response shape differs — and belong in the *developer's*

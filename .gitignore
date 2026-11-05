@@ -1,4 +1,6 @@
 reference/
+# local, per-maintainer agent config; the shared seed is AGENTS.md
+CLAUDE.md
 .venv/
 __pycache__/
 *.pyc
