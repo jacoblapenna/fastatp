@@ -16,7 +16,7 @@ Run: python examples/two_peers.py
 
 import asyncio
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import uvicorn
 import websockets
@@ -49,7 +49,7 @@ class TaskResult(Lexicon):
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 async def main() -> None:

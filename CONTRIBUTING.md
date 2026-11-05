@@ -59,7 +59,7 @@ with plain `pip install -e .`, and CI checks that it does.
 [`docs/TESTING.md`](docs/TESTING.md) explains the optional tests (browser
 bundle, WireGuard, cross-implementation) and how to enable them.
 
-Conventions: Python 3.10+, Pydantic v2, async-first resolvers, ruff and mypy
+Conventions: Python 3.11+, Pydantic v2, async-first resolvers, ruff and mypy
 clean, one `pyproject.toml` as the source of truth. Examples and tests use
 generic identifiers only (`example.com`, `example.org`, `com.example.*`).
 

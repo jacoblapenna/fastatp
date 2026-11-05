@@ -14,7 +14,7 @@ was this removed" stays answerable).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastatp.lex.types import Cid, Datetime, Did, Nsid, RecordKey
 from fastatp.lexicon import Lexicon
@@ -48,7 +48,7 @@ class Capability(Lexicon):
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
             return False
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         try:
             expiry = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
         except ValueError:
@@ -109,4 +109,4 @@ def rkey_sort_key(rkey: str) -> tuple[int, str]:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")

@@ -1,6 +1,6 @@
 """Codegen (lexicon JSON -> Pydantic) and export (Pydantic -> lexicon JSON)."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 import pytest
@@ -155,9 +155,8 @@ def test_grapheme_and_byte_constraints():
 
 
 def test_datetime_coercion():
-    from datetime import timezone
 
-    rec = Reading(pressure_psi=1, timestamp=datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc))
+    rec = Reading(pressure_psi=1, timestamp=datetime(2026, 7, 2, 12, 0, tzinfo=UTC))
     assert rec.timestamp == "2026-07-02T12:00:00Z"
     with pytest.raises(ValidationError):
         Reading(pressure_psi=1, timestamp=datetime(2026, 7, 2, 12, 0))  # naive

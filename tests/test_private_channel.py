@@ -11,6 +11,7 @@ gives each peer a distinct source tunnel IP that loopback cannot)."""
 
 import asyncio
 from collections.abc import Awaitable
+from datetime import UTC
 from typing import cast
 
 import pytest
@@ -137,13 +138,13 @@ async def test_attest_posts_signed_attestation_under_stable_did():
 
 
 async def test_channel_expires_and_becomes_unroutable():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     app, server, _key = _tool_app()
     issuer_did, issuer_wg = _issuer()
     channel = await _open(app, issuer_did, issuer_wg, ttl=3600)
     assert channel.did in server.hosts()
 
-    channel.handle._host.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    channel.handle._host.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     assert server.reap_expired() == [channel.did]
     assert server._resolve_host(channel.did) is None

@@ -5,7 +5,7 @@ now; deleting any link severs the subtree below it; every unresolvable step
 fails closed; visibility is repo visibility.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -106,7 +106,7 @@ async def test_expired_but_present_is_absent():
         root_repo,
         ROOT,
         pen,
-        expires_at=_iso(datetime.now(timezone.utc) - timedelta(minutes=1)),
+        expires_at=_iso(datetime.now(UTC) - timedelta(minutes=1)),
     )
     assert await walk_delegation_chain(pen, ROOT, {ROOT: root_repo}.get) is None
     assert live_delegations(root_repo) == {}

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import uvicorn
 import websockets
@@ -83,7 +83,7 @@ class Board:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _bind() -> tuple[socket.socket, int]:
@@ -190,9 +190,7 @@ async def run_board_rendezvous() -> dict:
         ephemeral_did=req_did,
         wg_public_key=req_wg,
         tunnel_ip="10.7.0.2",
-        expires_at=(datetime.now(timezone.utc) + timedelta(hours=1))
-        .isoformat()
-        .replace("+00:00", "Z"),
+        expires_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
         host=None,
     )
     req_repo.put_record(Attestation.nsid, "self", self_att)
@@ -230,7 +228,7 @@ async def run_board_rendezvous() -> dict:
 
     # --- lifetime: past its TTL the channel is unroutable -------------------
     host = service_server._hosts[engagement.ephemeral_did]
-    host.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    host.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     reaped = service_server.reap_expired()
     result["channel_expired"] = engagement.ephemeral_did in reaped
     result["channel_unroutable_after_ttl"] = (

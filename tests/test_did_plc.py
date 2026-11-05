@@ -12,7 +12,7 @@ import base64
 import copy
 import json
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -212,7 +212,7 @@ def keys():
 
 
 def _genesis_chain(recovery, rotation, signing):
-    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
     genesis = _sign_op(_plc_op([recovery, rotation], signing, None), rotation)
     did = derive_did(genesis)
     return did, [_entry(did, genesis, t0)], t0
@@ -283,7 +283,7 @@ def test_malformed_services_in_head_fail_closed(keys):
     op["services"] = {"atproto_pds": {"type": "AtprotoPersonalDataServer"}}
     genesis = _sign_op(op, rotation)
     did = derive_did(genesis)
-    entry = _entry(did, genesis, datetime(2026, 1, 1, tzinfo=timezone.utc))
+    entry = _entry(did, genesis, datetime(2026, 1, 1, tzinfo=UTC))
     with pytest.raises(DIDDocumentInvalid, match="malformed document data"):
         verify_audit_log(did, [entry])
 
@@ -379,8 +379,8 @@ async def test_live_random_sample_fully_verifies():
     sample a few at a random point in directory history and run full Tier 2
     verification. A failure here is (almost always) OUR encoding bug — pin
     the printed DID's audit log as a regression fixture."""
-    start = datetime(2023, 1, 1, tzinfo=timezone.utc)
-    end = datetime.now(timezone.utc) - timedelta(days=7)
+    start = datetime(2023, 1, 1, tzinfo=UTC)
+    end = datetime.now(UTC) - timedelta(days=7)
     at = start + (end - start) * random.random()
     cursor = at.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 

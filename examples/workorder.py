@@ -22,7 +22,7 @@ Run: python examples/workorder.py
 import asyncio
 import base64
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import uvicorn
 
@@ -57,7 +57,7 @@ class InspectionResult(Lexicon):
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 # --- in-process gated firehose transport (see the module docstring) -----------
@@ -207,7 +207,7 @@ async def main() -> None:
             timeout=1.0,
         )
         raise SystemExit("BUG: reply arrived after eviction")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print("post-eviction request timed out locally — tool is cryptographically unreachable")
 
     await agent.aclose()

@@ -6,6 +6,11 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+- Python 3.11 or newer is required. Python 3.10 reached end of life in
+  October 2026 and no longer receives security fixes, and current releases
+  of some dependencies have dropped it.
+
 ### Security
 - `cryptography` now requires 50.0 or newer (was 42). Older releases bundle
   an OpenSSL affected by the 9 June 2026 OpenSSL advisory

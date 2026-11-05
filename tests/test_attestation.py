@@ -6,6 +6,7 @@ via its commit signature against the poster's DID, and parses back to WG
 coordinates. Keypair generation yields valid WG keys."""
 
 import base64
+from datetime import UTC
 
 import pytest
 
@@ -61,15 +62,15 @@ def test_parse_wireguard_uri_rejects_non_wg():
 
 
 def test_attestation_peer_info_and_expiry():
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     att = _att()  # expires_at = 2026-07-06T13:00:00Z
     info = att.peer_info()
     assert info.public_key == att.wg_public_key
     assert info.tunnel_ip == "10.9.0.7"
     assert info.endpoint == "tool.example:51820"
-    before = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)
-    after = datetime(2026, 7, 6, 14, 0, tzinfo=timezone.utc)
+    before = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
+    after = datetime(2026, 7, 6, 14, 0, tzinfo=UTC)
     assert att.is_expired(now=before) is False
     assert att.is_expired(now=after) is True
     # unparseable expiry fails closed

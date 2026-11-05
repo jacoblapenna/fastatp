@@ -21,7 +21,7 @@ semantics — the developer's request/reply lexicons stay theirs.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastatp.authz.wireguard import (
     WireGuardPeerInfo,
@@ -67,7 +67,7 @@ class Attestation(Lexicon):
         return info
 
     def is_expired(self, now: datetime | None = None) -> bool:
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         try:
             expiry = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
         except ValueError:

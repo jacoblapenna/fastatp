@@ -52,14 +52,15 @@ wasm-pack build "$CRATE" --mode no-install --target web --release \
 rm -f "$OUT/.gitignore" "$OUT/package.json" "$OUT/README.md" "$OUT"/LICENSE*
 
 # stamp the bundle with the package version (lockstep is enforced at mount);
-# tomllib is 3.11+ and the package supports 3.10, so fall back to a regex
+# this runs on the system python3, which can predate tomllib (3.11), so
+# fall back to a regex
 VERSION="$(ROOT="$ROOT" python3 -c '
 import os, pathlib, re
 pyproject = pathlib.Path(os.environ["ROOT"]) / "pyproject.toml"
 try:
     import tomllib
     version = tomllib.load(pyproject.open("rb"))["project"]["version"]
-except ModuleNotFoundError:  # Python 3.10
+except ModuleNotFoundError:  # system python3 older than 3.11
     match = re.search(r"^version\s*=\s*\"([^\"]+)\"", pyproject.read_text(), re.M)
     if match is None:
         raise SystemExit("build-wasm: no project.version in pyproject.toml")
