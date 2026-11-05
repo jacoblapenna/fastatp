@@ -1,9 +1,14 @@
 version: 2
+# Every ecosystem waits 7 days after an upstream release before proposing it,
+# so a compromised release has time to be caught and yanked first. Security
+# updates ignore the cooldown and still arrive right away.
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     # update uv.lock only; the install floors in pyproject.toml are a
     # compatibility promise to users and change by hand, not by bot
     versioning-strategy: lockfile-only
@@ -14,13 +19,18 @@ updates:
     directory: /rust
     schedule:
       interval: weekly
+    # these crates are compiled into the wasm bundle that ships in the wheel
+    cooldown:
+      default-days: 7
     groups:
       rust:
         patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
