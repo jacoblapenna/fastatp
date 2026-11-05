@@ -1,31 +1,51 @@
 #!/usr/bin/env bash
 # Build the fastatp-wasm browser bundle into fastatp/browser/static/.
 #
-# Runnable from any CWD. Requires wasm-pack and the wasm32-unknown-unknown
-# target. CI runs this before wheel/sdist assembly so the artifact ships in
-# both and plain `pip install` never needs a Rust toolchain.
+# Runnable from any CWD. Requires the wasm32-unknown-unknown target and the
+# exact tool versions pinned in scripts/wasm-tools.env on PATH (install them
+# with scripts/install-wasm-tools.sh). CI runs this before wheel/sdist
+# assembly so the artifact ships in both and plain `pip install` never needs
+# a Rust toolchain.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CRATE="$ROOT/rust/crates/fastatp-wasm"
 OUT="$ROOT/fastatp/browser/static"
+# shellcheck source=SCRIPTDIR/wasm-tools.env
+. "$ROOT/scripts/wasm-tools.env"
 
 if [ ! -d "$CRATE" ]; then
     echo "build-wasm: $CRATE does not exist (fastatp-wasm crate not built yet); nothing to build" >&2
     exit 1
 fi
 
-if ! command -v wasm-pack >/dev/null 2>&1; then
+if ! command -v cargo >/dev/null 2>&1; then
     # shellcheck disable=SC1091
     [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 fi
-if ! command -v wasm-pack >/dev/null 2>&1; then
-    echo "build-wasm: wasm-pack not found (install rustup + 'cargo binstall wasm-pack')" >&2
-    exit 1
-fi
+
+# Every tool must be the pinned version. wasm-pack runs with --mode
+# no-install, so it never downloads wasm-bindgen or wasm-opt itself; and
+# without wasm-opt it would silently ship an unoptimized bundle, so a missing
+# tool is an error here, not a skip.
+require() { # require TOOL EXPECTED-VERSION-LINE
+    local got
+    if ! got="$("$1" --version 2>/dev/null)"; then
+        got="not found"
+    fi
+    if [ "$got" != "$2" ]; then
+        echo "build-wasm: need '$2' on PATH, found: $got" >&2
+        echo "build-wasm: run scripts/install-wasm-tools.sh DIR and put DIR on PATH" >&2
+        exit 1
+    fi
+}
+require wasm-pack "wasm-pack $WASM_PACK_VERSION"
+require wasm-bindgen "wasm-bindgen $WASM_BINDGEN_VERSION"
+require wasm-opt "wasm-opt version $BINARYEN_VERSION (version_$BINARYEN_VERSION)"
 
 rm -rf "$OUT"
-wasm-pack build "$CRATE" --target web --release --out-dir "$OUT" --out-name fastatp_wasm
+wasm-pack build "$CRATE" --mode no-install --target web --release \
+    --out-dir "$OUT" --out-name fastatp_wasm
 
 # wasm-pack scaffolding that must not ship inside the wheel
 rm -f "$OUT/.gitignore" "$OUT/package.json" "$OUT/README.md" "$OUT"/LICENSE*

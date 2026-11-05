@@ -94,9 +94,10 @@ jobs:
         with:
           toolchain: stable
           targets: wasm32-unknown-unknown
-      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
-        with:
-          tool: wasm-pack
+      - name: Install pinned wasm build tools (hash-checked, see scripts/wasm-tools.env)
+        run: |
+          scripts/install-wasm-tools.sh "$RUNNER_TEMP/wasm-tools"
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
       - run: scripts/build-wasm.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
