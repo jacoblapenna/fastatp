@@ -50,7 +50,17 @@ jobs:
         # the wire-conformance vectors are vendored in tests/vectors/ and never
         # skip; tests that need the browser bundle, WireGuard, goat, the
         # interop extra, or a Rust toolchain skip here and run in the jobs below
-        run: uv run --no-sync pytest --cov=fastatp --cov-report=term --cov-fail-under=85
+        run: >
+          uv run --no-sync pytest --cov=fastatp --cov-report=term --cov-fail-under=85
+          --junitxml="$RUNNER_TEMP/junit/python-${{ matrix.python }}.xml"
+      - name: Upload the test report (read by the all-tests-ran job)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-python-${{ matrix.python }}
+          path: ${{ runner.temp }}/junit/
+          if-no-files-found: error
+          retention-days: 7
 
   pip-install:
     # uv is a dev accelerator only: the package must install with plain pip.
@@ -129,10 +139,19 @@ jobs:
       - run: uv sync --locked --extra dev
       - run: >
           uv run --no-sync pytest -v
+          --junitxml="$RUNNER_TEMP/junit/browser-peer.xml"
           tests/test_browser_assets.py
           tests/test_wheel_smoke.py
           tests/test_hosted_peer_e2e.py
           tests/test_cross_impl.py
+      - name: Upload the test report (read by the all-tests-ran job)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-browser-peer
+          path: ${{ runner.temp }}/junit/
+          if-no-files-found: error
+          retention-days: 7
 
   interop-oracles:
     # independent implementations check FastATP's output; neither knows
@@ -161,8 +180,17 @@ jobs:
           uv run --no-sync python -c "import atproto_sensorthings"
       - run: >
           uv run --no-sync pytest -v
+          --junitxml="$RUNNER_TEMP/junit/interop-oracles.xml"
           tests/test_goat_oracle.py
           tests/test_sensorthings_interop.py
+      - name: Upload the test report (read by the all-tests-ran job)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-interop-oracles
+          path: ${{ runner.temp }}/junit/
+          if-no-files-found: error
+          retention-days: 7
 
   wireguard-netns:
     # the enforcement proof: a capability grant/revoke gates a live WireGuard
@@ -192,7 +220,10 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
       - run: uv sync --locked --extra dev
-      - run: uv run --no-sync pytest tests/test_wireguard_rootless_netns.py -v -s
+      - run: >
+          uv run --no-sync pytest -v -s
+          --junitxml="$RUNNER_TEMP/junit/wireguard-rootless.xml"
+          tests/test_wireguard_rootless_netns.py
       - name: Root WireGuard enforcement (root netns, real Noise handshake)
         # passwordless sudo on the runner; the test skips without root, so the
         # check above it (sudo -n) makes a missing privilege fail, not skip.
@@ -200,4 +231,47 @@ jobs:
         run: |
           sudo -n true
           sudo -n env "PATH=$PATH" .venv/bin/python -m pytest -p no:cacheprovider -v -rs \
+            --junitxml="$RUNNER_TEMP/junit/wireguard-root.xml" \
             tests/test_wireguard_netns.py
+      - name: Upload the test report (read by the all-tests-ran job)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-wireguard
+          path: ${{ runner.temp }}/junit/
+          if-no-files-found: error
+          retention-days: 7
+
+  all-tests-ran:
+    # Every job above skips some tests on purpose and another job runs them.
+    # This merges every job's JUnit report and fails if any Python test never
+    # passed anywhere (skipped or failed in every job), so a test can't
+    # quietly stop running. See scripts/check_all_tests_ran.py. Rust tests
+    # are not in scope: the rust job runs the whole cargo workspace.
+    name: all tests ran
+    needs: [python, browser-peer, interop-oracles, wireguard-netns]
+    # run even when a test job failed, so the report names what never ran
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: junit-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/junit/
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - name: Every Python test passed in at least one job
+        run: uv run --no-project python scripts/check_all_tests_ran.py "$RUNNER_TEMP/junit" tests
+      - name: Every test job succeeded
+        # after the coverage check, so a failed run still reports what never ran
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "test job results: $RESULTS"
+          for r in $RESULTS; do [ "$r" = success ] || exit 1; done
