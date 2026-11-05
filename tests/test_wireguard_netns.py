@@ -8,7 +8,7 @@ present on the interface. It requires root (CAP_NET_ADMIN), the ``wg`` and
 
 Run it deliberately, as root, on a host with wireguard-tools:
 
-    sudo -E env "PATH=$PATH" .venv/bin/python -m pytest tests/test_wireguard_netns.py -v
+    sudo env "PATH=$PATH" .venv/bin/python -m pytest tests/test_wireguard_netns.py -v
 
 Topology (grantor = ns_a hosting wgA; grantee = ns_b initiating from wgB):
 
@@ -63,12 +63,16 @@ DID_A = "did:web:node-a.example"
 DID_B = "did:web:node-b.example"
 
 
-def _run(argv: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(argv, capture_output=True, text=True, check=check)
+def _run(
+    argv: list[str], check: bool = True, stdin: str | None = None
+) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, capture_output=True, text=True, check=check, input=stdin)
 
 
-def _in(ns: str, argv: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    return _run(["ip", "netns", "exec", ns, *argv], check=check)
+def _in(
+    ns: str, argv: list[str], check: bool = True, stdin: str | None = None
+) -> subprocess.CompletedProcess:
+    return _run(["ip", "netns", "exec", ns, *argv], check=check, stdin=stdin)
 
 
 def _wg_keypair() -> tuple[str, str]:
@@ -89,18 +93,10 @@ def _wg_keypair() -> tuple[str, str]:
     return base64.b64encode(priv_b).decode(), base64.b64encode(pub_b).decode()
 
 
-def _write_key(tmp_path, name: str, key_b64: str) -> str:
-    path = tmp_path / name
-    path.write_text(key_b64)
-    return str(path)
-
-
 @pytest.fixture
-def netns(tmp_path):
+def netns():
     priv_a, pub_a = _wg_keypair()
     priv_b, pub_b = _wg_keypair()
-    key_a = _write_key(tmp_path, "a.key", priv_a)
-    key_b = _write_key(tmp_path, "b.key", priv_b)
     created = []
     try:
         for ns in (NS_A, NS_B):
@@ -125,8 +121,19 @@ def netns(tmp_path):
         # veth, so handshakes are sent into the void. Create it in place.
         for ns, wg in ((NS_A, "wgA"), (NS_B, "wgB")):
             _in(ns, ["ip", "link", "add", wg, "type", "wireguard"])
-        _in(NS_A, ["wg", "set", "wgA", "private-key", key_a, "listen-port", "51820"])
-        _in(NS_B, ["wg", "set", "wgB", "private-key", key_b, "listen-port", "51821"])
+        # private keys go to wg over a stdin pipe, never a file: no key touches
+        # disk, and Ubuntu 26.04's AppArmor profile for wg only lets it open
+        # files under /etc/wireguard (a key file in a temp dir is denied)
+        _in(
+            NS_A,
+            ["wg", "set", "wgA", "private-key", "/dev/stdin", "listen-port", "51820"],
+            stdin=priv_a,
+        )
+        _in(
+            NS_B,
+            ["wg", "set", "wgB", "private-key", "/dev/stdin", "listen-port", "51821"],
+            stdin=priv_b,
+        )
         _in(NS_A, ["ip", "addr", "add", "10.100.0.1/24", "dev", "wgA"])
         _in(NS_B, ["ip", "addr", "add", "10.100.0.2/24", "dev", "wgB"])
         _in(NS_A, ["ip", "link", "set", "wgA", "up"])
