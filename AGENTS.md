@@ -77,7 +77,9 @@ never committed, so a fresh clone won't have it: clone the upstream repos into
 - `reference/atproto/lexicons/app/bsky/`: Bluesky-the-app schemas. Do not
   depend on or ship these. Read them only as examples of the Lexicon language
   in use.
-- `reference/interop-tests/` and `reference/atproto/interop-test-files/`:
+- `reference/atproto-interop-tests/` (clone of
+  `bluesky-social/atproto-interop-tests`) and
+  `reference/atproto/interop-test-files/`:
   CC-0 conformance vectors (CID, dag-cbor, varint, did, tid, MST, ...). The
   vector files are vendored in-repo at `tests/vectors/` (see its
   `PROVENANCE.md`), so the conformance suite runs on a fresh clone. Tests that

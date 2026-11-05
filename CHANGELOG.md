@@ -6,6 +6,12 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Conformance
+- did:plc audit-log vectors re-vendored from `did-method-plc` at `29f1a70`
+  (2026-10-27). Upstream only reformatted the JSON; every vector is
+  unchanged. The atproto interop vectors are already at upstream HEAD
+  (`056e574`).
+
 ## [0.1.0] - 2026-10-28
 
 First release.
