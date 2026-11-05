@@ -48,8 +48,8 @@ jobs:
         run: uv run --no-sync mypy fastatp
       - name: Tests
         # the wire-conformance vectors are vendored in tests/vectors/ and never
-        # skip; tests that need the browser bundle, WireGuard, Go, or a Rust
-        # toolchain skip here and run in the jobs below
+        # skip; tests that need the browser bundle, WireGuard, goat, the
+        # interop extra, or a Rust toolchain skip here and run in the jobs below
         run: uv run --no-sync pytest --cov=fastatp --cov-report=term --cov-fail-under=85
 
   pip-install:
@@ -133,6 +133,36 @@ jobs:
           tests/test_wheel_smoke.py
           tests/test_hosted_peer_e2e.py
           tests/test_cross_impl.py
+
+  interop-oracles:
+    # independent implementations check FastATP's output; neither knows
+    # FastATP exists. Bluesky's goat runs the network's own firehose
+    # validation (including MST inversion) against a PeerServer, and the
+    # unmodified atproto-sensorthings package flattens an exported repo CAR.
+    name: interop oracles
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned goat (hash-checked, see scripts/install-goat.sh)
+        run: |
+          scripts/install-goat.sh "$RUNNER_TEMP/goat"
+          echo "$RUNNER_TEMP/goat" >> "$GITHUB_PATH"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - name: Install (from uv.lock, with the interop extra)
+        run: uv sync --locked --extra dev --extra interop
+      - name: Both oracles are present (a missing one fails here, never skips)
+        run: |
+          goat --version
+          uv run --no-sync python -c "import atproto_sensorthings"
+      - run: >
+          uv run --no-sync pytest -v
+          tests/test_goat_oracle.py
+          tests/test_sensorthings_interop.py
 
   wireguard-netns:
     # the enforcement proof: a capability grant/revoke gates a live WireGuard

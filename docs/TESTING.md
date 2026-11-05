@@ -28,7 +28,7 @@ prerequisites and run them all. Here is what each needs.
 | `cross_sdk/test_harvested` | our DAG-CBOR/CID bytes match the reference Rust codec | `libipld` — already in `.[dev]`. |
 | `test_wireguard_rootless_netns` | capability grant/revoke actually gates a real tunnel, unprivileged | `wireguard-tools` (`sudo apt install wireguard-tools`). Runs rootless. |
 | `test_wireguard_netns` | the same, end-to-end through a kernel WireGuard interface | `wireguard-tools` **and** run under `sudo` (creates network namespaces). |
-| `test_goat_oracle` | Bluesky's own `goat` firehose validator accepts our frames | Install Go, then `go install github.com/bluesky-social/indigo/cmd/goat@latest`. The test finds `goat` on `PATH` or at `~/go/bin/goat`. |
+| `test_goat_oracle` | Bluesky's own `goat` firehose validator accepts our frames | On x86_64 Linux, `scripts/install-goat.sh DIR` installs the pinned, hash-checked release binary into `DIR`; put `DIR` on `PATH`. Elsewhere, install the same version from `bluesky-social/goat` releases. The test finds `goat` on `PATH` or at `~/go/bin/goat`. Runs in CI in the `interop oracles` job. |
 | `test_sensorthings_interop` | an independent third-party implementation can flatten a FastATP CAR | `pip install -e ".[interop]"` — **note:** this pulls in the MarshalX `atproto` SDK (the SDK FastATP deliberately does not depend on) and its pins. Prefer a separate venv if you don't want the SDK in your dev environment. |
 
 Build the WASM bundle and install `wireguard-tools` + Go, and the full suite
