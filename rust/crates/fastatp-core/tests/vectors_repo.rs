@@ -3,7 +3,6 @@
 //! and tests/test_repo.py on the Python side.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -13,23 +12,7 @@ use fastatp_core::dagcbor::Value;
 use fastatp_core::mst::{self, MemoryBlockStore};
 use fastatp_core::repo::{verify_proof, ProofError, Repo, WriteOp};
 
-fn interop_dir() -> Option<PathBuf> {
-    let dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../reference/atproto-interop-tests");
-    dir.is_dir().then_some(dir)
-}
-
-macro_rules! require_vectors {
-    () => {
-        match interop_dir() {
-            Some(dir) => dir,
-            None => {
-                eprintln!("reference/atproto-interop-tests not present; skipping");
-                return;
-            }
-        }
-    };
-}
+mod common;
 
 fn record(text: &str) -> Value {
     Value::map(vec![
@@ -53,7 +36,7 @@ struct CommonPrefixCase {
 
 #[test]
 fn common_prefix_vectors() {
-    let dir = require_vectors!();
+    let dir = common::vectors_dir();
     let raw = std::fs::read_to_string(dir.join("mst/common_prefix.json")).unwrap();
     let cases: Vec<CommonPrefixCase> = serde_json::from_str(&raw).unwrap();
     assert!(!cases.is_empty());
@@ -76,7 +59,7 @@ struct KeyHeightCase {
 
 #[test]
 fn key_height_vectors() {
-    let dir = require_vectors!();
+    let dir = common::vectors_dir();
     let raw = std::fs::read_to_string(dir.join("mst/key_heights.json")).unwrap();
     let cases: Vec<KeyHeightCase> = serde_json::from_str(&raw).unwrap();
     assert!(!cases.is_empty());
@@ -109,7 +92,7 @@ struct CommitProofFixture {
 
 #[test]
 fn commit_proof_fixture_roots() {
-    let dir = require_vectors!();
+    let dir = common::vectors_dir();
     let raw = std::fs::read_to_string(dir.join("firehose/commit-proof-fixtures.json")).unwrap();
     let fixtures: Vec<CommitProofFixture> = serde_json::from_str(&raw).unwrap();
     assert!(fixtures.len() >= 5);
@@ -152,7 +135,7 @@ fn commit_proof_fixture_roots() {
 
 #[test]
 fn example_keys_build_read_and_are_deterministic() {
-    let dir = require_vectors!();
+    let dir = common::vectors_dir();
     let raw = std::fs::read_to_string(dir.join("mst/example_keys.txt")).unwrap();
     let keys: Vec<&str> = raw
         .lines()
