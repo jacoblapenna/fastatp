@@ -66,7 +66,12 @@ assert.ok(sig.length === sig2.length, "signatures well-formed across calls");
 // --- export + version -------------------------------------------------------------
 const car = peer.export_car();
 assert.ok(car.length > genesisCar.length, "repo grew past genesis");
-assert.equal(bundle_version(), "0.1.0");
+// bundle_version() is this crate's CARGO_PKG_VERSION, so compare it against
+// the crate's own Cargo.toml rather than a literal that every release breaks
+const cargoToml = await readFile(path.join(here, "Cargo.toml"), "utf8");
+const crateVersion = cargoToml.match(/^version = "([^"]+)"$/m)?.[1];
+assert.ok(crateVersion, "version not found in fastatp-wasm/Cargo.toml");
+assert.equal(bundle_version(), crateVersion);
 
 console.log("smoke: ALL PASS");
 console.log(`  twin: ${bundle.twin_did}`);
