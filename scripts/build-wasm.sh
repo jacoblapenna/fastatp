@@ -44,8 +44,9 @@ require wasm-bindgen "wasm-bindgen $WASM_BINDGEN_VERSION"
 require wasm-opt "wasm-opt version $BINARYEN_VERSION (version_$BINARYEN_VERSION)"
 
 rm -rf "$OUT"
+# everything after -- goes to cargo: build exactly what rust/Cargo.lock says
 wasm-pack build "$CRATE" --mode no-install --target web --release \
-    --out-dir "$OUT" --out-name fastatp_wasm
+    --out-dir "$OUT" --out-name fastatp_wasm -- --locked
 
 # wasm-pack scaffolding that must not ship inside the wheel
 rm -f "$OUT/.gitignore" "$OUT/package.json" "$OUT/README.md" "$OUT"/LICENSE*
