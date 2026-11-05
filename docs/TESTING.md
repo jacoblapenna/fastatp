@@ -34,6 +34,28 @@ prerequisites and run them all. Here is what each needs.
 Build the WASM bundle and install `wireguard-tools` + Go, and the full suite
 runs with nothing skipped (the kernel-netns case still needs `sudo`).
 
+## In CI: every test must run somewhere
+
+Each CI job skips some tests on purpose: the Python version matrix has no
+browser bundle, goat or root, and the specialist jobs (browser peer bundle,
+interop oracles, WireGuard) run exactly those. Locally, a skip is fine. In
+CI, a test that skips in **every** job never runs at all, so the
+`all tests ran` job forbids it:
+
+- every pytest job saves a JUnit report;
+- `all tests ran` merges them with `scripts/check_all_tests_ran.py` and fails
+  if any test never passed in any job, if a module skipped at import never
+  ran anywhere else, or if a test file appears in no report.
+
+When you add a test that needs something new (a tool, root, a service
+stand-in), give it a CI job or step that provides it, or the guard will fail
+the PR and name the test.
+
+This is a CI-only check; nothing changes locally (`uv run pytest` as usual).
+The reports are temporary build artifacts of each CI run, never committed.
+Running the script over a single local run would flag every test your
+machine can't run, which is expected: CI's other jobs cover those.
+
 ## Coverage
 
 Coverage is configured (`[tool.coverage.run]`: branch coverage over `fastatp/`)
