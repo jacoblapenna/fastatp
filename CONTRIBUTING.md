@@ -76,10 +76,47 @@ Ambiguous design calls get a short record in `docs/decisions/`: the problem,
 the decision, the consequences. Keep them short, and don't block work on
 them.
 
-## Changelog
+## Changelog and versions
 
 Add a line under *Unreleased* in [`CHANGELOG.md`](CHANGELOG.md) for anything
-a user would notice.
+a user would notice, under the heading that says what kind of change it is.
+While FastATP is 0.x, the heading decides the next version:
+
+- **Breaking** (public API changed or removed, or a support floor raised):
+  the next release is a minor bump, 0.2.x to 0.3.0.
+- **Added**, **Fixed**, **Security** and the like, with nothing broken: the
+  next release is a patch bump, 0.2.0 to 0.2.1.
+
+Feature PRs never set a release version. `main` says exactly the release
+version only while nothing has changed since that release; after that it
+carries the next version as a dev release, so a git install never claims to
+be a release it isn't:
+
+1. **Release: one PR.** It sets the exact version (for example `0.2.0`, in
+   `pyproject.toml` and the Rust crates, then the locks), turns *Unreleased*
+   into that version's section, and does nothing else. After it merges, the
+   maintainer tags the merge commit `v0.2.0rc1`, which CI builds as
+   `0.2.0rc1` for TestPyPI. Once that checks out, the same commit is tagged
+   `v0.2.0` for PyPI. If the rc turns up a problem, fix it in a normal PR
+   that leaves the version at `0.2.0` (it isn't released yet, so no dev
+   bump), then tag the new merge commit `v0.2.0rc2`. Tags are never moved.
+2. **The next PR moves `main` to dev, in its own first commit.** Whatever
+   the first change after a release is, if the version in `pyproject.toml`
+   has already been released (its `vX.Y.Z` tag exists), that PR's first
+   commit bumps it to the next patch's dev release, `0.2.1.dev0`
+   (crates and locks too), and nothing else. There is no PR whose only
+   change is the dev bump: until something changes, `main` really is the
+   release. (A dev release sorts before its release, so `0.2.0.dev0` would
+   mean "before 0.2.0".)
+3. **A breaking PR raises the dev version** to the next minor, `0.3.0.dev0`,
+   if it isn't there already, in the same kind of dedicated first commit.
+4. **The next release PR drops the `.devN`.**
+
+Dev versions never publish: `release.yml` refuses any tag that isn't
+`vX.Y.Z` or `vX.Y.ZrcN` on a commit whose version is exactly `X.Y.Z`.
+
+The version lives in `pyproject.toml`; the Rust crates in `rust/crates/*`
+carry the same number (Cargo spells a dev version `0.2.1-dev.0`).
 
 ## Reporting
 

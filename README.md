@@ -101,6 +101,17 @@ FastATP's.
 pip install fastatp
 ```
 
+> **FastATP is 0.x: a minor release may break, a patch release never does.**
+> 0.2 to 0.3 can change or remove public API; 0.2.0 to 0.2.1 only fixes or
+> adds. To take fixes without surprises, pin the minor line:
+>
+> ```bash
+> pip install "fastatp~=0.2.0"   # at least 0.2.0, below 0.3
+> ```
+>
+> Breaking changes are listed under **Breaking** in the
+> [`CHANGELOG.md`](https://github.com/jacoblapenna/fastatp/blob/main/CHANGELOG.md).
+
 FastATP speaks **one wire format: atproto's**. Records live in a signed,
 present-state repository; a record travels as a *proof slice* (signed commit +
 Merkle path + record) that anyone can verify with nothing but a DID resolver —
@@ -244,7 +255,9 @@ contents, and publishes through PyPI trusted publishing. There are no API
 tokens and no shared secrets anywhere in the pipeline — the same rule the
 library lives by. Release candidates go to TestPyPI first; each publish waits
 for maintainer approval. Changes are recorded in
-[`CHANGELOG.md`](https://github.com/jacoblapenna/fastatp/blob/main/CHANGELOG.md).
+[`CHANGELOG.md`](https://github.com/jacoblapenna/fastatp/blob/main/CHANGELOG.md);
+the versioning rule and release routine are in
+[`CONTRIBUTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/CONTRIBUTING.md#changelog-and-versions).
 
 ## License
 
