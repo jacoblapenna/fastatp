@@ -4,8 +4,8 @@ version: 2
 # and yanked first. Security updates ignore both and still arrive right away.
 #
 # Not covered by Dependabot, bumped by hand: uv and Node (UV_VERSION and
-# node-version in the workflows) and the wasm build tools
-# (scripts/wasm-tools.env).
+# node-version in the workflows), the wasm build tools
+# (scripts/wasm-tools.env) and goat (scripts/install-goat.sh).
 updates:
   - package-ecosystem: pip
     directory: /

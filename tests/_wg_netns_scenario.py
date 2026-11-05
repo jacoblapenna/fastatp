@@ -16,9 +16,7 @@ as ``python -m tests._wg_netns_scenario`` inside the namespace.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
-import os
 import subprocess
 import sys
 import time
@@ -35,9 +33,11 @@ FAMILIES = {
 }
 
 
-def run(argv: list[str], check: bool = True, ns: str | None = None) -> subprocess.CompletedProcess:
+def run(
+    argv: list[str], check: bool = True, ns: str | None = None, stdin: str | None = None
+) -> subprocess.CompletedProcess:
     full = (["ip", "netns", "exec", ns, *argv]) if ns else argv
-    return subprocess.run(full, capture_output=True, text=True, check=check)
+    return subprocess.run(full, capture_output=True, text=True, check=check, input=stdin)
 
 
 def ping(ns: str, target: str, fam: str) -> bool:
@@ -68,10 +68,6 @@ async def scenario(fam: str) -> dict:
     va, vb = f"va{fam}", f"vb{fam}"
     priv_a, pub_a = generate_wireguard_keypair()
     priv_b, pub_b = generate_wireguard_keypair()
-    with open(f"/run/{fam}_a.key", "w") as f:
-        f.write(priv_a)
-    with open(f"/run/{fam}_b.key", "w") as f:
-        f.write(priv_b)
     try:
         for ns in (nsa, nsb):
             run(["ip", "netns", "add", ns])
@@ -86,11 +82,18 @@ async def scenario(fam: str) -> dict:
         run(["ip", "link", "set", vb, "up"], ns=nsb)
         for ns, wg in ((nsa, "wgA"), (nsb, "wgB")):
             run(["ip", "link", "add", wg, "type", "wireguard"], ns=ns)
+        # private keys go to wg over a stdin pipe, never a file: no key touches
+        # disk, and Ubuntu 26.04's AppArmor profile for wg only lets it open
+        # files under /etc/wireguard (a key file in /run is denied)
         run(
-            ["wg", "set", "wgA", "private-key", f"/run/{fam}_a.key", "listen-port", "51820"], ns=nsa
+            ["wg", "set", "wgA", "private-key", "/dev/stdin", "listen-port", "51820"],
+            ns=nsa,
+            stdin=priv_a,
         )
         run(
-            ["wg", "set", "wgB", "private-key", f"/run/{fam}_b.key", "listen-port", "51821"], ns=nsb
+            ["wg", "set", "wgB", "private-key", "/dev/stdin", "listen-port", "51821"],
+            ns=nsb,
+            stdin=priv_b,
         )
         run(["ip", "addr", "add", f"{cfg['a']}/{cfg['plen']}", "dev", "wgA"], ns=nsa)
         run(["ip", "addr", "add", f"{cfg['b']}/{cfg['plen']}", "dev", "wgB"], ns=nsb)
@@ -146,12 +149,6 @@ async def scenario(fam: str) -> dict:
     finally:
         for ns in (nsa, nsb):
             run(["ip", "netns", "del", ns], check=False)
-        # the private keys live in the ephemeral /run tmpfs (gone when the
-        # namespace exits), but unlink them anyway so a re-run in the same
-        # namespace never reuses a stale key file
-        for path in (f"/run/{fam}_a.key", f"/run/{fam}_b.key"):
-            with contextlib.suppress(OSError):
-                os.unlink(path)
 
 
 async def main() -> int:
