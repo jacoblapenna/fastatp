@@ -5,17 +5,12 @@
 //! Rust core's `Value` enum IS the data model; the dollar-forms only exist at
 //! the JSON boundary.
 
-use std::path::PathBuf;
+mod common;
+
 use std::sync::LazyLock;
 
 use fastatp_core::cid::Cid;
 use fastatp_core::dagcbor::{self, Value};
-
-fn vectors_dir() -> Option<PathBuf> {
-    let dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../reference/atproto-interop-tests");
-    dir.is_dir().then_some(dir)
-}
 
 /// Python's base64.b64decode(validate=True) checks the alphabet but not
 /// trailing bits; padding is repaired before decoding, mirroring datamodel.py.
@@ -151,10 +146,7 @@ fn load(dir: &std::path::Path, name: &str) -> Vec<serde_json::Value> {
 
 #[test]
 fn fixtures_encode_decode_cid() {
-    let Some(dir) = vectors_dir() else {
-        eprintln!("reference/atproto-interop-tests not present; skipping");
-        return;
-    };
+    let dir = common::vectors_dir();
     let fixtures = load(&dir, "data-model-fixtures.json");
     assert!(fixtures.len() >= 3);
     for fx in &fixtures {
@@ -175,10 +167,7 @@ fn fixtures_encode_decode_cid() {
 
 #[test]
 fn data_model_valid() {
-    let Some(dir) = vectors_dir() else {
-        eprintln!("reference/atproto-interop-tests not present; skipping");
-        return;
-    };
+    let dir = common::vectors_dir();
     for case in &load(&dir, "data-model-valid.json") {
         let note = case["note"].as_str().unwrap_or("?");
         let tree = from_json(&case["json"])
@@ -189,10 +178,7 @@ fn data_model_valid() {
 
 #[test]
 fn data_model_invalid() {
-    let Some(dir) = vectors_dir() else {
-        eprintln!("reference/atproto-interop-tests not present; skipping");
-        return;
-    };
+    let dir = common::vectors_dir();
     for case in &load(&dir, "data-model-invalid.json") {
         let note = case["note"].as_str().unwrap_or("?");
         assert!(

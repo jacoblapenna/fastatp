@@ -73,7 +73,7 @@ config-file / VPN-management approach FastATP's enforcement-plane design exists 
   private keys derive, through our `cryptography` path, to their exact
   published public keys. That is now a cross-impl interop KAT
   (`test_x25519_known_answer_cross_impl`, attributed). DIVERGE on library
-  (CLAUDE.md: `cryptography` only, no new primitive dep), ADAPT the vectors.
+  (AGENTS.md: `cryptography` only, no new primitive dep), ADAPT the vectors.
 - **Validation:** Fictive Kin has **no key validator** and decodes with
   non-strict base64 (`test_config.py:125` accepts `"something"` as a public
   key); `django-wireguard` is IPv4-only and validates only v4. FastATP

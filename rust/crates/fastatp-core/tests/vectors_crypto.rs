@@ -1,23 +1,12 @@
 //! Crypto + TID conformance driven by the same interop vectors the Python
-//! side passes (`reference/atproto-interop-tests`): signature fixtures
+//! side passes (`tests/vectors/`): signature fixtures
 //! (valid low-S accepted; high-S and DER rejected), W3C did:key vectors,
 //! and the TID syntax vectors.
 
-use std::path::PathBuf;
+mod common;
 
 use fastatp_core::crypto::{decode_did_key, encode_did_key, verify_signature, Curve, PrivateKey};
 use fastatp_core::tid::decode_tid;
-
-fn interop_dir() -> Option<PathBuf> {
-    let dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../reference/atproto-interop-tests");
-    if dir.is_dir() {
-        Some(dir)
-    } else {
-        eprintln!("skipping: reference/atproto-interop-tests not present");
-        None
-    }
-}
 
 /// Minimal base64 decode (standard alphabet, padding optional) — the
 /// fixtures are tiny and this keeps base64 out of the dependency tree.
@@ -46,7 +35,7 @@ fn b64(s: &str) -> Vec<u8> {
 
 #[test]
 fn signature_fixtures() {
-    let Some(dir) = interop_dir() else { return };
+    let dir = common::vectors_dir();
     let raw = std::fs::read_to_string(dir.join("crypto/signature-fixtures.json")).unwrap();
     let fixtures: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
     assert!(fixtures.len() >= 6);
@@ -76,7 +65,7 @@ fn signature_fixtures() {
 
 #[test]
 fn didkey_vectors() {
-    let Some(dir) = interop_dir() else { return };
+    let dir = common::vectors_dir();
     for (file, curve) in [
         ("crypto/w3c_didkey_K256.json", Curve::K256),
         ("crypto/w3c_didkey_P256.json", Curve::P256),
@@ -114,7 +103,7 @@ fn syntax_lines(dir: &std::path::Path, name: &str) -> Vec<String> {
 
 #[test]
 fn tid_syntax_vectors() {
-    let Some(dir) = interop_dir() else { return };
+    let dir = common::vectors_dir();
     let valid = syntax_lines(&dir, "tid_syntax_valid.txt");
     let invalid = syntax_lines(&dir, "tid_syntax_invalid.txt");
     assert!(!valid.is_empty() && !invalid.is_empty());

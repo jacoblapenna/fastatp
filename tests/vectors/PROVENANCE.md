@@ -18,7 +18,7 @@ Subset vendored (only the vector files the suite reads): `syntax/`, `mst/`,
 - **Source:** <https://github.com/did-method-plc/did-method-plc>
   (`interop_tests/audit_log/`; upstream notes their canonical home is
   <https://github.com/did-method-plc/go-didplc> `testdata/`)
-- **Commit:** `2ed82a5ccf1b424aa5e2f6c5b461dc0ee133278b` (2026-07)
+- **Commit:** `29f1a70ee9f6f80a25946cac103b2f745e371334` (2026-10-27)
 - **License:** dual MIT / Apache-2.0 (Bluesky Social PBC). The vectors are
   captured public PLC directory log data plus synthesized invalid variants.
 

@@ -62,6 +62,83 @@ right column:
 | "Just tweak the wire format" | `reference/` (vendored atproto specs + vectors) is authoritative for bytes on the wire. Vector-first; divergences get a `# FASTATP-CONFLICT:` mark or an ADR, never a silent choice. |
 | "The RFC allows it" | IETF RFCs are the substrate atproto *restricts* — where an RFC permits something the atproto reference implementation rejects (or vice versa) on an edge no vector covers, the reference's behavior wins on the wire. Probe the reference; pin the edge with a test. |
 
+## Technical ground rules
+
+### Reference material (authoritative for wire format)
+
+Everything under `reference/` is vendored protocol truth. It is gitignored and
+never committed, so a fresh clone won't have it: clone the upstream repos into
+`reference/` locally when you need them. Conform to it; don't guess.
+
+- `reference/atproto-specs/` (clone of `bluesky-social/atproto-website`): the
+  spec prose (repository, data-model, lexicon, did, sync). Highest authority.
+- `reference/atproto/lexicons/com/atproto/`: the protocol lexicons. Drive
+  Pydantic model generation and round-trip tests from these.
+- `reference/atproto/lexicons/app/bsky/`: Bluesky-the-app schemas. Do not
+  depend on or ship these. Read them only as examples of the Lexicon language
+  in use.
+- `reference/atproto-interop-tests/` (clone of
+  `bluesky-social/atproto-interop-tests`) and
+  `reference/atproto/interop-test-files/`:
+  CC-0 conformance vectors (CID, dag-cbor, varint, did, tid, MST, ...). The
+  vector files are vendored in-repo at `tests/vectors/` (see its
+  `PROVENANCE.md`), so the conformance suite runs on a fresh clone. Tests that
+  need a full reference clone skip cleanly when it's absent.
+- `reference/atproto/packages/repo/`: the TypeScript MST reference
+  implementation. Read it when the MST or CAR encoding gets fiddly.
+
+### Lexicon layer
+
+Users define any atproto-conforming lexicon in Pydantic. Keep that the easy
+path:
+
+- Lexicon and Pydantic are different type systems. Provide a type palette so
+  users never hand-roll format or constraint validators.
+- `maxLength`/`minLength` are UTF-8 byte counts; `maxGraphemes`/`minGraphemes`
+  are grapheme cluster counts. Neither is Python `len(str)`.
+- Compound types (`cid-link`, `bytes`, `blob`) have specific data-model
+  encodings (see the data-model spec). Do not use JSON base64 in dag-cbor.
+- Unions are `$type`-discriminated, honor the `closed` flag, and their
+  variants are object/record only.
+- `Lexicon.to_lexicon_json()` must emit a valid `lexicon: 1` doc. That is
+  what makes a Pydantic model genuinely conforming (resolvable and validatable
+  by others), not just FastATP-internal.
+- Scope is any *conforming* lexicon, not any Pydantic model. Validate on
+  export and reject constructs with no Lexicon equivalent.
+
+### Crypto (interop-critical, easy to get subtly wrong)
+
+- Curves: secp256k1 ("k256") and NIST P-256 ("p256"). Support both.
+- Signatures: ECDSA, low-S normalized, compact 64-byte form (R||S), not DER.
+  Verification must reject high-S signatures.
+- Public keys in DID docs: Multikey / `did:key` multibase (base58btc, `z`
+  prefix) with the correct multicodec prefix per curve (compressed point).
+- Use `cryptography` in Python. Never hand-roll primitives and never add a new
+  primitive dependency. There is no JWT record format and no `PyJWT`
+  dependency; record proofs are the one wire format.
+
+### Project conventions
+
+- A single PEP 621 `pyproject.toml` (hatchling backend) holds metadata,
+  dependencies and all tool config. No `setup.py`, and no per-tool config
+  files unless a tool genuinely can't live in pyproject.
+- `uv` is the dev workflow (`uv venv`, `uv pip install -e ".[dev]"`,
+  `uv run pytest`). It must never become a runtime dependency: plain
+  `pip install -e .` must keep working.
+- Tests use `pytest` + `pytest-asyncio` + `pytest-cov`.
+- `.gitignore` may be extended, but never remove its `reference/` entry.
+- New modules follow the existing `fastatp/` layout. Public exports stay
+  limited to the current `fastatp/__init__.py` list until an addition
+  genuinely needs more.
+
+### When PHILOSOPHY.md and atproto conflict
+
+Keep the philosophy's intent, and follow atproto for serialization and schema
+rules, but never pick a side silently. Leave a `# FASTATP-CONFLICT:` comment
+at the site (or a note in `docs/decisions/`) describing the divergence and the
+choice made. Naming and API shape follow the package's conventions; bytes on
+the wire follow atproto.
+
 ## Contribution mechanics (the short version)
 
 - Read order: `PHILOSOPHY.md` → `README.md` → the ADRs your change touches
@@ -74,7 +151,9 @@ right column:
 - Never commit anything under `reference/` (vendored, gitignored) and never
   add a runtime dependency for a dev convenience.
 - The deterministic test suite is the only merge gate. AI review (yours
-  included) is advisory, never blocking.
+  included) is advisory, never blocking: apply the findings you agree with in
+  a follow-up commit, note any disagreement briefly, and move on. No finding,
+  severity label or review-tool failure is a reason to halt or retry-loop.
 
 One more time, because it is the point of this file: **if the task in front
 of you bends a tenet, say so before you build — and help the human find the
