@@ -24,7 +24,7 @@ prerequisites and run them all. Here is what each needs.
 
 | Test(s) | Proves | Prerequisite |
 | --- | --- | --- |
-| `test_hosted_peer_e2e`, `test_wheel_smoke`, `test_browser_assets` | the shipped browser (WASM) peer works | Build the bundle: `scripts/build-wasm.sh` (needs Rust + `wasm-pack` + the `wasm32-unknown-unknown` target). The bundle is a build artifact, git-ignored; it ships inside the wheel. |
+| `test_hosted_peer_e2e`, `test_wheel_smoke`, `test_browser_assets` | the shipped browser (WASM) peer works | Build the bundle: `scripts/build-wasm.sh` (needs Rust, the `wasm32-unknown-unknown` target, and the exact wasm-pack, wasm-bindgen and wasm-opt versions pinned in `scripts/wasm-tools.env`; on x86_64 Linux, `scripts/install-wasm-tools.sh DIR` installs them hash-checked into `DIR`). The bundle is a build artifact, git-ignored; it ships inside the wheel. |
 | `cross_sdk/test_harvested` | our DAG-CBOR/CID bytes match the reference Rust codec | `libipld` — already in `.[dev]`. |
 | `test_wireguard_rootless_netns` | capability grant/revoke actually gates a real tunnel, unprivileged | `wireguard-tools` (`sudo apt install wireguard-tools`). Runs rootless. |
 | `test_wireguard_netns` | the same, end-to-end through a kernel WireGuard interface | `wireguard-tools` **and** run under `sudo` (creates network namespaces). |

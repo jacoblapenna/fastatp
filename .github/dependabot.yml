@@ -1,9 +1,18 @@
 version: 2
+# Every ecosystem is checked monthly and waits 7 days after an upstream
+# release before proposing it, so a compromised release has time to be caught
+# and yanked first. Security updates ignore both and still arrive right away.
+#
+# Not covered by Dependabot, bumped by hand: uv and Node (UV_VERSION and
+# node-version in the workflows) and the wasm build tools
+# (scripts/wasm-tools.env).
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
     # update uv.lock only; the install floors in pyproject.toml are a
     # compatibility promise to users and change by hand, not by bot
     versioning-strategy: lockfile-only
@@ -13,14 +22,26 @@ updates:
   - package-ecosystem: cargo
     directory: /rust
     schedule:
-      interval: weekly
+      interval: monthly
+    # these crates are compiled into the wasm bundle that ships in the wheel
+    cooldown:
+      default-days: 7
     groups:
       rust:
         patterns: ["*"]
+  - package-ecosystem: rust-toolchain
+    # rust-toolchain.toml at the repo root
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]

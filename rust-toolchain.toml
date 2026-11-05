@@ -1,0 +1,10 @@
+# The exact Rust toolchain for CI, the release build, and local builds.
+# rustup reads this file from any directory in the repo; Dependabot proposes
+# bumps (rust-toolchain ecosystem, with the same 7-day cooldown as the rest).
+# The minimum *supported* Rust version is separate: rust-version in
+# rust/Cargo.toml.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

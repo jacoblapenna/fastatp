@@ -72,6 +72,10 @@ dev = [
     # Rust-backed wheel, no dependency conflict — kept in `dev` so a normal
     # dev install runs it instead of skipping.
     "libipld>=3.4",
+    # the release job builds and checks the dist from the lockfile, never
+    # from whatever is newest on PyPI that day (uv build --no-build-isolation)
+    "hatchling",
+    "twine",
 ]
 # Cross-ecosystem interop test (tests/test_sensorthings_interop.py): an UNMODIFIED
 # third-party package flattens a FastATP-exported CAR. It pulls in the MarshalX
