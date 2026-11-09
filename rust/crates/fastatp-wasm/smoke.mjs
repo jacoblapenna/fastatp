@@ -13,7 +13,7 @@ const glue = await import(path.join(staticDir, "fastatp_wasm.js"));
 const wasmBytes = await readFile(path.join(staticDir, "fastatp_wasm_bg.wasm"));
 await glue.default({ module_or_path: wasmBytes });
 
-const { connection_zero, verify_proof, bundle_version } = glue;
+const { connection_zero, verify_proof, bundle_version, generate_pen, pen_did } = glue;
 
 // --- connection zero ---------------------------------------------------------
 const bundle = await connection_zero("shelf.example");
@@ -62,6 +62,41 @@ const sig = await peer.sign_challenge("test-nonce-abc");
 assert.match(sig, /^[A-Za-z0-9_-]{80,96}$/, "base64url unpadded 64-byte signature");
 const sig2 = await peer.sign_challenge("test-nonce-abc");
 assert.ok(sig.length === sig2.length, "signatures well-formed across calls");
+
+// --- pens as handles: generate_pen / pen_did ----------------------------------------
+const pen = await generate_pen();
+assert.equal(pen.privateKey.extractable, false, "pen private key is non-extractable");
+assert.equal(pen.privateKey.algorithm.name, "ECDSA");
+assert.equal(pen.privateKey.algorithm.namedCurve, "P-256");
+const penDid = await pen_did(pen);
+assert.match(penDid, /^did:key:zDn[1-9A-HJ-NP-Za-km-z]+$/, "p256 did:key");
+assert.equal(await pen_did(pen), penDid, "same pair, same did:key");
+assert.notEqual(await pen_did(await generate_pen()), penDid, "each pen is new");
+
+// IndexedDB stores a pen by structured clone; the clone stays non-extractable
+// and still signs (pen_did signs and verifies a probe to check the pair)
+const cloned = structuredClone(pen);
+assert.equal(cloned.privateKey.extractable, false, "clone stays non-extractable");
+assert.equal(await pen_did(cloned), penDid, "the cloned pen is the same pen and still signs");
+
+const subtle = globalThis.crypto.subtle;
+const ecdsa = (namedCurve, extractable) =>
+  subtle.generateKey({ name: "ECDSA", namedCurve }, extractable, ["sign", "verify"]);
+await assert.rejects(pen_did(await ecdsa("P-256", true)), /extractable/, "extractable pen refused");
+await assert.rejects(pen_did(await ecdsa("P-384", false)), /P-256/, "wrong curve refused");
+const otherPen = await generate_pen();
+await assert.rejects(
+  pen_did({ privateKey: pen.privateKey, publicKey: otherPen.publicKey }),
+  /not a pair/,
+  "halves of two different pens refused",
+);
+await assert.rejects(
+  pen_did({ privateKey: pen.publicKey, publicKey: pen.publicKey }),
+  /private key/,
+  "a public key in the privateKey slot refused",
+);
+await assert.rejects(pen_did(null), /null or undefined/);
+await assert.rejects(pen_did({ privateKey: pen.privateKey }), /publicKey/);
 
 // --- export + version -------------------------------------------------------------
 const car = peer.export_car();

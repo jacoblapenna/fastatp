@@ -24,7 +24,7 @@ use fastatp_core::mst::MemoryBlockStore;
 use fastatp_core::repo::{ExternalClock, Repo};
 
 use convert::{json_to_value, value_to_json};
-use webcrypto::{random_bytes, WebCryptoSigner};
+use webcrypto::{generate_key_pair, random_bytes, WebCryptoSigner};
 
 fn js_error(context: &str, error: impl std::fmt::Debug) -> JsError {
     JsError::new(&format!("{context}: {error:?}"))
@@ -235,6 +235,28 @@ impl BrowserPeer {
             .map_err(|e| js_error("sign_challenge", e))?;
         Ok(data_encoding::BASE64URL_NOPAD.encode(&signature))
     }
+}
+
+/// Mint a new pen: a WebCrypto `CryptoKeyPair` whose private key is ECDSA
+/// P-256 and non-extractable. The page can store it in IndexedDB (structured
+/// clone keeps it non-extractable) and hand it back after a reload; its bytes
+/// never enter wasm memory or JavaScript.
+#[wasm_bindgen]
+pub async fn generate_pen() -> Result<JsValue, JsError> {
+    generate_key_pair()
+        .await
+        .map_err(|e| js_error("webcrypto keygen", e))
+}
+
+/// The `did:key` of a pen, for showing it during enrollment or checking a
+/// stored pen is the right one. Refuses anything that is not a matching,
+/// non-extractable ECDSA P-256 pair, as every entry point taking a pen does.
+#[wasm_bindgen]
+pub async fn pen_did(key_pair: JsValue) -> Result<String, JsError> {
+    let pen = WebCryptoSigner::from_key_pair(&key_pair)
+        .await
+        .map_err(|e| js_error("pen", e))?;
+    Ok(format!("did:key:{}", pen.public_multikey()))
 }
 
 /// Verify a record proof against a did:key or multikey; returns the verified
