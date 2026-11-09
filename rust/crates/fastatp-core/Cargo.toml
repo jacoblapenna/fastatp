@@ -1,6 +1,6 @@
 [package]
 name = "fastatp-core"
-version = "0.2.0"
+version = "0.2.1-dev.0"
 description = "AT Protocol wire-format core: dag-cbor, CID, TID, MST, CAR, signed commits (FastATP)"
 # Not published yet; remove when fastatp-core ships to crates.io.
 publish = false

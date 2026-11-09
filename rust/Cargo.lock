@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "fastatp-core"
-version = "0.2.0"
+version = "0.2.1-dev.0"
 dependencies = [
  "bs58",
  "data-encoding",
@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "fastatp-cross"
-version = "0.2.0"
+version = "0.2.1-dev.0"
 dependencies = [
  "fastatp-core",
  "pollster",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "fastatp-wasm"
-version = "0.2.0"
+version = "0.2.1-dev.0"
 dependencies = [
  "data-encoding",
  "fastatp-core",
