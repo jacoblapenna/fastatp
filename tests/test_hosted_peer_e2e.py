@@ -87,6 +87,17 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     hosted = builder.handles[twin].repo
     assert live_capabilities(hosted) == {}  # nobody is admitted by record, ever
 
+    # each device writes its own repo: device 2's is hosted on first push,
+    # verified against its DID (its pen), and only that pen reads it back
+    assert phases["push-device2-repo"] == 201
+    assert phases["owner-pull-device2-repo"] == 200
+    assert phases["stranger-pull-device2-repo"] == 404
+    device2 = builder.handles[report["pen2_did"]].repo
+    assert device2.commit.verify(crypto.decode_did_key(report["pen2_did"]))
+    d2_note = device2.get_record("com.example.hosted.note", "d2-1")
+    assert d2_note is not None and d2_note["text"] == "written on device 2"
+    assert live_capabilities(device2) == {}
+
     # device 2, delegated by a record PRESENT in the hosted repo, knocks as the
     # identity and syncs the full repo (multi-device sync)
     assert phases["sync-device2"] == 200

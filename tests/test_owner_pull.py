@@ -24,7 +24,7 @@ from fastatp.exceptions import RepoError
 from fastatp.repo.repo import Repo
 from fastatp.repo.sync import decode_frame
 from fastatp.server.browser_gate import CHALLENGE_PATH, BrowserGate, challenge_message
-from fastatp.server.peer_server import FIREHOSE_PATH, GET_REPO_PATH
+from fastatp.server.peer_server import FIREHOSE_PATH, GET_REPO_PATH, ResolvedCaller
 from fastatp.tid import generate_tid
 
 ROOT = "did:web:user.shelf.example:aaaabbbbccccddddeeeeffffgggghhhh"
@@ -35,12 +35,17 @@ def _pen(curve: str = "p256"):
     return key, crypto.encode_did_key(key.public_key())
 
 
-def _server(caller: str | None) -> PeerServer:
-    """A server whose doorman identity is whatever the test says it is."""
+def _server(caller: str | None, proof: str | None = "signature") -> PeerServer:
+    """A server whose doorman identity is whatever the test says it is: by
+    default a pen that signed a challenge, the browser gate's strongest
+    proof. ``proof=None`` injects a bare, unscoped DID."""
     builder_key = crypto.generate_keypair("k256")
+    resolved: str | ResolvedCaller | None = caller
+    if caller is not None and proof is not None:
+        resolved = ResolvedCaller(caller, proof)
     return PeerServer(
         Peer(did="did:web:builder.example", signing_key=builder_key),
-        identity_resolver=lambda conn: caller,
+        identity_resolver=lambda conn: resolved,
     )
 
 
@@ -111,9 +116,9 @@ async def test_the_identity_itself_is_an_owner_of_its_own_repo(serve_app):
     record in this repo (a device speaking for the identity), so it reads
     with no capability. Only when owner pull is on."""
     pen_key, _ = _pen()
-    on = _server(caller=ROOT)
+    on = _server(caller=ROOT, proof=f"repo:{ROOT}")  # a delegation in ROOT's own repo
     on.register(Repo(ROOT, pen_key), owner_pull=True)
-    off = _server(caller=ROOT)
+    off = _server(caller=ROOT, proof=f"repo:{ROOT}")
     off.register(Repo(ROOT, pen_key))
 
     async with serve_app(on.app) as port:
@@ -183,10 +188,13 @@ async def test_the_default_rule_keeps_a_rotated_out_pen_until_the_new_one_pushes
 def test_a_non_did_key_caller_and_a_malformed_did_key_are_not_owners():
     pen_key, pen_did = _pen()
     host = SimpleNamespace(repo=Repo(ROOT, pen_key), owner_pull=True, did=ROOT)
-    assert PeerServer._is_owner(pen_did, host) is True  # type: ignore[arg-type]
-    assert PeerServer._is_owner(ROOT, host) is True  # type: ignore[arg-type]
-    assert PeerServer._is_owner("did:web:x", host) is False  # type: ignore[arg-type]
-    assert PeerServer._is_owner("did:key:zNotAKey", host) is False  # type: ignore[arg-type]
+    here = f"repo:{ROOT}"
+    is_owner = PeerServer._is_owner
+    assert is_owner(ResolvedCaller(pen_did, "signature"), host) is True  # type: ignore[arg-type]
+    assert is_owner(ResolvedCaller(pen_did, here), host) is True  # type: ignore[arg-type]
+    assert is_owner(ResolvedCaller(ROOT, here), host) is True  # type: ignore[arg-type]
+    assert is_owner(ResolvedCaller("did:web:x", here), host) is False  # type: ignore[arg-type]
+    assert is_owner(ResolvedCaller("did:key:zNotAKey", "signature"), host) is False  # type: ignore[arg-type]
 
 
 # --- through the browser gate: the knock with no iss is the owner's ----------------
@@ -233,3 +241,56 @@ async def test_the_browser_pen_pulls_its_own_repo_with_no_record_naming_it(serve
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- the proof must be this repo's own ---------------------------------------------
+
+
+async def test_an_unscoped_identity_is_never_an_owner(serve_app):
+    """A resolver that returns a bare DID has not said how it knows. That is
+    enough for the capability rule, never for owner pull."""
+    pen_key, pen_did = _pen()
+    srv = _server(caller=pen_did, proof=None)
+    handle = srv.register(Repo(ROOT, pen_key), owner_pull=True)
+
+    async with serve_app(srv.app) as port:
+        assert (await _get_repo(port, ROOT)).status_code == 404
+        handle.put_record(
+            Capability.nsid, generate_tid(), Capability(subject=pen_did, actions=["subscribe"])
+        )
+        assert (await _get_repo(port, ROOT)).status_code == 200  # capability rule still works
+
+
+async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
+    """The P1 the reviewer caught: the tunnel map is the union of every
+    hosted repo's capabilities, so a host of some OTHER repo could write a
+    capability naming this repo's DID (or its pen) with their own tunnel IP
+    and read this repo as its owner. The binding's repo is the proof's
+    scope; only this repo's own binding counts."""
+    pen_key, pen_did = _pen()
+    builder_key = crypto.generate_keypair("k256")
+    # the default TunnelIdentityResolver: loopback is the "tunnel" here
+    srv = PeerServer(Peer(did="did:web:builder.example", signing_key=builder_key))
+    victim = srv.register(Repo(ROOT, pen_key), owner_pull=True)
+    attacker = srv.register(Repo("did:web:attacker.example:x", crypto.generate_keypair("k256")))
+    for claimed in (ROOT, pen_did):
+        attacker.put_record(
+            Capability.nsid,
+            generate_tid(),
+            Capability(subject=claimed, actions=["send"], wg_tunnel_ip="127.0.0.1"),
+        )
+
+    async with serve_app(srv.app) as port:
+        assert (await _get_repo(port, ROOT)).status_code == 404  # resolved as ROOT/pen, not owner
+
+    # the same binding written by the repo itself IS the owner's own word
+    # (the attacker's repo goes first: two repos binding one IP shadow each
+    # other, last registered wins, and that is a separate, older question)
+    attacker.unregister()
+    victim.put_record(
+        Capability.nsid,
+        generate_tid(),
+        Capability(subject=pen_did, actions=["send"], wg_tunnel_ip="127.0.0.1"),
+    )
+    async with serve_app(srv.app) as port:
+        assert (await _get_repo(port, ROOT)).status_code == 200

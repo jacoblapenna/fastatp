@@ -111,6 +111,7 @@ mod tests {
             "did:Web:x",
             "did:web:x:",
             "did:web:x%",
+            "did:web:x\n",
         ] {
             assert_eq!(
                 challenge_message(did, NONCE),
@@ -131,6 +132,7 @@ mod tests {
             "",
             "has space",
             "has\nnewline",
+            "nonce\n",
             "padded==",
             "plus+slash/",
             "did:web:x",

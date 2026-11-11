@@ -72,7 +72,9 @@ fn date_now_clock() -> Result<ExternalClock<fn() -> u64>, JsError> {
 
 /// Everything connection zero mints client-side (HOSTED-PEERS.md): the
 /// identity's name is computed, not assigned. `rotation_secret` is the paper
-/// root shown ONCE — this bundle is its only carrier; nothing here retains it.
+/// root shown ONCE — this bundle is its carrier until it is freed (the wasm
+/// copy is wiped then); the JavaScript string the getter returns is the
+/// app's to show and forget, and the bindings cannot wipe it.
 #[wasm_bindgen]
 pub struct ConnectionZeroBundle {
     twin_did: String,
@@ -82,6 +84,12 @@ pub struct ConnectionZeroBundle {
     genesis_car: Vec<u8>,
     rotation_secret: String,
     peer: Option<BrowserPeer>,
+}
+
+impl Drop for ConnectionZeroBundle {
+    fn drop(&mut self) {
+        self.rotation_secret.zeroize();
+    }
 }
 
 #[wasm_bindgen]
@@ -204,14 +212,17 @@ pub async fn rotate_pen(
     secret_hex: String,
     key_pair: JsValue,
 ) -> Result<String, JsError> {
+    // the secret first: paper_root_key consumes and wipes the typed string on
+    // every path, and the key it returns wipes itself on drop, so whichever
+    // check below fails, no copy of the secret outlives this call
+    let rotation_key = paper_root_key(secret_hex)?;
     let parsed: serde_json::Value =
         serde_json::from_str(&chain_json).map_err(|e| js_error("rotate: chain", e))?;
     let mut chain =
         Chain::from_value(&json_to_value(&parsed).map_err(|e| js_error("rotate: chain", e))?)
             .map_err(|e| js_error("rotate: chain", e))?;
     chain.verify().map_err(|e| js_error("rotate: chain", e))?;
-    let (pen, _) = checked_pen(&key_pair).await?;
-    let rotation_key = paper_root_key(secret_hex)?;
+    let (pen, _) = checked_pen(&key_pair).await?; // signs only its fixed pair probe
 
     let head = chain.head();
     let twin = chain.twin_did().map_err(|e| js_error("rotate: chain", e))?;

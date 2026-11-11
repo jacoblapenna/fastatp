@@ -170,14 +170,17 @@ sovereign admission policy — edge business logic, never substrate.
 - **The pen is a handle.** Every binding takes and returns a WebCrypto
   `CryptoKeyPair` (ECDSA P-256, `extractable: false`) and re-checks it on
   the way in: curve, type, the flag read back from the browser, and that
-  the halves are a pair. Key bytes never enter wasm or JavaScript.
+  the halves are a pair. Private-key bytes never enter wasm or JavaScript
+  (the public half is exported to name the pen).
   `generate_pen()` mints one; `pen_did(pair)` names it;
   `connection_zero(domain, pair)` signs up with it;
   `BrowserPeer.create(did, pair)` starts a repo for any DID (a device repo
   is the pen's own `did:key`); `BrowserPeer.restore(car, pair, verify?)`
-  rebuilds one from a stored or pulled CAR, checking the head against the
-  pen that signed it, and never writes a lower rev than the restored head
-  even when the device clock is behind.
+  rebuilds one from a stored or pulled CAR; with `verify` it checks the
+  head against the pen named, and without it only content addressing is
+  checked, so a CAR from an untrusted host must be restored with `verify`.
+  Either way it never writes a lower rev than the restored head, even when
+  the device clock is behind.
 - **IMPORTANT — saving a pen is "keep me signed in".** The bindings store
   nothing. A pen lives in memory and is gone with the tab unless the app
   puts the handle in IndexedDB (structured clone keeps it non-extractable)
@@ -211,17 +214,20 @@ sovereign admission policy — edge business logic, never substrate.
   not a subscriber; a pen reading its own repo back from the host is the
   peer reaching its own storage. The pen still proves itself (WireGuard
   identity, or the browser's signed knock, with `iss` omitted for the pen
-  or set to the identity for a device), and everyone else goes through the
-  capability rule.
+  or set to the identity for a device), and the proof must be this repo's
+  own — a signature, or a binding or delegation in this repo's records —
+  since any hosted repo can write a record naming any DID. Everyone else
+  goes through the capability rule.
   The host answers "which pen writes this repo" either from the head commit
   (`True`) or from its own knowledge of the identity's chain head (a rule),
   which is what admits a freshly rotated pen before it has pushed.
 - Hosted repos whose pen lives on another peer are **read-only on the
   host**. Today the host's `Repo` object still carries whatever key it was
   built with, and nothing in the process stops a write; what stops the host
-  forging is that every reader verifies against the identity's real pen, so
-  a host-signed commit fails everywhere (`restore` with a verify key, any
-  mirror, the next push's `verify_key`). The planned external-signer work
+  forging is that readers that verify against the identity's real pen
+  reject it (`restore` with a verify key, a mirror, the next push's
+  `verify_key`), and a reader that skips verification has trusted the host
+  by choice. The planned external-signer work
   makes this mechanical: a repo can be opened **frozen** (no pen on this
   host, every write raises), and an `owner_pull` registration will require
   it, so a host serving a repo to its pen can never hold a pen for it.

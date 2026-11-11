@@ -54,14 +54,23 @@ pub trait RevClock {
 
     /// Note a rev this repo already has (its restored head), so every later
     /// `next_rev` is strictly greater even when the clock runs behind it.
-    /// The default does nothing; [`ExternalClock`] honors it.
-    fn observe(&mut self, _rev: &str) {}
+    /// Required, not defaulted: a clock that ignored it would let a restored
+    /// repo write a rev below its own head.
+    fn observe(&mut self, rev: &str);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl RevClock for tid::TidClock {
     fn next_rev(&mut self) -> String {
         self.now()
+    }
+
+    fn observe(&mut self, rev: &str) {
+        // an undecodable rev is a repo problem the load path reports; the
+        // clock just has nothing to learn from it
+        if let Ok((timestamp_us, _clock_id)) = tid::decode_tid(rev) {
+            self.observe_us(timestamp_us);
+        }
     }
 }
 
@@ -541,6 +550,7 @@ impl<S: Signer> Repo<S> {
         self.root = commit.data.clone();
         self.mst_nodes = mst::node_cids(self.store.as_ref(), &self.root)?;
         self.entries = entries;
+        self.clock.observe(&commit.rev); // the next rev sorts after this head, clock or no clock
         self.commit = commit;
         self.collect_garbage();
         Ok(())

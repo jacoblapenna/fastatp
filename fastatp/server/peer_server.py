@@ -29,6 +29,7 @@ import inspect
 import logging
 from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -68,12 +69,38 @@ _EVICTED = -1  # queue sentinel: subscriber fell behind and was evicted
 _LOOPBACK = frozenset({None, "127.0.0.1", "::1", "localhost"})
 _PROXY_TRACK_MAX = 4096  # LRU cap on the diagnostic proxy-detection tracking
 
-CallerResolver = Callable[[HTTPConnection], "str | Awaitable[str | None] | None"]
-"""``resolve(connection) -> did | None`` (sync or async): the doorman's identity
-seam. Maps an inbound firehose/getRepo connection to the admitted caller's DID,
-or ``None`` if it cannot be tied to one. Default: ``TunnelIdentityResolver``
-(WireGuard cryptokey routing — source tunnel IP -> DID). Injectable so tests
-supply a fake and other enforcement planes (e.g. a tailnet) supply their own."""
+
+@dataclass(frozen=True)
+class ResolvedCaller:
+    """Who is asking, and what proved it.
+
+    ``proof`` is the scope of the evidence: ``"signature"`` when the caller
+    signed a challenge with the key its ``did:key`` names; ``"repo:<did>"``
+    when the identity was established by records in that repo (a WireGuard
+    tunnel bound by a capability there, or a delegation chain rooted there);
+    ``None`` when the resolver did not say. The capability rule needs only
+    the DID. The owner rule needs the proof to be a signature or to come
+    from the repo being read, because any hosted repo's records can name
+    any DID, and a record in *another* repo must never make someone the
+    owner of this one.
+    """
+
+    did: str
+    proof: str | None = None
+
+
+CallerResolver = Callable[
+    [HTTPConnection],
+    "str | ResolvedCaller | Awaitable[str | ResolvedCaller | None] | None",
+]
+"""``resolve(connection) -> did | ResolvedCaller | None`` (sync or async): the
+doorman's identity seam. Maps an inbound firehose/getRepo connection to the
+admitted caller's DID, or ``None`` if it cannot be tied to one. A bare DID is
+an unscoped identity: good for the capability rule, never for owner pull.
+Default: ``TunnelIdentityResolver`` (WireGuard cryptokey routing — source
+tunnel IP -> DID, scoped to the repo whose capability bound it). Injectable so
+tests supply a fake and other enforcement planes (e.g. a tailnet) supply
+their own."""
 
 OwnerRule = Callable[[Repo], "str | None"]
 """``rule(repo) -> did:key | None``: a builder's answer to "which pen writes
@@ -249,11 +276,15 @@ class TunnelIdentityResolver:
     def __init__(self, server: PeerServer) -> None:
         self._server = server
 
-    def __call__(self, conn: HTTPConnection) -> str | None:
+    def __call__(self, conn: HTTPConnection) -> ResolvedCaller | None:
         ip = _source_ip(conn)
         if ip is None:
             return None
-        return self._server._ip_to_did().get(ip)
+        bound = self._server._ip_to_did().get(ip)
+        if bound is None:
+            return None
+        did, repo_did = bound
+        return ResolvedCaller(did, proof=f"repo:{repo_did}")
 
 
 class RepoHandle:
@@ -548,25 +579,31 @@ class PeerServer:
 
     # --- the doorman (per-repo read gating) ------------------------------------
 
-    def _ip_to_did(self) -> dict[str, str]:
-        """Source tunnel IP -> DID, from every hosted repo's live capabilities.
+    def _ip_to_did(self) -> dict[str, tuple[str, str]]:
+        """Source tunnel IP -> (DID, the repo whose capability bound it), from
+        every hosted repo's live capabilities.
 
         The signed IP<->DID binding lives in by-public-key capabilities
         (``wg_tunnel_ip``). Rebuilt per lookup: repos are few and
-        in-memory, and a stale map must never outlive a revocation.
+        in-memory, and a stale map must never outlive a revocation. The repo
+        is kept because a binding is only that repo's word: it admits the DID
+        to repos that hold a capability for it, and makes it an *owner* only
+        of the repo that wrote the binding.
         """
-        mapping: dict[str, str] = {}
+        mapping: dict[str, tuple[str, str]] = {}
         for host in self._hosts.values():
             for subject, (_rkey, cap) in live_capabilities(host.repo).items():
                 if cap.wg_tunnel_ip:
-                    mapping[cap.wg_tunnel_ip] = subject
+                    mapping[cap.wg_tunnel_ip] = (subject, host.did)
         return mapping
 
-    async def _resolve_caller(self, conn: HTTPConnection) -> str | None:
+    async def _resolve_caller(self, conn: HTTPConnection) -> ResolvedCaller | None:
         result = self.identity_resolver(conn)
         if inspect.isawaitable(result):
             result = await result
-        return result
+        if result is None or isinstance(result, ResolvedCaller):
+            return result
+        return ResolvedCaller(result)  # a bare DID: identity without a stated proof
 
     async def _admit_read(self, conn: HTTPConnection, host: _HostedRepo) -> tuple[bool, str]:
         """Doorman verdict for a read of ``host``: ``(allowed, reason)``.
@@ -582,7 +619,7 @@ class PeerServer:
         return self._admit_caller(conn, await self._resolve_caller(conn), host)
 
     def _admit_caller(
-        self, conn: HTTPConnection, caller: str | None, host: _HostedRepo
+        self, conn: HTTPConnection, caller: ResolvedCaller | None, host: _HostedRepo
     ) -> tuple[bool, str]:
         """:meth:`_admit_read` with the caller already resolved."""
         if host.public:
@@ -592,9 +629,9 @@ class PeerServer:
             return False, "caller could not be tied to a tunnel identity"
         if host.owner_pull is not False and self._is_owner(caller, host):
             return True, ""
-        entry = live_capabilities(host.repo).get(caller)
+        entry = live_capabilities(host.repo).get(caller.did)
         if entry is None or ACTION_SUBSCRIBE not in entry[1].actions:
-            return False, f"{caller} is not admitted to {host.did}"
+            return False, f"{caller.did} is not admitted to {host.did}"
         return True, ""
 
     async def _open_read(self, conn: HTTPConnection, did: str | None) -> _HostedRepo | None:
@@ -616,23 +653,31 @@ class PeerServer:
         return host if allowed else None
 
     @staticmethod
-    def _is_owner(caller: str, host: _HostedRepo) -> bool:
+    def _is_owner(caller: ResolvedCaller, host: _HostedRepo) -> bool:
         """Is ``caller`` the owner of ``host``'s repo: the pen that writes it,
-        or the identity itself? A caller equal to the repo's own DID got
-        there through a live delegation record *in this repo* (that is the
-        only way a document DID resolves), so it is the identity reading its
-        own repo through one of its devices. Any other document DID is a
-        different identity, never a pen."""
-        if caller == host.did:
-            return True
-        if not caller.startswith("did:key:"):
-            return False
-        if callable(host.owner_pull):
-            return host.owner_pull(host.repo) == caller
-        try:
-            return host.repo.commit.verify(decode_did_key(caller))
-        except (CryptoError, ValueError):  # not a key at all: not an owner, not an error
-            return False
+        or the identity itself?
+
+        The proof must be this repo's own: a signature by the pen, or a
+        binding or delegation chain rooted in **this** repo's records. An
+        unscoped DID, or one established by another hosted repo's records,
+        is never an owner here, whatever it says — any repo can write a
+        record naming any DID. The identity itself (``caller.did ==
+        host.did``) only ever resolves through a delegation in this repo,
+        so with that proof it is the identity reading its own repo through
+        one of its devices. Any other document DID is a different identity,
+        never a pen.
+        """
+        here = f"repo:{host.did}"
+        if caller.did.startswith("did:key:") and caller.proof in ("signature", here):
+            # a pen: is it the one that writes this repo? (a device repo's DID
+            # is its own pen, so this covers a pen pulling its own repo too)
+            if callable(host.owner_pull):
+                return host.owner_pull(host.repo) == caller.did
+            try:
+                return host.repo.commit.verify(decode_did_key(caller.did))
+            except (CryptoError, ValueError):  # not a key at all: not an owner, not an error
+                return False
+        return caller.did == host.did and caller.proof == here
 
     def _warn_if_proxy(self, conn: HTTPConnection, host: _HostedRepo) -> None:
         """Loudly diagnose the likely cause of an unidentifiable gated read.
@@ -699,6 +744,9 @@ class PeerServer:
             )
         limit = max(1, min(limit, 1000))
         cursor = request.query_params.get("cursor")
+        # resolve the caller ONCE for the whole listing: a browser knock is a
+        # single-use nonce, and resolving per repo would spend it on the first
+        caller = await self._resolve_caller(request)
         visible = []
         for did in sorted(self._hosts):
             if cursor is not None and did <= cursor:
@@ -706,7 +754,7 @@ class PeerServer:
             host = self._resolve_host(did)
             if host is None:
                 continue
-            allowed, _reason = await self._admit_read(request, host)
+            allowed, _reason = self._admit_caller(request, caller, host)
             if not allowed:
                 continue
             visible.append(host)

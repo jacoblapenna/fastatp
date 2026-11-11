@@ -113,9 +113,13 @@ The new pen then pulls the repo as its owner, restores it (verifying the
 head against the old pen, which signed it), prunes the lost devices'
 delegations, and pushes. The old pen can neither pull nor push.
 
-The secret is in wasm memory only for the derivation or the one signature,
-exactly as `connection_zero` holds it when minting, and every buffer that
-held it is wiped before returning. The bundle's interface for the secret is
+In `rotation_did_from_secret` and `rotate_pen` the secret is in wasm
+memory only for the derivation or the one signature, and every wasm buffer
+that held it is wiped before returning, on every exit path.
+`connection_zero` is the one place that hands the secret out: the bundle
+carries it until the app frees the bundle (the wasm copy is wiped then),
+and the JavaScript string the getter returns is the app's to show once and
+forget; the bindings cannot wipe a JavaScript string. The bundle's interface for the secret is
 64 hex characters; how an app shows it (a word phrase, a QR card) and how
 many rotation keys it mints are app presentation.
 

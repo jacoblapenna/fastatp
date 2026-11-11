@@ -50,7 +50,12 @@ cat /tmp/hosted-demo/report.json
    The pen-signed CAR is pushed; the router verifies and re-hosts it. Then
    device 1 **reads its own repo back as its owner**: one knock
    (`sign_challenge(pen, nonce, repo_did)`), no capability record, no
-   delegation. The owner is not a subscriber.
+   delegation. The owner is not a subscriber. **Device 2 writes its own
+   repo** (`BrowserPeer.create(pen2_did, pen2)`: each device writes its own;
+   the identity's repo only names it), pushes it — the host verifies the
+   CAR against the DID itself, since a device repo's DID *is* its pen, and
+   hosts it with owner pull on — and reads it back as its owner. Device 1's
+   pen, the identity's main pen, is refused it.
 4. **Device 2 syncs** with the same knock plus `iss`: its pen resolves to
    the identity **through the live delegation chain**, and the identity
    reads its own repo — presence IS authorization.
@@ -76,14 +81,16 @@ cat /tmp/hosted-demo/report.json
 ## The enrollment ceremony, honestly simulated
 
 Every "device" here is a WebCrypto pen minted in the same Node process with
-`generate_pen()`; none needs a repo of its own for any of this, because the
-knock is about the repo being asked for. On real hardware the ceremony is
+`generate_pen()`; only device 2 goes on to create its own repo, because the
+knock needs none — it is about the repo being asked for. On real hardware the ceremony is
 two devices exchanging exactly the two strings this example exchanges: the
 new device shows its `pen_did` (a QR code); an existing device writes the
 delegation record naming it. Public key one way, record presence the other
 — nothing else moves. Recovery is likewise simulated by minting a new pen
-and feeding the paper secret the first phase printed; on real hardware the
-secret comes from the drawer.
+and feeding it the paper secret from phase 1, which the client keeps in
+memory (and writes to `report.json` so the test can grep every wire body
+for it). A real app shows the secret once and keeps no copy; on real
+hardware it comes back from the drawer.
 
 ## Honest limits of the example
 

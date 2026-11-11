@@ -245,6 +245,34 @@ async def test_a_knock_for_an_unhosted_did_still_burns_its_nonce(serve_app):
         assert (await _get_repo(port, ROOT, fresh)).status_code == 200
 
 
+async def test_list_repos_resolves_a_knock_once_and_lists_what_the_pen_holds(serve_app):
+    """A knock is single-use. listRepos resolves the caller once for the whole
+    listing (not per repo, which would spend the nonce on the first), then
+    applies the capability rule per repo: the pen sees every gated repo its
+    identity is admitted to, naming its own root as ``did``."""
+    from fastatp.server.peer_server import LIST_REPOS_PATH
+
+    srv, _gate = _server_with_gate()
+    handle = _user_repo(srv)
+    other = srv.register(Repo("did:web:other.example:x", crypto.generate_keypair("k256")))
+    other.put_record(
+        Capability.nsid, generate_tid(), Capability(subject=ROOT, actions=["subscribe"])
+    )
+    hidden = srv.register(Repo("did:web:hidden.example:x", crypto.generate_keypair("k256")))
+    pen_key, pen_did = _pen()
+    _delegate(handle, pen_did)
+
+    async with serve_app(srv.app) as port, httpx.AsyncClient() as client:
+        anonymous = await client.get(f"http://127.0.0.1:{port}{LIST_REPOS_PATH}")
+        assert [r["did"] for r in anonymous.json()["repos"]] == ["did:web:builder.example"]
+        nonce = await _nonce(port)
+        params = {"did": ROOT, **_params(pen_did, nonce, _sign(pen_key, nonce))}
+        listed = await client.get(f"http://127.0.0.1:{port}{LIST_REPOS_PATH}", params=params)
+        dids = {r["did"] for r in listed.json()["repos"]}
+        assert ROOT in dids and other.did in dids
+        assert hidden.did not in dids
+
+
 # --- unit: the challenge message, nonce lifecycle and composition -------------------
 
 
@@ -263,7 +291,17 @@ def test_challenge_message_can_never_look_like_dag_cbor():
 
 
 @pytest.mark.parametrize(
-    "did", ["", "shelf.example", "did:", "did:web:", "did:Web:x", "did:web:x:", "did:web:x%"]
+    "did",
+    [
+        "",
+        "shelf.example",
+        "did:",
+        "did:web:",
+        "did:Web:x",
+        "did:web:x:",
+        "did:web:x%",
+        "did:web:x\n",
+    ],
 )
 def test_challenge_message_refuses_bad_dids(did):
     with pytest.raises(ValueError, match="DID"):
@@ -273,7 +311,8 @@ def test_challenge_message_refuses_bad_dids(did):
 
 
 @pytest.mark.parametrize(
-    "nonce", ["", "has space", "has\nnewline", "padded==", "plus+slash/", "did:web:x"]
+    "nonce",
+    ["", "has space", "has\nnewline", "nonce\n", "padded==", "plus+slash/", "did:web:x"],
 )
 def test_challenge_message_refuses_bad_nonces(nonce):
     with pytest.raises(ValueError, match="nonce"):

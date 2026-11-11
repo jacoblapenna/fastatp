@@ -117,6 +117,16 @@ impl TidClock {
         *last = timestamp_us;
         encode_tid(timestamp_us, self.clock_id).expect("clock produces in-range TIDs")
     }
+
+    /// Never issue a TID at or below `timestamp_us` from now on: a repo
+    /// loaded from a CAR or a durable head passes its head rev's timestamp,
+    /// so the next commit sorts after it even when this clock runs behind
+    /// the one that wrote it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn observe_us(&self, timestamp_us: u64) {
+        let mut last = self.last_us.lock().expect("tid clock lock poisoned");
+        *last = (*last).max(timestamp_us);
+    }
 }
 
 /// A fresh, monotonically-increasing TID from the process-wide clock.

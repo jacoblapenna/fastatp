@@ -47,7 +47,7 @@ from starlette.routing import Route
 
 from fastatp.authz.delegation import RepoSource, walk_delegation_chain
 from fastatp.crypto import decode_did_key, verify_signature
-from fastatp.server.peer_server import CallerResolver, PeerServer
+from fastatp.server.peer_server import CallerResolver, PeerServer, ResolvedCaller
 
 CHALLENGE_PATH = "/xrpc/dev.fastatp.auth.getChallenge"
 
@@ -59,8 +59,10 @@ MAX_NONCE_LEN = 256
 
 # atproto DID syntax (spec: did): lowercase method, id from [A-Za-z0-9._:%-],
 # not ending in ':' or '%'. Syntax only; resolving is the app's business.
-_DID_RE = re.compile(r"^did:[a-z]+:[A-Za-z0-9._:%-]*[A-Za-z0-9._-]$")
-_NONCE_RE = re.compile(rf"^[A-Za-z0-9_-]{{1,{MAX_NONCE_LEN}}}$")
+# fullmatch, never match()+$: "$" would accept a trailing newline, which the
+# Rust side refuses, and the framing depends on neither field holding one
+_DID_RE = re.compile(r"did:[a-z]+:[A-Za-z0-9._:%-]*[A-Za-z0-9._-]")
+_NONCE_RE = re.compile(rf"[A-Za-z0-9_-]{{1,{MAX_NONCE_LEN}}}")
 
 
 def challenge_message(repo_did: str, nonce: str) -> bytes:
@@ -69,9 +71,9 @@ def challenge_message(repo_did: str, nonce: str) -> bytes:
     tricked into signing anything else (a commit, a proof, another repo's
     challenge); neither field may hold a newline, so the framing is
     unambiguous. Raises ``ValueError`` on a malformed DID or nonce."""
-    if len(repo_did) > 2048 or not _DID_RE.match(repo_did):
+    if len(repo_did) > 2048 or not _DID_RE.fullmatch(repo_did):
         raise ValueError(f"not a valid DID: {repo_did!r}")
-    if not _NONCE_RE.match(nonce):
+    if not _NONCE_RE.fullmatch(nonce):
         raise ValueError(f"not a valid nonce (base64url, 1..={MAX_NONCE_LEN} chars): {nonce!r}")
     return f"{CHALLENGE_LABEL}\n{repo_did}\n{nonce}".encode("ascii")
 
@@ -87,7 +89,7 @@ def compose_caller_resolvers(*resolvers: CallerResolver) -> CallerResolver:
     tunnel identity when the connection has one, signed challenge otherwise.
     """
 
-    async def resolve(conn: HTTPConnection) -> str | None:
+    async def resolve(conn: HTTPConnection) -> str | ResolvedCaller | None:
         for resolver in resolvers:
             result = resolver(conn)
             if inspect.isawaitable(result):
@@ -145,12 +147,15 @@ class BrowserGate:
 
     # --- the CallerResolver -----------------------------------------------------
 
-    async def resolve(self, conn: HTTPConnection) -> str | None:
-        """Signed presentation → caller DID, or ``None`` (always fail closed).
+    async def resolve(self, conn: HTTPConnection) -> ResolvedCaller | None:
+        """Signed presentation → caller, or ``None`` (always fail closed).
 
         Every failure mode — missing params, unknown/expired/replayed nonce,
         undecodable pen, bad signature, absent delegation chain — is the same
-        silent ``None``; the doorman turns it into the refusal.
+        silent ``None``; the doorman turns it into the refusal. The knock
+        names one repo (``did``), so a browser caller is resolved for that
+        repo: on ``listRepos`` the server resolves once and the capability
+        rule then applies per repo, so name your own root as ``did``.
         """
         params = conn.query_params
         repo_did = params.get("did")
@@ -171,11 +176,15 @@ class BrowserGate:
             return None
         issuer = params.get("iss")
         if issuer is None or issuer == pen:
-            return pen  # a documentless did:key speaks only for itself
+            # a documentless did:key speaks only for itself, and proved it
+            return ResolvedCaller(pen, proof="signature")
         if self._repo_source is None:
             return None
         chain = await walk_delegation_chain(pen, issuer, self._repo_source)
-        return issuer if chain is not None else None
+        if chain is None:
+            return None
+        # the chain is rooted in the issuer's own repo: that repo's word
+        return ResolvedCaller(issuer, proof=f"repo:{issuer}")
 
     # --- wiring -------------------------------------------------------------------
 

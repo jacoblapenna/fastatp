@@ -45,7 +45,8 @@ To upgrade safely within one minor line, pin with `~=`, for example
   on the page: the paper secret signs a new chain page naming a new pen,
   returned as the longer chain for the app to POST to the shelf. A wrong
   secret, an extractable pen or a chain that does not verify is refused
-  before anything is signed; the secret is wiped afterwards.
+  before the chain page is signed, and every wasm copy of the secret is
+  wiped on every exit path.
 - `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
   bytes a pen signs; the Rust core builds the identical bytes.
 - `PeerServer.register(repo, owner_pull=...)`: a host serves a gated repo
@@ -55,6 +56,15 @@ To upgrade safely within one minor line, pin with `~=`, for example
   chain head), so a freshly rotated pen pulls before it has pushed.
   Owner pull decides who reads; a frozen (penless) hosted repo, which will
   be required for it, is planned separately.
+- `ResolvedCaller(did, proof)`: a `CallerResolver` may now say how it knows
+  who is asking (`"signature"`, or `"repo:<did>"` for a tunnel binding or
+  delegation chain rooted in that repo). A bare DID still works for the
+  capability rule. Owner pull requires a proof that is a signature or this
+  repo's own records, so a capability written in *another* hosted repo can
+  never make its author the owner here. The tunnel resolver and the browser
+  gate return scoped callers. `listRepos` resolves the caller once for the
+  whole listing, so a browser knock (single-use) lists every gated repo the
+  identity holds.
 - The hosted-peer example (`examples/hosted_peer/`) runs the whole
   lifecycle: a kept pen signs up, reads its own repo back as its owner,
   enrolls devices that sync as the identity, severs one, then loses every

@@ -10,7 +10,8 @@
 //   2. shelf the chain; sign up (POST the genesis CAR)
 //   3. write records client-side: content and a delegation for each enrolled
 //      device — then push the pen-signed CAR (the router); device 1 reads its
-//      own repo back as its owner, with no record admitting it
+//      own repo back as its owner, with no record admitting it; device 2
+//      writes its OWN repo, pushes it, and reads it back as its owner
 //   4. device 2 knocks (sign_challenge: its pen, the host's nonce, the repo it
 //      wants) and reads the identity's repo as the identity, through its
 //      delegation
@@ -21,9 +22,9 @@
 //      the chain, the new pen pulls the repo as its owner, prunes the old
 //      devices, pushes; the old pen can neither pull nor push
 //
-// Every device here is a pen minted with generate_pen() in this process; a
-// device repo of its own is not needed for any of this, because the knock
-// is about the repo being asked for. On real hardware the enrollment
+// Every device here is a pen minted with generate_pen() in this process.
+// Only device 2 bothers to create its own repo; the knock needs none, because
+// it is about the repo being asked for. On real hardware the enrollment
 // ceremony is two devices exchanging exactly the two strings you see here:
 // the new device's did:key one way, the delegation record's presence the
 // other.
@@ -62,16 +63,16 @@ async function send(name, url, { method = "POST", body = null, headers = {} } = 
 }
 
 const CAR = { "content-type": "application/vnd.ipld.car" };
-const pushCar = (name, peer) =>
-  send(name, `${peerUrl}/push-car?did=${encodeURIComponent(twin)}`, { body: peer.export_car(), headers: CAR });
+const pushCar = (name, peer, did = twin) =>
+  send(name, `${peerUrl}/push-car?did=${encodeURIComponent(did)}`, { body: peer.export_car(), headers: CAR });
 
 // the knock: the host's nonce, signed by a pen, naming the repo it wants.
 // `iss` names the identity the pen speaks for through a delegation record;
 // omitted, the pen speaks only for itself (the owner's own pull).
-async function knock(name, pen, penDid, { iss } = {}) {
+async function knock(name, pen, penDid, { iss, repo = twin } = {}) {
   const challenge = await (await fetch(`${peerUrl}/xrpc/dev.fastatp.auth.getChallenge`)).json();
-  const sig = await sign_challenge(pen, challenge.nonce, twin);
-  const params = new URLSearchParams({ did: twin, pen: penDid, nonce: challenge.nonce, sig });
+  const sig = await sign_challenge(pen, challenge.nonce, repo);
+  const params = new URLSearchParams({ did: repo, pen: penDid, nonce: challenge.nonce, sig });
   if (iss) params.set("iss", iss);
   const response = await fetch(`${peerUrl}/xrpc/com.atproto.sync.getRepo?${params}`);
   report.phases[name] = response.status;
@@ -135,6 +136,20 @@ await pushCar("push-1", peer);
 // device 1 reads its own repo back as the owner: no capability record, no
 // delegation, no `iss` — the pen that writes the repo is the pen asking
 await knock("owner-pull-device1", pen1, d1.pen_did);
+
+// each device writes its OWN repo (its DID is its pen); the identity's repo
+// only names it. device 2 creates one, pushes it (the host verifies the CAR
+// against the DID itself and hosts it on first push), reads it back as its
+// owner, and device 1's pen — the identity's main pen — is refused it
+const device2 = await BrowserPeer.create(pen2Did, pen2);
+await device2.put_record(
+  "com.example.hosted.note",
+  "d2-1",
+  JSON.stringify({ $type: "com.example.hosted.note", text: "written on device 2", n: 1 }),
+);
+await pushCar("push-device2-repo", device2, pen2Did);
+await knock("owner-pull-device2-repo", pen2, pen2Did, { repo: pen2Did });
+await knock("stranger-pull-device2-repo", pen1, d1.pen_did, { repo: pen2Did });
 
 // --- 4. device 2 knocks as the identity and syncs ---------------------------------
 const sync = await knock("sync-device2", pen2, pen2Did, { iss: twin });

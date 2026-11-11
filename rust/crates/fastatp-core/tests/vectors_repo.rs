@@ -273,6 +273,71 @@ fn restored_repo_writes_after_its_head_even_with_the_clock_behind() {
     });
 }
 
+#[test]
+fn native_tid_clock_and_import_car_also_observe_the_restored_head() {
+    use fastatp_core::mst::MemoryBlockStore;
+    use fastatp_core::repo::ExternalClock;
+    use fastatp_core::tid::TidClock;
+
+    pollster::block_on(async {
+        // a CAR written on a machine whose clock is far AHEAD of this one
+        let far_ahead = || 4_000_000_000_000_000u64; // ~2096, in microseconds
+        let mut source = Repo::create(
+            "did:web:example.com".to_owned(),
+            signer(Curve::P256),
+            Box::new(MemoryBlockStore::new()),
+            Box::new(ExternalClock::new(far_ahead, 0)),
+        )
+        .await
+        .unwrap();
+        source
+            .put_record("com.example.note", "one", record("first"))
+            .await
+            .unwrap();
+        let head = source.rev().to_owned();
+        let car = source.export_car().unwrap();
+
+        // from_car with the native TidClock (real wall clock, behind the head)
+        let mut restored = Repo::from_car(
+            &car,
+            signer_like_for_reload(),
+            Box::new(TidClock::new(0)),
+            None,
+        )
+        .unwrap();
+        restored
+            .put_record("com.example.note", "two", record("second"))
+            .await
+            .unwrap();
+        assert!(
+            restored.rev() > head.as_str(),
+            "{} <= {head}",
+            restored.rev()
+        );
+
+        // import_car into an existing repo, same rule
+        let mut existing = Repo::create(
+            "did:web:example.com".to_owned(),
+            signer_like_for_reload(),
+            Box::new(MemoryBlockStore::new()),
+            Box::new(TidClock::new(0)),
+        )
+        .await
+        .unwrap();
+        existing.import_car(&car, None).unwrap();
+        assert_eq!(existing.rev(), head);
+        existing
+            .put_record("com.example.note", "three", record("third"))
+            .await
+            .unwrap();
+        assert!(
+            existing.rev() > head.as_str(),
+            "{} <= {head}",
+            existing.rev()
+        );
+    });
+}
+
 fn signer_like_for_reload() -> SoftwareSigner {
     // reloading a CAR does not need the original pen; a different signer only
     // matters at the NEXT commit (which re-signs everything)
