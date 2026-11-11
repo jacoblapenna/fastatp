@@ -31,6 +31,13 @@ To upgrade safely within one minor line, pin with `~=`, for example
   refuses an extractable one.
 - `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
   bytes a pen signs; the Rust core builds the identical bytes.
+- `PeerServer.register(repo, owner_pull=...)`: a host serves a gated repo
+  to the pen that writes it, with no capability record. Off by default.
+  `True` admits the `did:key` whose key verifies the head commit; an
+  `OwnerRule` callable names the current pen when the host knows it (its
+  chain head), so a freshly rotated pen pulls before it has pushed.
+  Owner pull decides who reads; a frozen (penless) hosted repo, which will
+  be required for it, is planned separately.
 
 ### Fixed
 - A repo restored from a CAR on a device whose clock is behind the restored

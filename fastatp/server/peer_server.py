@@ -40,7 +40,8 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from fastatp.authz.capability import ACTION_SUBSCRIBE, live_capabilities
 from fastatp.cid import CID
-from fastatp.exceptions import RepoError
+from fastatp.crypto import decode_did_key
+from fastatp.exceptions import CryptoError, RepoError
 from fastatp.peer import Peer
 from fastatp.repo.repo import CommitEvent, RecordLike, Repo, WriteOp
 from fastatp.repo.store import BlockStore
@@ -74,6 +75,13 @@ or ``None`` if it cannot be tied to one. Default: ``TunnelIdentityResolver``
 (WireGuard cryptokey routing — source tunnel IP -> DID). Injectable so tests
 supply a fake and other enforcement planes (e.g. a tailnet) supply their own."""
 
+OwnerRule = Callable[[Repo], "str | None"]
+"""``rule(repo) -> did:key | None``: a builder's answer to "which pen writes
+this repo right now". Passed as ``owner_pull=`` to :meth:`PeerServer.register`
+in place of the default rule (the caller's key verifies the head commit) when
+the host knows better — e.g. from the identity's chain head, which names a
+freshly rotated pen before it has signed anything."""
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -95,11 +103,13 @@ class _HostedRepo:
         backfill_window: int,
         *,
         public: bool = False,
+        owner_pull: bool | OwnerRule = False,
         expires_at: datetime | None = None,
     ) -> None:
         self.repo = repo
         self.backfill_window = backfill_window
         self.public = public
+        self.owner_pull = owner_pull
         self.expires_at = expires_at
         self.seq = 0
         self._backfill: deque[tuple[int, bytes]] = deque(maxlen=backfill_window)
@@ -268,6 +278,10 @@ class RepoHandle:
         return self._host.public
 
     @property
+    def owner_pull(self) -> bool | OwnerRule:
+        return self._host.owner_pull
+
+    @property
     def expires_at(self) -> datetime | None:
         return self._host.expires_at
 
@@ -352,6 +366,7 @@ class PeerServer:
         repo: Repo,
         *,
         public: bool = False,
+        owner_pull: bool | OwnerRule = False,
         backfill_window: int | None = None,
         ttl: float | None = None,
         expires_at: datetime | None = None,
@@ -362,6 +377,25 @@ class PeerServer:
         ``public=True`` opts it into open reads (a board). Writes go **only**
         through the returned handle — there is no string-DID write API (see
         ``RepoHandle``).
+
+        ``owner_pull`` lets the pen that writes a gated repo read it back with
+        no capability record: a host serving a repo to its own pen is that
+        peer reaching its own storage, not a subscriber. Off by default, so a
+        host must choose it per repo. ``True`` uses the default rule — the
+        caller is a ``did:key`` whose key verifies the head commit — which
+        admits a rotated-out pen until the new one pushes; pass an
+        :data:`OwnerRule` when the host knows the current pen (its chain
+        head). The caller still has to prove the pen (WireGuard identity or
+        the browser gate's signed knock); the capability rule applies to
+        everyone else exactly as before.
+
+        Owner pull decides who *reads*. It does not stop this host writing:
+        the hosted ``repo`` still carries whatever key it was built with, and
+        what stops a host forging is that every reader verifies against the
+        identity's real pen, so a host-signed commit fails everywhere. The
+        planned frozen repo (no pen on this host, every write raises) makes
+        that mechanical, and an ``owner_pull`` registration will then require
+        a frozen repo: a host serving a repo to its pen never holds one.
 
         A whole-repo TTL retires the repo automatically: pass ``ttl`` (seconds
         from now) or ``expires_at`` (an aware datetime). Past its expiry the
@@ -377,7 +411,11 @@ class PeerServer:
         if ttl is not None:
             expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
         host = _HostedRepo(
-            repo, backfill_window or self.backfill_window, public=public, expires_at=expires_at
+            repo,
+            backfill_window or self.backfill_window,
+            public=public,
+            owner_pull=owner_pull,
+            expires_at=expires_at,
         )
         self._hosts[repo.did] = host
         return RepoHandle(self, host)
@@ -522,10 +560,11 @@ class PeerServer:
     async def _admit_read(self, conn: HTTPConnection, host: _HostedRepo) -> tuple[bool, str]:
         """Doorman verdict for a read of ``host``: ``(allowed, reason)``.
 
-        Public repos are open. A gated repo admits a caller only when the
-        connection resolves to a DID that holds a live ``subscribe`` capability
-        in **that repo's own** records. Both failure modes (no identity, not
-        admitted) fail closed.
+        Public repos are open. A gated repo admits its own pen when the host
+        opted the repo into ``owner_pull``, and otherwise a caller only when
+        the connection resolves to a DID that holds a live ``subscribe``
+        capability in **that repo's own** records. Both failure modes (no
+        identity, not admitted) fail closed.
         """
         if host.public:
             return True, ""
@@ -533,10 +572,25 @@ class PeerServer:
         if caller is None:
             self._warn_if_proxy(conn, host)
             return False, "caller could not be tied to a tunnel identity"
+        if host.owner_pull is not False and self._is_owner(caller, host):
+            return True, ""
         entry = live_capabilities(host.repo).get(caller)
         if entry is None or ACTION_SUBSCRIBE not in entry[1].actions:
             return False, f"{caller} is not admitted to {host.did}"
         return True, ""
+
+    @staticmethod
+    def _is_owner(caller: str, host: _HostedRepo) -> bool:
+        """Is ``caller`` the pen that writes ``host``'s repo? Only a ``did:key``
+        can be: a document DID is an identity, never a pen."""
+        if not caller.startswith("did:key:"):
+            return False
+        if callable(host.owner_pull):
+            return host.owner_pull(host.repo) == caller
+        try:
+            return host.repo.commit.verify(decode_did_key(caller))
+        except (CryptoError, ValueError):  # not a key at all: not an owner, not an error
+            return False
 
     def _warn_if_proxy(self, conn: HTTPConnection, host: _HostedRepo) -> None:
         """Loudly diagnose the likely cause of an unidentifiable gated read.

@@ -161,8 +161,27 @@ sovereign admission policy — edge business logic, never substrate.
   pen → DID through the live delegation chain, feeding the doorman check; the
   honest weakening stands: "absence = every request rejected" rather than
   "absence = unreachable".
-- Multi-device sync is free: every device is an admitted subscriber of the
-  user's own hosted repo; the firehose is the sync protocol.
+- **Owner pull** (`PeerServer.register(repo, owner_pull=...)`, off by
+  default): a host serves a gated repo to the pen that writes it with no
+  capability record. The owner is not a subscriber; a pen reading its own
+  repo back from the host is the peer reaching its own storage. The pen
+  still proves itself (WireGuard identity, or the browser's signed knock
+  with `iss` omitted), and everyone else goes through the capability rule.
+  The host answers "which pen writes this repo" either from the head commit
+  (`True`) or from its own knowledge of the identity's chain head (a rule),
+  which is what admits a freshly rotated pen before it has pushed.
+- Hosted repos whose pen lives on another peer are **read-only on the
+  host**. Today the host's `Repo` object still carries whatever key it was
+  built with, and nothing in the process stops a write; what stops the host
+  forging is that every reader verifies against the identity's real pen, so
+  a host-signed commit fails everywhere (`restore` with a verify key, any
+  mirror, the next push's `verify_key`). The planned external-signer work
+  makes this mechanical: a repo can be opened **frozen** (no pen on this
+  host, every write raises), and an `owner_pull` registration will require
+  it, so a host serving a repo to its pen can never hold a pen for it.
+- Multi-device sync: a device reads the user's other repos the same way
+  any peer does, admitted by capability record, with the firehose as the
+  sync protocol. Its *own* repo it pulls as the owner.
 - Pairwise privacy = the isolation pattern: a conversation is
   a dedicated repo whose firehose admits exactly the counterpart.
 
