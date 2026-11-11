@@ -19,6 +19,18 @@ on an existing identity. The hosted example showed the gap: it called
 second pen. That was a scope cut (staging ADR 0017 §6 set version one to
 "connection zero + push + subscribe"), not a decision.
 
+Why the gap mattered is the chain this whole record follows. FastATP has to
+work for **hosted users**, people who will never run a server, as well as
+for self-hosters, or it is a toy. A hosted user's peer runs in a browser. A
+browser cannot open a socket or join a WireGuard tunnel, so it cannot serve
+its own repo, and the app's peer must host it. So a peer must serve repos
+for pens it does not carry: admit the pen that writes a repo without holding
+it, admit a browser that has no tunnel identity, let a lost pen be replaced
+from paper, and never be able to forge what it hosts. The 0.2 seam supported
+none of that beyond signup. This record is the set of decisions that make a
+host for other people's pens work, and each one below says which link of
+the chain it serves.
+
 Filling the gap raised four questions that this record answers: how a pen
 crosses the wasm boundary; how a second device writes; how a browser gets
 its own repo back from a host; and how recovery works on the page.
@@ -160,3 +172,8 @@ compare. The package ships no code for this.
   and the firehose. Before, a refused read answered `NotAuthorized`, which
   told strangers which DIDs a host serves. This changes the refusal every
   client sees for a gated repo, which is part of why 0.3 is a minor.
+- What remains is timing: a gated refusal also scans that repo's
+  capabilities, which an absent DID has nothing to do. Accepted without a
+  fix, on two grounds: an owner pull's caller already holds the pen, so
+  enumeration buys nothing; and a follow request can name any DID anyway,
+  so the defence is the builder's rate limit on the knock.

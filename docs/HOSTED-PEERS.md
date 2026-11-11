@@ -16,6 +16,26 @@ the user's behalf, so a password/token over the wire *is* the user. The goal:
 full sovereignty — no secret, plaintext or ciphertext, ever crossing the wire —
 with a UX of "tap Face ID / scan a QR."
 
+Call the people who will never run a server **hosted users**, as against
+self-hosters. FastATP exists because its author hates shared secrets and
+the authentication built on them, and still wants privacy; atproto today has
+no privacy without shared secrets, and this design is the answer. It has to
+work for hosted users and home-lab nerds alike, or it is a toy. Letting
+hosted users in is one chain of consequences, and most of this document
+follows from it:
+
+1. A hosted user's peer runs in a browser, because a browser is what they
+   have.
+2. A browser cannot open a socket or join a WireGuard tunnel, so it cannot
+   serve its own repo. Someone else must host that repo: the app's peer.
+3. A host serving repos for pens it does not carry is a new thing. It must
+   admit the pen that writes a repo without holding it (owner pull), admit
+   a browser with no tunnel identity (the knock), let a lost pen be replaced
+   from paper (recovery on the page), and never be able to forge what it
+   hosts (every reader verifies).
+4. Everything a host can see is the price of step 2. The builder decides how
+   much of that price their product needs to charge.
+
 ## The separation that makes it possible
 
 A "login system" fuses three things FastATP keeps apart:
@@ -272,20 +292,53 @@ public DID documents and chains, signed records, CAR slices. No password, no
 bearer token, no raw key, no wrapped key. A fully compromised host or wire
 observer obtains nothing that lets it *be* anyone.
 
-## Honest weaknesses (ranked)
+## Costs, stated plainly
 
-1. **Host-visible metadata** (both tiers) and tier-1 contents: the builder is
-   a reachability/metadata authority for its user population — legitimate the
-   way PHILOSOPHY.md's tailnet clause is, and mitigated by cheap exit.
-2. **Zero-device recovery requires the paper root** — lose every device and
-   the phrase, and the identity is a visible rebirth. Deliberate trade: a
-   per-user, loud, recoverable failure instead of a systemic, silent,
-   archive-shaped one.
-3. **Browser gate is weaker than WireGuard**: TLS + signature admission
-   instead of cryptographic unreachability.
-4. Platform trust in device keystores/browser storage (Secure Enclave, OPFS
-   eviction policies) — the expected-case dependency that replaces the
-   sync-fabric/blob trust the rejected design carried.
+Each of these is a cost of letting hosted users in, with what a builder does
+about it. None is hidden, and most are a decision the builder makes about
+the product they are building rather than a flaw to be engineered away.
+
+1. **The host can read tier-1 data.** This is not a weakness; it is the
+   price of serving someone who will not self-host, and it is the same price
+   every app charges today. There is no app that reads none of a
+   non-technical user's data, whatever its authentication rests on. The
+   builder decides the price: a product that needs out-of-band
+   notifications, search or moderation reads what those need, exactly as a
+   landlord reads the mail it forwards; a builder who believes they can reach
+   scale on self-hosters alone hosts nothing and is a highway. Tier 2 exists
+   for the parts that must be host-blind regardless.
+2. **Zero-device recovery needs the paper secret.** That is atproto's own
+   rotation-key model, not something added here. A builder may hold the
+   secret for users who want it, as Bluesky does, on the condition that it
+   says so: holding it makes the app a custodian that can take the identity.
+   A user who loses every device and the paper is a visible rebirth, which
+   is a loud, per-user failure rather than a silent, archive-shaped one.
+3. **The browser knock is different from WireGuard, not lesser.** A browser
+   cannot open a socket or join a tunnel. That is a relic of an internet
+   built for documents and shared secrets, a norm and not a law of nature,
+   and FastATP does not get to repeal it. Within it, the knock is the most
+   on-philosophy way in: a single-use nonce signed by a non-extractable pen,
+   bound to the repo asked for, so no secret ever crosses the wire. It has
+   precedent (passkeys work this way). What it gives up is unreachability:
+   a refused caller gets refused requests instead of silence, so the
+   builder rate-limits the knock at the edge, as it would any login page.
+4. **You trust something to speak over distance.** A kernel, a secure
+   enclave, a browser's key store. It is turtles all the way down, and
+   pretending otherwise is the dishonest option. The choice here is which
+   turtle: the user's own device keystore rather than a server-side key
+   archive, because a device's compromise is one user's problem and an
+   archive's compromise is everyone's. While the browser is the more
+   dangerous place, it is also the smaller blast radius, the app
+   builder can choose accordingly and host keys if they still want to.
+   Stated as an opinion, because it is one.
+5. **Timing on gated reads.** A refused read of a gated repo and a read of
+   a DID the host does not serve answer identically and run the same checks
+   in the same order, but the refusal also scans that repo's in-memory
+   capabilities, which an absent DID has nothing to do. Accepted: for an
+   owner pull the caller already holds the pen, so there is nothing left to
+   enumerate; for a follow request the attacker can name any DID anyway, so
+   the defence is the same rate limit on the knock as in 3, not equalized
+   timing.
 
 ## Design decisions
 

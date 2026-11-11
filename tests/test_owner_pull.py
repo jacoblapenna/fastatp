@@ -284,8 +284,6 @@ async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
         assert (await _get_repo(port, ROOT)).status_code == 404  # resolved as ROOT/pen, not owner
 
     # the same binding written by the repo itself IS the owner's own word
-    # (the attacker's repo goes first: two repos binding one IP shadow each
-    # other, last registered wins, and that is a separate, older question)
     attacker.unregister()
     victim.put_record(
         Capability.nsid,
