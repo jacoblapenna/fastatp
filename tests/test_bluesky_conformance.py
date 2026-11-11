@@ -235,11 +235,11 @@ def test_discovery_routes(serve_app):
                     f"{base}{GET_LATEST_COMMIT_PATH}", params={"did": "did:web:nobody.example"}
                 )
                 assert r.status_code == 404
-                # a gated repo is indistinguishable from an absent one? No —
-                # fail-closed: strangers get 403 only if they could name it;
-                # the doorman refuses the read either way
+                # a gated repo a stranger cannot read is indistinguishable
+                # from an absent one: same RepoNotFound, same status
                 r = await client.get(f"{base}{GET_LATEST_COMMIT_PATH}", params={"did": gated.did})
-                assert r.status_code == 403
+                assert r.status_code == 404
+                assert r.json()["error"] == "RepoNotFound"
 
                 # getRecord: the body IS Repo.prove()
                 r = await client.get(

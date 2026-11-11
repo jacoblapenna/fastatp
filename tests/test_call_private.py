@@ -102,7 +102,7 @@ async def test_call_private_round_trip(serve_app):
             engagement = requester._find_attestation(CTX, issuer_did=TOOL_DID)
             assert engagement is not None
             intruder = f"{ws}?did={engagement.ephemeral_did}&cursor=0&as=did:key:zSnoop"
-            with pytest.raises(RepoError, match="NotAuthorized"):
+            with pytest.raises(RepoError, match="RepoNotFound"):
                 async with websockets.connect(intruder) as sock:
                     # the server only sends binary frames on this socket
                     decode_frame(await asyncio.wait_for(cast("Awaitable[bytes]", sock.recv()), 5.0))

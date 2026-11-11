@@ -223,8 +223,9 @@ async def run_board_rendezvous() -> dict:
         async with websockets.connect(snoop_url) as sock_ws:
             decode_frame(await asyncio.wait_for(sock_ws.recv(), 5.0))
         result["snoop_refused"] = False
-    except Exception as e:  # RepoError NotAuthorized frame -> decode raises
-        result["snoop_refused"] = "NotAuthorized" in str(e)
+    except Exception as e:  # RepoError RepoNotFound frame -> decode raises
+        # a gated channel a stranger may not read does not exist for them
+        result["snoop_refused"] = "RepoNotFound" in str(e)
 
     # --- lifetime: past its TTL the channel is unroutable -------------------
     host = service_server._hosts[engagement.ephemeral_did]

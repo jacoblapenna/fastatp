@@ -101,13 +101,13 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
 
     # a stranger pen with a perfectly valid knock is refused: identity comes
     # from the delegation chain, not from holding a signature
-    assert phases["sync-stranger"] == 403
+    assert phases["sync-stranger"] == 404
 
     # severance: the delegation record was DELETED and the new state pushed;
     # device 2's next connect — fresh, valid knock — is refused.
     # Absence IS revocation.
     assert phases["push-severance"] == 200
-    assert phases["sync-device2-severed"] == 403
+    assert phases["sync-device2-severed"] == 404
 
     # recovery: every device lost. The typed-back check passed on the page;
     # the paper secret turned the chain onto a new pen (a LONGER chain, which
@@ -129,10 +129,10 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     assert recovered is not None and recovered["n"] == 2
     assert live_delegations(hosted) == {}  # device 3 pruned, device 2 already severed
     # the old pen is out: it is nobody's owner and its commits no longer verify
-    assert phases["old-pen-pull"] == 403
+    assert phases["old-pen-pull"] == 404
     assert phases["old-pen-push"] == 400
     assert hosted.get_record("com.example.hosted.note", "note-stale") is None
-    assert phases["sync-device3-pruned"] == 403
+    assert phases["sync-device3-pruned"] == 404
 
     # no secret ever crossed the wire: every body the client sent is on disk;
     # none contains the paper-root secret (hex or raw) — including the rotated

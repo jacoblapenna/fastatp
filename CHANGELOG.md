@@ -22,6 +22,13 @@ To upgrade safely within one minor line, pin with `~=`, for example
   asking for. The browser gate verifies the new labelled message
   (`fastatp-challenge-v1\n<repo DID>\n<nonce>`), so a 0.2 client's bare-nonce
   signature is refused by a 0.3 host.
+- A gated repo a caller may not read is now answered exactly like a DID the
+  server does not host: `RepoNotFound` (404) with the same body, on every
+  single-repo sync route and the firehose, and the caller is resolved
+  before the host is looked up so the two cases run the same checks (a
+  knock for an unhosted DID still burns its nonce). Previously a refused
+  gated read answered `NotAuthorized` (403), which told strangers which
+  DIDs the server hosts. `listRepos` already hid them.
 
 ### Added
 - Browser bundle: `generate_pen()`, `pen_did(key_pair)`,
@@ -56,8 +63,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
   anywhere.
 
 ### Fixed
-- A repo restored from a CAR on a device whose clock is behind the restored
-  head no longer writes a lower rev (Rust core `RevClock::observe`).
+- A repo restored from a CAR, or reopened from a durable head, on a machine
+  whose clock is behind that head no longer writes a lower rev: the clock
+  observes the restored rev (Rust core `RevClock::observe`; Python
+  `TidClock.observe`, called by `Repo.import_car` and the head load).
 
 ### Docs
 - `docs/decisions/0001-browser-pen-seam.md`, the first public decision

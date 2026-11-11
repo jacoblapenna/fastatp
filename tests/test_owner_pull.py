@@ -73,8 +73,8 @@ async def test_off_by_default_the_owner_is_just_another_stranger(serve_app):
 
     async with serve_app(srv.app) as port:
         response = await _get_repo(port, ROOT)
-        assert response.status_code == 403
-        assert response.json()["error"] == "NotAuthorized"
+        assert response.status_code == 404
+        assert response.json()["error"] == "RepoNotFound"
 
 
 async def test_the_pen_that_signed_the_head_reads_with_no_capability(serve_app):
@@ -99,11 +99,11 @@ async def test_a_different_pen_is_refused_and_so_is_no_identity(serve_app):
     nobody.register(Repo(ROOT, pen_key), owner_pull=True)
 
     async with serve_app(refused.app) as port:
-        assert (await _get_repo(port, ROOT)).status_code == 403
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        assert (await _get_repo(port, ROOT)).status_code == 404
+        with pytest.raises(RepoError, match="RepoNotFound"):
             await _first_commit_frame(port, ROOT)
     async with serve_app(nobody.app) as port:
-        assert (await _get_repo(port, ROOT)).status_code == 403
+        assert (await _get_repo(port, ROOT)).status_code == 404
 
 
 async def test_the_identity_itself_is_an_owner_of_its_own_repo(serve_app):
@@ -119,7 +119,7 @@ async def test_the_identity_itself_is_an_owner_of_its_own_repo(serve_app):
     async with serve_app(on.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200
     async with serve_app(off.app) as port:
-        assert (await _get_repo(port, ROOT)).status_code == 403
+        assert (await _get_repo(port, ROOT)).status_code == 404
 
 
 async def test_another_identity_is_never_an_owner_but_capabilities_still_work(serve_app):
@@ -131,7 +131,7 @@ async def test_another_identity_is_never_an_owner_but_capabilities_still_work(se
     handle = srv.register(Repo(ROOT, pen_key), owner_pull=True)
 
     async with serve_app(srv.app) as port:
-        assert (await _get_repo(port, ROOT)).status_code == 403
+        assert (await _get_repo(port, ROOT)).status_code == 404
         handle.put_record(
             Capability.nsid, generate_tid(), Capability(subject=other, actions=["subscribe"])
         )
@@ -157,11 +157,11 @@ async def test_a_builder_rule_names_the_current_pen_before_it_has_signed(serve_a
     old_pen_calls.register(Repo(ROOT, old_key), owner_pull=from_chain)
 
     async with serve_app(new_pen_calls.app) as port:
-        assert (await _get_repo(port, ROOT)).status_code == 403  # not rotated yet
+        assert (await _get_repo(port, ROOT)).status_code == 404  # not rotated yet
         current["pen"] = new_did  # rotation lands on the shelf
         assert (await _get_repo(port, ROOT)).status_code == 200  # before any push
     async with serve_app(old_pen_calls.app) as port:
-        assert (await _get_repo(port, ROOT)).status_code == 403  # the head still bears its sig
+        assert (await _get_repo(port, ROOT)).status_code == 404  # the head still bears its sig
 
 
 async def test_the_default_rule_keeps_a_rotated_out_pen_until_the_new_one_pushes(serve_app):
@@ -177,7 +177,7 @@ async def test_the_default_rule_keeps_a_rotated_out_pen_until_the_new_one_pushes
         assert (await _get_repo(port, ROOT)).status_code == 200
         handle.repo.signing_key = new_key  # the new pen's first commit lands
         handle.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "new"})
-        assert (await _get_repo(port, ROOT)).status_code == 403
+        assert (await _get_repo(port, ROOT)).status_code == 404
 
 
 def test_a_non_did_key_caller_and_a_malformed_did_key_are_not_owners():
@@ -222,13 +222,13 @@ async def test_the_browser_pen_pulls_its_own_repo_with_no_record_naming_it(serve
         owner = knock(pen_key, pen_did, nonce)
         assert (await _get_repo(port, device_repo, owner)).status_code == 200
         replay = await _get_repo(port, device_repo, owner)
-        assert replay.status_code == 403  # the nonce was spent
+        assert replay.status_code == 404  # the nonce was spent
         nonce = await _nonce(port)
         stranger = knock(stranger_key, stranger_did, nonce)
-        assert (await _get_repo(port, device_repo, stranger)).status_code == 403
+        assert (await _get_repo(port, device_repo, stranger)).status_code == 404
         nonce = await _nonce(port)
         forged = knock(stranger_key, pen_did, nonce)  # claims the pen, can't sign for it
-        assert (await _get_repo(port, device_repo, forged)).status_code == 403
+        assert (await _get_repo(port, device_repo, forged)).status_code == 404
 
 
 if __name__ == "__main__":

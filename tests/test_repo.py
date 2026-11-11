@@ -231,3 +231,32 @@ def test_read_car_malformed_blocks_raise_repo_error(repo):
     cid = CID.for_dag_cbor(junk)
     with pytest.raises(RepoError, match="DAG-CBOR"):
         Repo.read_car(encode_car([cid], {cid: junk}))
+
+
+def test_restored_repo_writes_after_its_head_even_with_the_clock_behind(monkeypatch):
+    """A CAR (or a durable head) written on a machine with a faster clock
+    must not make this machine's next commit sort BEFORE it: the clock
+    observes the restored rev. Mirrors the Rust core's RevClock::observe."""
+    import time
+
+    from fastatp.tid import TidClock
+
+    key = crypto.generate_keypair("k256")
+    source = Repo("did:web:clock.example", key)
+    source.put_record("com.example.note", "n-1", {"$type": "com.example.note", "text": "ahead"})
+    head_rev = source.rev
+    car = source.export_car()
+
+    monkeypatch.setattr(time, "time_ns", lambda: 1_000_000)  # 1970-01-01, far behind the head
+    restored = Repo("did:web:clock.example", key, clock=TidClock())
+    restored.import_car(car, verify_key=key.public_key())
+    restored.put_record("com.example.note", "n-2", {"$type": "com.example.note", "text": "late"})
+    assert restored.rev > head_rev, f"{restored.rev} must sort after {head_rev}"
+
+    # the same for a repo reopened from a durable store at a stored head
+    store = restored.store
+    reopened = Repo(
+        "did:web:clock.example", key, store=store, head_cid=restored.commit_cid, clock=TidClock()
+    )
+    reopened.put_record("com.example.note", "n-3", {"$type": "com.example.note", "text": "later"})
+    assert reopened.rev > restored.rev

@@ -124,6 +124,7 @@ class Repo:
         self._commit_cid = head_cid
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
+        self.clock.observe(commit.rev)  # the next rev sorts after this head, clock or no clock
 
     # --- state --------------------------------------------------------------
 
@@ -420,6 +421,7 @@ class Repo:
         self._commit_cid = commit.cid()
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
+        self.clock.observe(commit.rev)  # the next rev sorts after this head, clock or no clock
         if gc:
             self._collect_garbage()
 

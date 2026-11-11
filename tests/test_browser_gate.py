@@ -132,7 +132,7 @@ async def test_admitted_pen_subscribes_and_severed_pen_is_refused(serve_app):
 
         handle.delete_record(Delegation.nsid, rkey)  # sever: the revocation act
         nonce = await _nonce(port)  # fresh, valid challenge — chain is what fails
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        with pytest.raises(RepoError, match="RepoNotFound"):
             await _subscribe_first_frame(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
 
 
@@ -147,8 +147,8 @@ async def test_replayed_nonce_is_refused(serve_app):
         sig = _sign(pen_key, nonce)
         assert (await _get_repo(port, ROOT, _params(pen_did, nonce, sig))).status_code == 200
         replay = await _get_repo(port, ROOT, _params(pen_did, nonce, sig))
-        assert replay.status_code == 403
-        assert replay.json()["error"] == "NotAuthorized"
+        assert replay.status_code == 404
+        assert replay.json()["error"] == "RepoNotFound"
 
 
 async def test_no_identity_is_refused_and_bad_signature_burns_the_nonce(serve_app):
@@ -159,13 +159,13 @@ async def test_no_identity_is_refused_and_bad_signature_burns_the_nonce(serve_ap
 
     async with serve_app(srv.app) as port:
         # no challenge params at all → the doorman sees no identity
-        assert (await _get_repo(port, ROOT, {})).status_code == 403
+        assert (await _get_repo(port, ROOT, {})).status_code == 404
         # signature by the wrong key → refused, and the nonce is consumed
         nonce = await _nonce(port)
         forged = _params(pen_did, nonce, _sign(other_key, nonce))
-        assert (await _get_repo(port, ROOT, forged)).status_code == 403
+        assert (await _get_repo(port, ROOT, forged)).status_code == 404
         honest = _params(pen_did, nonce, _sign(pen_key, nonce))
-        assert (await _get_repo(port, ROOT, honest)).status_code == 403  # burned
+        assert (await _get_repo(port, ROOT, honest)).status_code == 404  # burned
 
 
 async def test_undelegated_pen_is_refused_even_with_valid_challenge(serve_app):
@@ -176,7 +176,7 @@ async def test_undelegated_pen_is_refused_even_with_valid_challenge(serve_app):
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
         response = await _get_repo(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 async def test_documentless_pen_speaks_for_itself(serve_app):
@@ -213,13 +213,36 @@ async def test_signature_is_bound_to_the_requested_repo(serve_app):
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
         bare = _b64url(crypto.sign_message(pen_key, nonce.encode("ascii")))
-        assert (await _get_repo(port, ROOT, _params(pen_did, nonce, bare))).status_code == 403
+        assert (await _get_repo(port, ROOT, _params(pen_did, nonce, bare))).status_code == 404
         nonce = await _nonce(port)
         elsewhere = _sign(pen_key, nonce, repo_did="did:web:other.example:x")
-        assert (await _get_repo(port, ROOT, _params(pen_did, nonce, elsewhere))).status_code == 403
+        assert (await _get_repo(port, ROOT, _params(pen_did, nonce, elsewhere))).status_code == 404
         nonce = await _nonce(port)
         honest = _params(pen_did, nonce, _sign(pen_key, nonce))
         assert (await _get_repo(port, ROOT, honest)).status_code == 200
+
+
+async def test_a_knock_for_an_unhosted_did_still_burns_its_nonce(serve_app):
+    """The caller is resolved BEFORE the host is looked up, so a stranger
+    probing DIDs runs the same checks whether or not the repo exists: the
+    nonce is spent either way, and the answer is RepoNotFound either way."""
+    srv, _gate = _server_with_gate()
+    handle = _user_repo(srv)
+    pen_key, pen_did = _pen()
+    _delegate(handle, pen_did)
+    absent = "did:web:nobody.example"
+
+    async with serve_app(srv.app) as port:
+        nonce = await _nonce(port)
+        elsewhere = _params(pen_did, nonce, _sign(pen_key, nonce, repo_did=absent))
+        probe = await _get_repo(port, absent, elsewhere)
+        assert probe.status_code == 404 and probe.json()["error"] == "RepoNotFound"
+        # the same nonce, now for the repo this pen IS admitted to: already spent
+        reuse = await _get_repo(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
+        assert reuse.status_code == 404 and reuse.json()["error"] == "RepoNotFound"
+        nonce = await _nonce(port)
+        fresh = _params(pen_did, nonce, _sign(pen_key, nonce))
+        assert (await _get_repo(port, ROOT, fresh)).status_code == 200
 
 
 # --- unit: the challenge message, nonce lifecycle and composition -------------------

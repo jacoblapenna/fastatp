@@ -89,12 +89,13 @@ async def test_admitted_to_a_is_refused_b(serve_app):
         # getRepo: A allowed, B refused
         assert (await _get(port, a.did)).status_code == 200
         rb = await _get(port, b.did)
-        assert rb.status_code == 403
-        assert rb.json()["error"] == "NotAuthorized"
+        assert rb.status_code == 404
+        assert rb.json()["error"] == "RepoNotFound"
 
-        # firehose: B refuses with a NotAuthorized error frame; A delivers its
+        # firehose: B refuses with a RepoNotFound error frame (a gated repo a
+        # stranger cannot read does not exist for them); A delivers its
         # commit (Alice, a live subscribe-holder, is admitted)
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        with pytest.raises(RepoError, match="RepoNotFound"):
             await _first_frame(port, b.did)
 
         a.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "hi"})
@@ -110,9 +111,9 @@ async def test_fail_closed_when_no_tunnel_identity(serve_app):
     _admit(a, ALICE)
 
     async with serve_app(srv.app) as port:
-        assert (await _get(port, a.did)).status_code == 403  # gated: refused
+        assert (await _get(port, a.did)).status_code == 404  # gated: refused
         assert (await _get(port)).status_code == 200  # primary: public
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        with pytest.raises(RepoError, match="RepoNotFound"):
             await _first_frame(port, a.did)
 
 
@@ -123,7 +124,7 @@ async def test_send_only_capability_does_not_confer_read(serve_app):
     _admit(a, ALICE, actions=(ACTION_SEND,))  # send, not subscribe
 
     async with serve_app(srv.app) as port:
-        assert (await _get(port, a.did)).status_code == 403
+        assert (await _get(port, a.did)).status_code == 404
 
 
 async def test_tunnel_identity_resolver_maps_source_ip(serve_app):
@@ -136,7 +137,7 @@ async def test_tunnel_identity_resolver_maps_source_ip(serve_app):
 
     async with serve_app(srv.app) as port:
         assert (await _get(port, a.did)).status_code == 200  # Alice admitted to A
-        assert (await _get(port, b.did)).status_code == 403  # Alice not in B
+        assert (await _get(port, b.did)).status_code == 404  # Alice not in B
 
 
 async def test_proxy_warning_on_unidentifiable_loopback_read(serve_app, caplog):
@@ -148,10 +149,45 @@ async def test_proxy_warning_on_unidentifiable_loopback_read(serve_app, caplog):
 
     async with serve_app(srv.app) as port:
         with caplog.at_level(logging.WARNING, logger="fastatp.peerserver"):
-            assert (await _get(port, a.did)).status_code == 403
+            assert (await _get(port, a.did)).status_code == 404
             # a second refused read must not re-warn for the same source
-            assert (await _get(port, a.did)).status_code == 403
+            assert (await _get(port, a.did)).status_code == 404
 
     warnings = [r for r in caplog.records if "behind a proxy" in r.getMessage()]
     assert len(warnings) == 1
     assert "loopback source" in warnings[0].getMessage()
+
+
+async def test_a_refused_gated_repo_is_indistinguishable_from_an_absent_one(serve_app):
+    """Every single-repo sync route and the firehose answer a stranger the
+    same way for a gated repo they may not read as for a DID this server
+    does not host: RepoNotFound, same status, same body. Existence is never
+    leaked by the status code."""
+    from fastatp.server.peer_server import (
+        GET_BLOB_PATH,
+        GET_LATEST_COMMIT_PATH,
+        GET_RECORD_PATH,
+        LIST_BLOBS_PATH,
+    )
+
+    srv = PeerServer(_peer(), identity_resolver=lambda conn: ALICE)
+    gated = srv.register(_channel_repo())
+    _admit(gated, BOB)  # Alice is not admitted
+    absent = "did:web:nobody.example"
+    routes = [
+        (GET_REPO_PATH, {}),
+        (GET_LATEST_COMMIT_PATH, {}),
+        (GET_RECORD_PATH, {"collection": "com.example.note", "rkey": "n"}),
+        (GET_BLOB_PATH, {"cid": "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy"}),
+        (LIST_BLOBS_PATH, {}),
+    ]
+    async with serve_app(srv.app) as port, httpx.AsyncClient() as client:
+        for path, extra in routes:
+            answers = []
+            for did in (gated.did, absent):
+                r = await client.get(f"http://127.0.0.1:{port}{path}", params={"did": did, **extra})
+                answers.append((r.status_code, r.json()["error"]))
+            assert answers[0] == answers[1] == (404, "RepoNotFound"), path
+        for did in (gated.did, absent):
+            with pytest.raises(RepoError, match="RepoNotFound"):
+                await _first_frame(port, did)

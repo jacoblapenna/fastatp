@@ -83,6 +83,16 @@ the host knows better — e.g. from the identity's chain head, which names a
 freshly rotated pen before it has signed anything."""
 
 
+def _not_served(did: str | None) -> str:
+    """One message for "not hosted" and "hosted, gated, refused": a gated
+    repo's existence is never leaked to a stranger."""
+    return f"no repo {did!r} is served to this caller"
+
+
+def _repo_not_found(did: str | None) -> JSONResponse:
+    return JSONResponse({"error": "RepoNotFound", "message": _not_served(did)}, status_code=404)
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -569,7 +579,14 @@ class PeerServer:
         """
         if host.public:
             return True, ""
-        caller = await self._resolve_caller(conn)
+        return self._admit_caller(conn, await self._resolve_caller(conn), host)
+
+    def _admit_caller(
+        self, conn: HTTPConnection, caller: str | None, host: _HostedRepo
+    ) -> tuple[bool, str]:
+        """:meth:`_admit_read` with the caller already resolved."""
+        if host.public:
+            return True, ""
         if caller is None:
             self._warn_if_proxy(conn, host)
             return False, "caller could not be tied to a tunnel identity"
@@ -579,6 +596,24 @@ class PeerServer:
         if entry is None or ACTION_SUBSCRIBE not in entry[1].actions:
             return False, f"{caller} is not admitted to {host.did}"
         return True, ""
+
+    async def _open_read(self, conn: HTTPConnection, did: str | None) -> _HostedRepo | None:
+        """The host a single-repo read may proceed against, or ``None``.
+
+        ``None`` covers both "not hosted here" and "hosted, gated, and this
+        caller is refused", and the caller is resolved **before** the host
+        is looked up, so the two cases run the same checks in the same order
+        and answer identically (``RepoNotFound``). A gated repo's existence
+        is never leaked to a stranger, by status code or by timing: a knock
+        for a DID this server does not host still burns its nonce.
+        ``listRepos`` keeps the same rule per repo.
+        """
+        caller = await self._resolve_caller(conn)
+        host = self._resolve_host(did)
+        if host is None:
+            return None
+        allowed, _reason = self._admit_caller(conn, caller, host)
+        return host if allowed else None
 
     @staticmethod
     def _is_owner(caller: str, host: _HostedRepo) -> bool:
@@ -637,15 +672,9 @@ class PeerServer:
 
     async def _get_repo(self, request: Request) -> Response:
         did = request.query_params.get("did")
-        host = self._resolve_host(did)
+        host = await self._open_read(request, did)
         if host is None:
-            return JSONResponse(
-                {"error": "RepoNotFound", "message": f"this server does not host {did!r}"},
-                status_code=404,
-            )
-        allowed, reason = await self._admit_read(request, host)
-        if not allowed:
-            return JSONResponse({"error": "NotAuthorized", "message": reason}, status_code=403)
+            return _repo_not_found(did)
         return Response(
             host.repo.export_car(),
             media_type="application/vnd.ipld.car",
@@ -704,15 +733,9 @@ class PeerServer:
             return JSONResponse(
                 {"error": "InvalidRequest", "message": "did is required"}, status_code=400
             )
-        host = self._resolve_host(did)
+        host = await self._open_read(request, did)
         if host is None:
-            return JSONResponse(
-                {"error": "RepoNotFound", "message": f"this server does not host {did!r}"},
-                status_code=404,
-            )
-        allowed, reason = await self._admit_read(request, host)
-        if not allowed:
-            return JSONResponse({"error": "NotAuthorized", "message": reason}, status_code=403)
+            return _repo_not_found(did)
         return JSONResponse({"cid": host.repo.commit_cid.encode(), "rev": host.repo.rev})
 
     async def _get_record(self, request: Request) -> Response:
@@ -726,15 +749,9 @@ class PeerServer:
                 {"error": "InvalidRequest", "message": "did, collection, and rkey are required"},
                 status_code=400,
             )
-        host = self._resolve_host(did)
+        host = await self._open_read(request, did)
         if host is None:
-            return JSONResponse(
-                {"error": "RepoNotFound", "message": f"this server does not host {did!r}"},
-                status_code=404,
-            )
-        allowed, reason = await self._admit_read(request, host)
-        if not allowed:
-            return JSONResponse({"error": "NotAuthorized", "message": reason}, status_code=403)
+            return _repo_not_found(did)
         try:
             car = host.repo.prove(collection, rkey)
         except RepoError:
@@ -753,15 +770,9 @@ class PeerServer:
                 {"error": "InvalidRequest", "message": "did and cid are required"},
                 status_code=400,
             )
-        host = self._resolve_host(did)
+        host = await self._open_read(request, did)
         if host is None:
-            return JSONResponse(
-                {"error": "RepoNotFound", "message": f"this server does not host {did!r}"},
-                status_code=404,
-            )
-        allowed, reason = await self._admit_read(request, host)
-        if not allowed:
-            return JSONResponse({"error": "NotAuthorized", "message": reason}, status_code=403)
+            return _repo_not_found(did)
         try:
             cid = CID.decode(cid_param)
         except ValueError:
@@ -791,15 +802,9 @@ class PeerServer:
             return JSONResponse(
                 {"error": "InvalidRequest", "message": "did is required"}, status_code=400
             )
-        host = self._resolve_host(did)
+        host = await self._open_read(request, did)
         if host is None:
-            return JSONResponse(
-                {"error": "RepoNotFound", "message": f"this server does not host {did!r}"},
-                status_code=404,
-            )
-        allowed, reason = await self._admit_read(request, host)
-        if not allowed:
-            return JSONResponse({"error": "NotAuthorized", "message": reason}, status_code=403)
+            return _repo_not_found(did)
         try:
             limit = int(request.query_params.get("limit", "500"))
         except ValueError:
@@ -832,16 +837,9 @@ class PeerServer:
     async def _subscribe(self, websocket: WebSocket) -> None:
         await websocket.accept()
         did = websocket.query_params.get("did")
-        host = self._resolve_host(did)
+        host = await self._open_read(websocket, did)
         if host is None:
-            await websocket.send_bytes(
-                encode_error_frame("RepoNotFound", f"this server does not host {did!r}")
-            )
-            await websocket.close()
-            return
-        allowed, reason = await self._admit_read(websocket, host)
-        if not allowed:
-            await websocket.send_bytes(encode_error_frame("NotAuthorized", reason))
+            await websocket.send_bytes(encode_error_frame("RepoNotFound", _not_served(did)))
             await websocket.close()
             return
         cursor_param = websocket.query_params.get("cursor")

@@ -145,7 +145,10 @@ compare. The package ships no code for this.
   `challenge_message`. Verification, the doorman's capability rule and the
   Rust core's wire format are unchanged.
 - Restoring a repo on a device whose clock is behind the restored head no
-  longer writes a lower rev; the Rust clock observes the head's rev. The
-  Python side has not been checked for the same case.
-- A gated repo's existence still shows through `getRepo`'s status code
-  (404 for unhosted, 403 for refused). Pre-existing; not addressed here.
+  longer writes a lower rev, in Rust and in Python: the clock observes the
+  head's rev on load.
+- A gated repo a caller may not read is answered exactly like an unhosted
+  DID (`RepoNotFound`, same checks in the same order), on every sync route
+  and the firehose. Before, a refused read answered `NotAuthorized`, which
+  told strangers which DIDs a host serves. This changes the refusal every
+  client sees for a gated repo, which is part of why 0.3 is a minor.

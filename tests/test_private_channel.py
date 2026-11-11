@@ -87,7 +87,7 @@ async def test_channel_admits_only_its_issuer(serve_app):
             assert header["t"] == "#commit"
             assert body["repo"] == channel.did
         # anyone else is refused by the doorman
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        with pytest.raises(RepoError, match="RepoNotFound"):
             async with websockets.connect(f"{base}&as=did:key:zIntruder") as ws2:
                 decode_frame(await asyncio.wait_for(cast("Awaitable[bytes]", ws2.recv()), 5.0))
 
