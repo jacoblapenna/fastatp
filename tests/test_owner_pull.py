@@ -106,17 +106,34 @@ async def test_a_different_pen_is_refused_and_so_is_no_identity(serve_app):
         assert (await _get_repo(port, ROOT)).status_code == 403
 
 
-async def test_a_document_did_is_never_an_owner_but_capabilities_still_work(serve_app):
-    """The owner rule is about pens. A did:web caller is an identity, so it
+async def test_the_identity_itself_is_an_owner_of_its_own_repo(serve_app):
+    """A caller resolved to the repo's own DID got there through a delegation
+    record in this repo (a device speaking for the identity), so it reads
+    with no capability. Only when owner pull is on."""
+    pen_key, _ = _pen()
+    on = _server(caller=ROOT)
+    on.register(Repo(ROOT, pen_key), owner_pull=True)
+    off = _server(caller=ROOT)
+    off.register(Repo(ROOT, pen_key))
+
+    async with serve_app(on.app) as port:
+        assert (await _get_repo(port, ROOT)).status_code == 200
+    async with serve_app(off.app) as port:
+        assert (await _get_repo(port, ROOT)).status_code == 403
+
+
+async def test_another_identity_is_never_an_owner_but_capabilities_still_work(serve_app):
+    """A did:web caller that is not this repo's DID is some other identity: it
     falls through to the capability rule like any reader."""
     pen_key, _ = _pen()
-    srv = _server(caller=ROOT)
+    other = "did:web:other.example:x"
+    srv = _server(caller=other)
     handle = srv.register(Repo(ROOT, pen_key), owner_pull=True)
 
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 403
         handle.put_record(
-            Capability.nsid, generate_tid(), Capability(subject=ROOT, actions=["subscribe"])
+            Capability.nsid, generate_tid(), Capability(subject=other, actions=["subscribe"])
         )
         assert (await _get_repo(port, ROOT)).status_code == 200
 
@@ -165,8 +182,9 @@ async def test_the_default_rule_keeps_a_rotated_out_pen_until_the_new_one_pushes
 
 def test_a_non_did_key_caller_and_a_malformed_did_key_are_not_owners():
     pen_key, pen_did = _pen()
-    host = SimpleNamespace(repo=Repo(ROOT, pen_key), owner_pull=True)
+    host = SimpleNamespace(repo=Repo(ROOT, pen_key), owner_pull=True, did=ROOT)
     assert PeerServer._is_owner(pen_did, host) is True  # type: ignore[arg-type]
+    assert PeerServer._is_owner(ROOT, host) is True  # type: ignore[arg-type]
     assert PeerServer._is_owner("did:web:x", host) is False  # type: ignore[arg-type]
     assert PeerServer._is_owner("did:key:zNotAKey", host) is False  # type: ignore[arg-type]
 

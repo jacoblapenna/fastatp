@@ -378,10 +378,11 @@ class PeerServer:
         through the returned handle — there is no string-DID write API (see
         ``RepoHandle``).
 
-        ``owner_pull`` lets the pen that writes a gated repo read it back with
-        no capability record: a host serving a repo to its own pen is that
-        peer reaching its own storage, not a subscriber. Off by default, so a
-        host must choose it per repo. ``True`` uses the default rule — the
+        ``owner_pull`` lets the pen that writes a gated repo, and the identity
+        itself through a delegated device, read it back with no capability
+        record: a host serving a repo to its own pen is that peer reaching
+        its own storage, not a subscriber. Off by default, so a host must
+        choose it per repo. ``True`` uses the default rule — the
         caller is a ``did:key`` whose key verifies the head commit — which
         admits a rotated-out pen until the new one pushes; pass an
         :data:`OwnerRule` when the host knows the current pen (its chain
@@ -581,8 +582,14 @@ class PeerServer:
 
     @staticmethod
     def _is_owner(caller: str, host: _HostedRepo) -> bool:
-        """Is ``caller`` the pen that writes ``host``'s repo? Only a ``did:key``
-        can be: a document DID is an identity, never a pen."""
+        """Is ``caller`` the owner of ``host``'s repo: the pen that writes it,
+        or the identity itself? A caller equal to the repo's own DID got
+        there through a live delegation record *in this repo* (that is the
+        only way a document DID resolves), so it is the identity reading its
+        own repo through one of its devices. Any other document DID is a
+        different identity, never a pen."""
+        if caller == host.did:
+            return True
         if not caller.startswith("did:key:"):
             return False
         if callable(host.owner_pull):

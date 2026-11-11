@@ -48,6 +48,12 @@ To upgrade safely within one minor line, pin with `~=`, for example
   chain head), so a freshly rotated pen pulls before it has pushed.
   Owner pull decides who reads; a frozen (penless) hosted repo, which will
   be required for it, is planned separately.
+- The hosted-peer example (`examples/hosted_peer/`) runs the whole
+  lifecycle: a kept pen signs up, reads its own repo back as its owner,
+  enrolls devices that sync as the identity, severs one, then loses every
+  device and recovers with the paper secret onto a new pen, which pulls,
+  prunes and pushes while the old pen is refused. No `self` capability
+  anywhere.
 
 ### Fixed
 - A repo restored from a CAR on a device whose clock is behind the restored

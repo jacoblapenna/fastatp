@@ -162,11 +162,14 @@ sovereign admission policy — edge business logic, never substrate.
   honest weakening stands: "absence = every request rejected" rather than
   "absence = unreachable".
 - **Owner pull** (`PeerServer.register(repo, owner_pull=...)`, off by
-  default): a host serves a gated repo to the pen that writes it with no
-  capability record. The owner is not a subscriber; a pen reading its own
-  repo back from the host is the peer reaching its own storage. The pen
-  still proves itself (WireGuard identity, or the browser's signed knock
-  with `iss` omitted), and everyone else goes through the capability rule.
+  default): a host serves a gated repo to its owner with no capability
+  record — the pen that writes it, or the identity itself when a device
+  speaks for it through a live delegation record in that repo. The owner is
+  not a subscriber; a pen reading its own repo back from the host is the
+  peer reaching its own storage. The pen still proves itself (WireGuard
+  identity, or the browser's signed knock, with `iss` omitted for the pen
+  or set to the identity for a device), and everyone else goes through the
+  capability rule.
   The host answers "which pen writes this repo" either from the head commit
   (`True`) or from its own knowledge of the identity's chain head (a rule),
   which is what admits a freshly rotated pen before it has pushed.

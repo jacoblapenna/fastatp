@@ -6,8 +6,10 @@ ships primitives; builders compose them). It wires together:
 - a neutral **shelf** (DIDServer + shelf intake): serves the
   users' twin-only DID documents and continuity chains,
 - a **PeerServer** with the **browser gate** installed: hosts each
-  user's gated repo and admits browser pens by signed challenge through the
-  live delegation chain,
+  user's gated repo with **owner pull** on, so the pen that writes a repo
+  (the chain head's pen, re-read on every knock) and the identity itself
+  (a device speaking for it through a live delegation record) read it back
+  with no capability record; strangers are refused,
 - two tiny example routes — the builder's own edge business logic:
   * ``POST /signup?did=`` — connection zero's second half: accept a genesis
     repo CAR, verify it against the chain head key **from the shelf**, and
@@ -66,6 +68,16 @@ class ExampleBuilder:
         head = DIDDocument.from_json_dict(entry["chain"][-1]["document"])
         return head.get_verification_method().public_key()
 
+    def owner_pen(self, repo: Repo) -> str | None:
+        """The owner-pull rule: which pen writes this repo *right now*, as a
+        ``did:key``, from the chain head rather than the hosted head commit —
+        so a freshly recovered pen pulls before it has pushed anything, and
+        the old pen is out the moment the longer chain lands."""
+        try:
+            return crypto.encode_did_key(self.head_key(repo.did))
+        except KeyError:
+            return None
+
 
 def make_builder(domain: str) -> ExampleBuilder:
     chain_store: dict[str, dict] = {}
@@ -115,7 +127,9 @@ def make_builder(domain: str) -> ExampleBuilder:
             # early fast-path check above, is the uniqueness authority (two
             # concurrent signups both pass the check across the body await;
             # only one can register)
-            builder.handles[twin_did] = peers.register(repo)  # gated by default
+            # gated (the default) with owner pull: the chain head's pen, and
+            # the identity through its delegations, read it back; nobody else
+            builder.handles[twin_did] = peers.register(repo, owner_pull=builder.owner_pen)
         except ValueError:
             return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
         return JSONResponse({"hosting": twin_did}, status_code=201)
