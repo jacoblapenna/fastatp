@@ -18,7 +18,7 @@ from typing import Any, Union
 from fastatp import dagcbor, datamodel
 from fastatp.cid import CID
 from fastatp.crypto import PrivateKey, PublicKey
-from fastatp.exceptions import DataModelError, RepoError
+from fastatp.exceptions import DataModelError, FastATPError, RepoError
 from fastatp.lex.types import Blob, CidLink, validate_nsid
 from fastatp.lexicon import Lexicon
 from fastatp.repo.blobs import BlobInfo, BlobStore
@@ -116,6 +116,7 @@ class Repo:
             raise RepoError(f"stored head commit is not valid DAG-CBOR: {e}") from None
         if commit.did != self.did:
             raise RepoError(f"stored repo is for {commit.did}, not {self.did}")
+        self._observe_rev(commit.rev)  # before any state changes
         try:
             self._entries = self.mst.load(commit.data)
         except DataModelError as e:
@@ -124,7 +125,6 @@ class Repo:
         self._commit_cid = head_cid
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
-        self.clock.observe(commit.rev)  # the next rev sorts after this head, clock or no clock
 
     # --- state --------------------------------------------------------------
 
@@ -414,6 +414,9 @@ class Repo:
         commit, entries, blocks = self.read_car(data, verify_key)
         if commit.did != self.did:
             raise RepoError(f"CAR is for {commit.did}, not {self.did}")
+        # the next rev must sort after this head, clock or no clock; a head
+        # whose rev is not a TID is refused here, before any state changes
+        self._observe_rev(commit.rev)
         for cid, block in blocks.items():
             self.store.put(cid, block)
         self._entries = entries
@@ -421,9 +424,14 @@ class Repo:
         self._commit_cid = commit.cid()
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
-        self.clock.observe(commit.rev)  # the next rev sorts after this head, clock or no clock
         if gc:
             self._collect_garbage()
+
+    def _observe_rev(self, rev: str) -> None:
+        try:
+            self.clock.observe(rev)
+        except (ValueError, FastATPError) as e:
+            raise RepoError(f"head commit rev {rev!r} is not a TID: {e}") from None
 
     def collect_garbage(self) -> None:
         """Drop store blocks unreachable from the current head.

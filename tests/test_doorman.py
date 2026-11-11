@@ -8,6 +8,7 @@ identity, and a resolved-but-unadmitted caller — fail closed.
 
 import asyncio
 import base64
+import json
 import logging
 from collections.abc import Awaitable
 from typing import cast
@@ -186,8 +187,12 @@ async def test_a_refused_gated_repo_is_indistinguishable_from_an_absent_one(serv
             answers = []
             for did in (gated.did, absent):
                 r = await client.get(f"http://127.0.0.1:{port}{path}", params={"did": did, **extra})
-                answers.append((r.status_code, r.json()["error"]))
-            assert answers[0] == answers[1] == (404, "RepoNotFound"), path
+                # the whole payload, with the only thing that may differ — the
+                # DID the caller asked about — normalized away
+                body = json.loads(r.text.replace(json.dumps(did)[1:-1], "<did>"))
+                answers.append((r.status_code, body))
+            assert answers[0] == answers[1], path
+            assert answers[0][1]["error"] == "RepoNotFound", path
         for did in (gated.did, absent):
             with pytest.raises(RepoError, match="RepoNotFound"):
                 await _first_frame(port, did)

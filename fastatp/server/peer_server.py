@@ -638,15 +638,21 @@ class PeerServer:
         """The host a single-repo read may proceed against, or ``None``.
 
         ``None`` covers both "not hosted here" and "hosted, gated, and this
-        caller is refused", and the caller is resolved **before** the host
-        is looked up, so the two cases run the same checks in the same order
-        and answer identically (``RepoNotFound``). A gated repo's existence
-        is never leaked to a stranger, by status code or by timing: a knock
-        for a DID this server does not host still burns its nonce.
-        ``listRepos`` keeps the same rule per repo.
+        caller is refused". A public host returns at once, needing no caller.
+        For a gated or an absent DID the caller is resolved first, so the two
+        run the same checks and answer identically (``RepoNotFound``): a
+        gated repo's existence is never leaked to a stranger by status code,
+        and a knock for a DID this server does not host still burns its
+        nonce. What remains is timing: a gated refusal also scans that repo's
+        capabilities, work an absent DID has nothing to do, a difference of
+        an in-memory scan that only a caller presenting an identity can
+        measure. ``listRepos`` keeps the same rule per repo.
         """
-        caller = await self._resolve_caller(conn)
         host = self._resolve_host(did)
+        if host is not None and host.public:
+            return host  # open to all: no caller to resolve, nothing to hide
+        # gated or absent: resolve first, so both run the same checks
+        caller = await self._resolve_caller(conn)
         if host is None:
             return None
         allowed, _reason = self._admit_caller(conn, caller, host)

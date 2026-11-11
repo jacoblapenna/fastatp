@@ -3,10 +3,11 @@ and steady-state size under sustained FIFO churn."""
 
 import pytest
 
-from fastatp import crypto
+from fastatp import crypto, dagcbor
 from fastatp.exceptions import RepoError
 from fastatp.lex.types import Datetime
 from fastatp.lexicon import Lexicon
+from fastatp.repo.car import encode_car
 from fastatp.repo.commit import Commit
 from fastatp.repo.repo import Repo, WriteOp
 from fastatp.repo.store import MemoryBlockStore
@@ -260,3 +261,38 @@ def test_restored_repo_writes_after_its_head_even_with_the_clock_behind(monkeypa
     )
     reopened.put_record("com.example.note", "n-3", {"$type": "com.example.note", "text": "later"})
     assert reopened.rev > restored.rev
+
+
+def test_a_car_whose_head_rev_is_not_a_tid_is_refused_before_any_state_changes():
+    """``import_car`` observes the head rev on the clock. A rev that is not a
+    TID is refused up front, with the repo exactly as it was — not after the
+    blocks and head have already been replaced."""
+    key = crypto.generate_keypair("k256")
+    source = Repo("did:web:rev.example", key)
+    source.put_record("com.example.note", "n-1", {"$type": "com.example.note", "text": "x"})
+    commit, _entries, blocks = Repo.read_car(source.export_car())
+    # Commit.create validates the rev, but a CAR is decoded with from_map,
+    # which takes any string: build the block the way a hostile host would
+    unsigned = {
+        "did": commit.did,
+        "rev": "not-a-tid",
+        "data": commit.data,
+        "prev": None,
+        "version": 3,
+    }
+    forged = Commit(
+        did=commit.did,
+        data=commit.data,
+        rev="not-a-tid",
+        sig=crypto.sign_message(key, dagcbor.encode(unsigned)),
+    )
+    blocks[forged.cid()] = forged.to_dag_cbor()
+    car = encode_car([forged.cid()], blocks)
+
+    target = Repo("did:web:rev.example", key)
+    target.put_record("com.example.note", "mine", {"$type": "com.example.note", "text": "keep"})
+    before = (target.commit_cid, target.rev, dict(target._entries))
+    with pytest.raises(RepoError, match="not a TID"):
+        target.import_car(car, verify_key=key.public_key())
+    assert (target.commit_cid, target.rev, dict(target._entries)) == before
+    assert target.get_record("com.example.note", "mine") is not None
