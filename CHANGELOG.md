@@ -15,6 +15,27 @@ To upgrade safely within one minor line, pin with `~=`, for example
 
 ## [Unreleased]
 
+### Breaking
+- The browser bundle's `BrowserPeer.sign_challenge(nonce)` is removed. The
+  knock at a host is now one free function, `sign_challenge(key_pair, nonce,
+  repo_did)`, which needs no repo loaded and names the repo the pen is
+  asking for. The browser gate verifies the new labelled message
+  (`fastatp-challenge-v1\n<repo DID>\n<nonce>`), so a 0.2 client's bare-nonce
+  signature is refused by a 0.3 host.
+
+### Added
+- Browser bundle: `generate_pen()`, `pen_did(key_pair)`,
+  `BrowserPeer.create(did, key_pair)`, `BrowserPeer.restore(car, key_pair,
+  verify?)` and `sign_challenge(key_pair, nonce, repo_did)`. Pens cross the
+  boundary as non-extractable WebCrypto handles only; every entry point
+  refuses an extractable one.
+- `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
+  bytes a pen signs; the Rust core builds the identical bytes.
+
+### Fixed
+- A repo restored from a CAR on a device whose clock is behind the restored
+  head no longer writes a lower rev (Rust core `RevClock::observe`).
+
 ## [0.2.0] - 2026-11-05
 
 ### Breaking

@@ -16,6 +16,7 @@ use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
 
+use fastatp_core::challenge::{challenge_message, is_valid_did_syntax};
 use fastatp_core::continuity::Chain;
 use fastatp_core::crypto::{
     decode_did_key, decode_multikey, encode_did_key, Curve, PrivateKey, PublicKey, Signer as _,
@@ -40,24 +41,9 @@ fn parse_public_key(did_key_or_multikey: &str) -> Result<PublicKey, JsError> {
     .map_err(|e| js_error("key", e))
 }
 
-/// The atproto DID syntax (spec: did): `did:<method>:<id>`, method lowercase
-/// letters, id from `[A-Za-z0-9._:%-]`, not ending in `:` or `%`. Syntax only;
-/// whether the DID resolves is the app's business.
+/// Syntax only (spec: did); whether the DID resolves is the app's business.
 fn check_did_syntax(did: &str) -> Result<(), JsError> {
-    let ok = did.len() <= 2048
-        && did.strip_prefix("did:").is_some_and(|rest| {
-            rest.split_once(':').is_some_and(|(method, id)| {
-                !method.is_empty()
-                    && method.bytes().all(|b| b.is_ascii_lowercase())
-                    && !id.is_empty()
-                    && id
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b".:_%-".contains(&b))
-                    && !id.ends_with(':')
-                    && !id.ends_with('%')
-            })
-        });
-    if ok {
+    if is_valid_did_syntax(did) {
         Ok(())
     } else {
         Err(JsError::new(&format!("not a valid DID: {did:?}")))
@@ -145,7 +131,6 @@ impl ConnectionZeroBundle {
 #[wasm_bindgen]
 pub struct BrowserPeer {
     repo: Rc<RefCell<Repo<WebCryptoSigner>>>,
-    signer: WebCryptoSigner,
     pen_did: String,
 }
 
@@ -186,7 +171,7 @@ pub async fn connection_zero(domain: String) -> Result<ConnectionZeroBundle, JsE
 
     let repo = Repo::create(
         twin_did.clone(),
-        signer.clone(),
+        signer,
         Box::new(MemoryBlockStore::new()),
         Box::new(date_now_clock()?),
     )
@@ -203,7 +188,6 @@ pub async fn connection_zero(domain: String) -> Result<ConnectionZeroBundle, JsE
         rotation_secret,
         peer: Some(BrowserPeer {
             repo: Rc::new(RefCell::new(repo)),
-            signer,
             pen_did,
         }),
     })
@@ -223,7 +207,7 @@ impl BrowserPeer {
         let (signer, pen_did) = checked_pen(&key_pair).await?;
         let repo = Repo::create(
             did,
-            signer.clone(),
+            signer,
             Box::new(MemoryBlockStore::new()),
             Box::new(date_now_clock()?),
         )
@@ -231,7 +215,6 @@ impl BrowserPeer {
         .map_err(|e| js_error("create repo", e))?;
         Ok(BrowserPeer {
             repo: Rc::new(RefCell::new(repo)),
-            signer,
             pen_did,
         })
     }
@@ -253,14 +236,13 @@ impl BrowserPeer {
         let (signer, pen_did) = checked_pen(&key_pair).await?;
         let repo = Repo::from_car(
             &car,
-            signer.clone(),
+            signer,
             Box::new(date_now_clock()?),
             verify_key.as_ref(),
         )
         .map_err(|e| js_error("restore", e))?;
         Ok(BrowserPeer {
             repo: Rc::new(RefCell::new(repo)),
-            signer,
             pen_did,
         })
     }
@@ -320,17 +302,6 @@ impl BrowserPeer {
             .export_car()
             .map_err(|e| js_error("export_car", e))
     }
-
-    /// Sign a browser-gate nonce with the pen; returns base64url
-    /// (unpadded), ready for the `sig` query parameter.
-    pub async fn sign_challenge(&self, nonce: String) -> Result<String, JsError> {
-        let signature = self
-            .signer
-            .sign(nonce.as_bytes())
-            .await
-            .map_err(|e| js_error("sign_challenge", e))?;
-        Ok(data_encoding::BASE64URL_NOPAD.encode(&signature))
-    }
 }
 
 /// Mint a new pen: a WebCrypto `CryptoKeyPair` whose private key is ECDSA
@@ -354,6 +325,31 @@ pub async fn generate_pen() -> Result<JsValue, JsError> {
 #[wasm_bindgen]
 pub async fn pen_did(key_pair: JsValue) -> Result<String, JsError> {
     Ok(checked_pen(&key_pair).await?.1)
+}
+
+/// The knock: sign a host-issued nonce naming the repo this pen wants —
+/// its own (owner pull) or one it is admitted to by capability record (the
+/// browser gate). Which of those it is, the host decides; the pen just
+/// knocks. Takes only the pen and the DID of the repo being asked for, so
+/// no repo needs to be loaded. Signs the fixed, labelled message
+/// `fastatp-challenge-v1\n<repo DID>\n<nonce>` and nothing else: a
+/// malformed nonce or DID is refused, so a pen can never be handed commit
+/// bytes dressed up as a challenge. Returns the signature as unpadded
+/// base64url (compact 64-byte, low-S), ready for the `sig` parameter.
+#[wasm_bindgen]
+pub async fn sign_challenge(
+    key_pair: JsValue,
+    nonce: String,
+    repo_did: String,
+) -> Result<String, JsError> {
+    let message = challenge_message(&repo_did, &nonce)
+        .map_err(|e| JsError::new(&format!("challenge: {e}")))?;
+    let (pen, _) = checked_pen(&key_pair).await?;
+    let signature = pen
+        .sign(&message)
+        .await
+        .map_err(|e| js_error("sign_challenge", e))?;
+    Ok(data_encoding::BASE64URL_NOPAD.encode(&signature))
 }
 
 /// Verify a record proof against a did:key or multikey; returns the verified

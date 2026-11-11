@@ -13,7 +13,8 @@ const glue = await import(path.join(staticDir, "fastatp_wasm.js"));
 const wasmBytes = await readFile(path.join(staticDir, "fastatp_wasm_bg.wasm"));
 await glue.default({ module_or_path: wasmBytes });
 
-const { connection_zero, verify_proof, bundle_version, generate_pen, pen_did, BrowserPeer } = glue;
+const { connection_zero, verify_proof, bundle_version, generate_pen, pen_did, sign_challenge, BrowserPeer } =
+  glue;
 
 // --- connection zero ---------------------------------------------------------
 const bundle = await connection_zero("shelf.example");
@@ -57,12 +58,6 @@ assert.throws(() => verify_proof(tampered, bundle.pen_did, null), /refused|Malfo
 const other = await connection_zero("shelf.example");
 assert.throws(() => verify_proof(proof, other.pen_did, null), /refused/);
 
-// --- challenge signing ----------------------------------------------------------
-const sig = await peer.sign_challenge("test-nonce-abc");
-assert.match(sig, /^[A-Za-z0-9_-]{80,96}$/, "base64url unpadded 64-byte signature");
-const sig2 = await peer.sign_challenge("test-nonce-abc");
-assert.ok(sig.length === sig2.length, "signatures well-formed across calls");
-
 // --- pens as handles: generate_pen / pen_did ----------------------------------------
 const pen = await generate_pen();
 assert.equal(pen.privateKey.extractable, false, "pen private key is non-extractable");
@@ -97,6 +92,58 @@ await assert.rejects(
 );
 await assert.rejects(pen_did(null), /null or undefined/);
 await assert.rejects(pen_did({ privateKey: pen.privateKey }), /publicKey/);
+
+// --- the knock: sign_challenge(pen, nonce, repo_did), no repo loaded ----------------
+// one call whether the pen wants its own repo back (owner pull) or another
+// peer's (the browser gate); the host decides which. the host mints
+// secrets.token_urlsafe(32): 43 unpadded base64url chars
+assert.equal(typeof BrowserPeer.prototype.sign_challenge, "undefined", "the knock is not a peer method");
+const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+const repoDid = "did:web:shelf.example:abc";
+const pullSig = await sign_challenge(pen, nonce, repoDid);
+assert.match(pullSig, /^[A-Za-z0-9_-]{86}$/, "unpadded base64url of 64 bytes");
+const sigBytes = Buffer.from(pullSig, "base64url");
+assert.equal(sigBytes.length, 64, "compact R||S");
+// low-S: fastatp verifiers reject high-S, and raw WebCrypto returns it half the time
+const P256_N = BigInt("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551");
+assert.ok(BigInt("0x" + sigBytes.subarray(32).toString("hex")) <= P256_N / 2n, "low-S");
+// the signed bytes are the fixed, labelled message: label \n repo DID \n nonce
+const pullMessage = new TextEncoder().encode(`fastatp-challenge-v1\n${repoDid}\n${nonce}`);
+const ecdsaVerify = (publicKey, sig, message) =>
+  subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, sig, message);
+assert.ok(await ecdsaVerify(pen.publicKey, sigBytes, pullMessage), "verifies over the labelled message");
+assert.ok(!(await ecdsaVerify(otherPen.publicKey, sigBytes, pullMessage)), "another pen's key fails");
+assert.ok(
+  !(await ecdsaVerify(pen.publicKey, sigBytes, new TextEncoder().encode(nonce))),
+  "the bare nonce was not what got signed",
+);
+assert.ok(
+  !(await ecdsaVerify(
+    pen.publicKey,
+    sigBytes,
+    new TextEncoder().encode(`fastatp-challenge-v1\ndid:web:shelf.example:other\n${nonce}`),
+  )),
+  "bound to the repo DID: cannot be spent on another repo",
+);
+// the pen only ever signs that shape: malformed nonce or DID is refused, so a
+// host cannot slip commit bytes through as a "challenge"
+await assert.rejects(sign_challenge(pen, "", repoDid), /nonce/);
+await assert.rejects(sign_challenge(pen, "has space", repoDid), /nonce/);
+await assert.rejects(sign_challenge(pen, "padded==", repoDid), /nonce/);
+await assert.rejects(sign_challenge(pen, "A".repeat(257), repoDid), /nonce/);
+await assert.rejects(sign_challenge(pen, nonce, "shelf.example"), /DID/);
+await assert.rejects(sign_challenge(pen, nonce, "did:web:"), /DID/);
+await assert.rejects(sign_challenge(await ecdsa("P-256", true), nonce, repoDid), /extractable/);
+await assert.rejects(sign_challenge(null, nonce, repoDid), /null or undefined/);
+// a device repo: the pen's own did:key is the repo DID
+assert.ok(
+  await ecdsaVerify(
+    pen.publicKey,
+    Buffer.from(await sign_challenge(pen, nonce, penDid), "base64url"),
+    new TextEncoder().encode(`fastatp-challenge-v1\n${penDid}\n${nonce}`),
+  ),
+  "device repo challenge verifies",
+);
 
 // --- BrowserPeer.create / restore ----------------------------------------------------
 // a device repo: the pen's own did:key, signed by that pen

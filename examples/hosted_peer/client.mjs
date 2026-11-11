@@ -9,17 +9,17 @@
 //   2. shelf the chain; sign up (POST the genesis CAR)
 //   3. write records client-side: self-capability, content, and a delegation
 //      for "device 2" — then push the pen-signed CAR (the router)
-//   4. device 2 passes the browser gate via signed challenge and syncs
-//   5. a stranger pen with a valid challenge is refused
+//   4. device 2 knocks (sign_challenge: its pen, the host's nonce, the repo it
+//      wants), passes the browser gate and syncs
+//   5. a stranger pen with a valid knock is refused
 //   6. device 1 severs the delegation (deletes the record) and pushes;
 //      device 2's next connect is refused: absence IS revocation
 //
-// "Device 2" is a second WebCrypto keypair in this process, minted through a
-// second connection_zero bundle so its challenge signatures get the same
-// P1363 + low-S handling as any pen (its unused twin/chain are discarded).
-// On real hardware the enrollment ceremony is two devices exchanging exactly
-// the two strings you see here: pen2's did:key one way, the delegation
-// record's presence the other.
+// "Device 2" is a second pen minted in this process with generate_pen(); it
+// has no repo of its own here, and the knock needs none — it is about the
+// repo being asked for. On real hardware the enrollment ceremony is two
+// devices exchanging exactly the two strings you see here: pen2's did:key
+// one way, the delegation record's presence the other.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const staticDir = path.resolve(here, "../../fastatp/browser/static");
 const glue = await import(path.join(staticDir, "fastatp_wasm.js"));
 await glue.default({ module_or_path: await readFile(path.join(staticDir, "fastatp_wasm_bg.wasm")) });
-const { connection_zero } = glue;
+const { connection_zero, generate_pen, pen_did, sign_challenge } = glue;
 
 const bodiesDir = path.join(outDir, "bodies");
 await mkdir(bodiesDir, { recursive: true });
@@ -72,9 +72,9 @@ await send("signup", `${peerUrl}/signup?did=${encodeURIComponent(twin)}`, {
 });
 
 // --- 3. client-side writes, then push the pen-signed CAR ------------------------
-const d2 = await connection_zero(domain); // "device 2": we use only its pen
-report.pen2_did = d2.pen_did;
-const device2 = d2.take_peer();
+const pen2 = await generate_pen(); // "device 2": a pen, nothing else yet
+const pen2Did = await pen_did(pen2);
+report.pen2_did = pen2Did;
 
 await peer.put_record(
   "dev.fastatp.auth.capability",
@@ -89,24 +89,24 @@ await peer.put_record(
 await peer.put_record(
   "dev.fastatp.auth.delegation",
   "pen2",
-  JSON.stringify({ $type: "dev.fastatp.auth.delegation", issuer: twin, subject: d2.pen_did }),
+  JSON.stringify({ $type: "dev.fastatp.auth.delegation", issuer: twin, subject: pen2Did }),
 );
 await send("push-1", `${peerUrl}/push-car?did=${encodeURIComponent(twin)}`, {
   body: peer.export_car(),
   headers: { "content-type": "application/vnd.ipld.car" },
 });
 
-// --- 4. device 2 passes the gate and syncs ---------------------------------------
-async function gatedGetRepo(name, device, penDid) {
+// --- 4. device 2 knocks, passes the gate and syncs --------------------------------
+async function gatedGetRepo(name, pen, penDid) {
   const challenge = await (await fetch(`${peerUrl}/xrpc/dev.fastatp.auth.getChallenge`)).json();
-  const sig = await device.sign_challenge(challenge.nonce);
+  const sig = await sign_challenge(pen, challenge.nonce, twin); // the knock names the repo it wants
   const params = new URLSearchParams({ did: twin, pen: penDid, iss: twin, nonce: challenge.nonce, sig });
   const response = await fetch(`${peerUrl}/xrpc/com.atproto.sync.getRepo?${params}`);
   report.phases[name] = response.status;
   return response;
 }
 
-const sync = await gatedGetRepo("sync-device2", device2, d2.pen_did);
+const sync = await gatedGetRepo("sync-device2", pen2, pen2Did);
 if (sync.status === 200) {
   const car = Buffer.from(await sync.arrayBuffer());
   const carPath = path.join(outDir, "device2-sync.car");
@@ -114,9 +114,9 @@ if (sync.status === 200) {
   report.files.device2_sync_car = carPath;
 }
 
-// --- 5. a stranger pen (valid challenge, no delegation) is refused ---------------
-const stranger = await connection_zero(domain);
-await gatedGetRepo("sync-stranger", stranger.take_peer(), stranger.pen_did);
+// --- 5. a stranger pen (valid knock, no delegation) is refused -------------------
+const stranger = await generate_pen();
+await gatedGetRepo("sync-stranger", stranger, await pen_did(stranger));
 
 // --- 6. severance: absence IS revocation ------------------------------------------
 await peer.delete_record("dev.fastatp.auth.delegation", "pen2");
@@ -124,7 +124,7 @@ await send("push-severance", `${peerUrl}/push-car?did=${encodeURIComponent(twin)
   body: peer.export_car(),
   headers: { "content-type": "application/vnd.ipld.car" },
 });
-await gatedGetRepo("sync-device2-severed", device2, d2.pen_did);
+await gatedGetRepo("sync-device2-severed", pen2, pen2Did);
 
 await writeFile(path.join(outDir, "report.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report));
