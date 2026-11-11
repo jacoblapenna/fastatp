@@ -58,15 +58,24 @@ Chosen model:
     root stays offline for the entire device lifecycle.
   - The device constellation is **private by default** — disclosed
     per-counterparty when a pen signs at them, never published in the doc.
-- **Enrollment ceremony**: new device shows its public key as a QR; an
-  existing device scans and signs the attestation. Public key one way,
-  signature the other. Same interaction users know from passkey cross-device
-  sign-in. The attestation is a repo record → device history is auditable
-  provenance.
-- **Paper root** (rotation keys): BIP-39 phrase, shown once at
-  signup, never persisted, never networked. The only zero-device recovery
-  path, and the backstop that rotates away any pen compromise while the DID
-  survives.
+- **Enrollment ceremony**: new device shows its public key (`pen_did`) as a
+  QR; an existing device scans and writes the delegation record. Public key
+  one way, record presence the other. Same interaction users know from
+  passkey cross-device sign-in. The record is in the repo → device history
+  is auditable provenance. When the existing device has no camera, the app
+  relays the `pen_did` behind a short code and both devices show a hash of
+  it as about six words for the user to compare; app code, never package.
+- **Pens are never imported.** A key imported into WebCrypto as
+  non-extractable passes every check the bindings make, so this is a rule,
+  not a mechanism: importing a key puts one pen on two devices. A
+  self-hoster brings their DID, not their pen; their browser enrolls as a
+  device like any other.
+- **Paper root** (rotation keys): 32 random bytes the bundle hands the app
+  once, as 64 hex characters, never persisted by the package, never
+  networked. How the app shows it (a 24-word phrase, a printed QR card) and
+  how many rotation keys it mints are app presentation; the bundle takes
+  hex back. The only zero-device recovery path, and the backstop that
+  rotates away any pen compromise while the DID survives.
 - **Revocation is per-pen**: losing a device severs one capability; the other
   devices are untouched.
   - "Log out everywhere else" = current device signs revocations for all
@@ -83,10 +92,20 @@ anything — so "lose the main pen, lose all app data" is false under this
 design. The ladder, cheapest rung first:
 
 1. **Any surviving device** → attest a new pen sideways. Nothing was lost.
-2. **Paper rotation phrase** (case 2) → rotate the DID document to a fresh
-   pen (page-append); identity, repo, and relationships survive.
-   For case 1, the equivalent lives at the identity's home (PLC rotation
-   keys, their own did:web chain).
+2. **Paper secret** (case 2) → rotate the DID document to a fresh pen
+   (page-append); identity, repo, and relationships survive. On the page:
+   a fresh browser mints a pen that is nobody yet; `rotation_did_from_secret`
+   checks the typed secret against the chain's rotation key before anything
+   is done with it; `rotate_pen` signs a new page naming the new pen and
+   returns the longer chain, which the app posts to the shelf (a longer
+   chain for the same slug; never an edit, never a rollback). The new pen
+   pulls the repo as its owner — the host's rule reads the chain head, so
+   it needs no record and has signed nothing yet — restores it, verifying
+   the head against the *old* pen that signed it, prunes the lost devices'
+   delegations, and pushes against the new head. The old pen can neither
+   pull nor push. The secret touches wasm memory for one signature and is
+   wiped. For case 1, the equivalent lives at the identity's home (PLC
+   rotation keys, their own did:web chain).
 3. **Builder recovery policy (optional): sub-promotion.** Promoting a device
    pen to identity control inverts the hierarchy — a stolen device could take
    over the identity — so if offered it must be friction-gated: quarantine
@@ -148,6 +167,26 @@ sovereign admission policy — edge business logic, never substrate.
 
 ## Runtime shape (all shipped)
 
+- **The pen is a handle.** Every binding takes and returns a WebCrypto
+  `CryptoKeyPair` (ECDSA P-256, `extractable: false`) and re-checks it on
+  the way in: curve, type, the flag read back from the browser, and that
+  the halves are a pair. Key bytes never enter wasm or JavaScript.
+  `generate_pen()` mints one; `pen_did(pair)` names it;
+  `connection_zero(domain, pair)` signs up with it;
+  `BrowserPeer.create(did, pair)` starts a repo for any DID (a device repo
+  is the pen's own `did:key`); `BrowserPeer.restore(car, pair, verify?)`
+  rebuilds one from a stored or pulled CAR, checking the head against the
+  pen that signed it, and never writes a lower rev than the restored head
+  even when the device clock is behind.
+- **IMPORTANT — saving a pen is "keep me signed in".** The bindings store
+  nothing. A pen lives in memory and is gone with the tab unless the app
+  puts the handle in IndexedDB (structured clone keeps it non-extractable)
+  and hands it back after a reload. That choice is the "keep me signed in"
+  box and should be presented as one: ephemeral by default; a shared-machine
+  session enrolled like any device with `expires_at` on its delegation as
+  the backstop and deletion on sign-out; signup refusing to make the first
+  device on a machine that is not the user's own. App policy, not library
+  code.
 - Browser peer pushes signed records via **push intake**:
   `Repo.prove()` slice POSTed, `Peer.verify()`d, dispatched.
 - The **router** ("when content arrives signed by this pen, deliver to that
@@ -156,11 +195,15 @@ sovereign admission policy — edge business logic, never substrate.
   idempotent by CID; the router is a landlord — it can drop or delay, never
   forge or misfile undetectably.
 - Reads are gated per repo by the **doorman**. Native peers: WireGuard
-  cryptokey identity. Browser peers: TLS + signed-challenge admission at the
-  WSS layer — a single-use connection-bound nonce signed by the pen, resolved
-  pen → DID through the live delegation chain, feeding the doorman check; the
-  honest weakening stands: "absence = every request rejected" rather than
-  "absence = unreachable".
+  cryptokey identity. Browser peers: TLS + one knock —
+  `sign_challenge(pair, nonce, repo_did)` signs a single-use host-issued
+  nonce together with the DID of the repo being asked for, as the fixed
+  message `fastatp-challenge-v1\n<repo DID>\n<nonce>` (a pen can never be
+  handed commit bytes as a "challenge", and a signature for one repo cannot
+  be spent on another). The gate resolves pen → DID through the live
+  delegation chain and feeds the doorman; the honest weakening stands:
+  "absence = every request rejected" rather than "absence = unreachable".
+  The knock needs no repo loaded: it is about the repo asked for.
 - **Owner pull** (`PeerServer.register(repo, owner_pull=...)`, off by
   default): a host serves a gated repo to its owner with no capability
   record — the pen that writes it, or the identity itself when a device
@@ -245,7 +288,15 @@ observer obtains nothing that lets it *be* anyone.
   revocation "propagation" dissolved — there is nothing to propagate when
   absence is the revocation.
 - The browser admission gate: signed-challenge `CallerResolver` feeding the
-  doorman; honest weakening documented above.
+  doorman; honest weakening documented above. One knock for every read, its
+  message labelled and bound to the repo asked for (`docs/decisions/0001`).
+- Owner pull revises "every device is an admitted subscriber": the owner of
+  a repo — its pen, or the identity through a delegated device — is not a
+  subscriber and needs no capability record; opt-in per hosted repo
+  (`docs/decisions/0001`).
+- Pens as handles, each device writing its own repo, recovery on the page,
+  pens never imported, and "saving a pen is keep me signed in":
+  `docs/decisions/0001`.
 - Neutral-shelf conventions: an anti-registry rule (no default shelf domain,
   ever) plus the opt-in shelf-intake route that makes running a shelf commodity.
 - Root-ceremony-deferred lifecycle: cut; the ceremony is mandatory in the v1

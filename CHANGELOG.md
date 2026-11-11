@@ -59,6 +59,14 @@ To upgrade safely within one minor line, pin with `~=`, for example
 - A repo restored from a CAR on a device whose clock is behind the restored
   head no longer writes a lower rev (Rust core `RevClock::observe`).
 
+### Docs
+- `docs/decisions/0001-browser-pen-seam.md`, the first public decision
+  record: pens as handles, each device writes its own repo, one knock,
+  owner pull (revising HOSTED-PEERS.md's "every device is an admitted
+  subscriber"), recovery on the page, pens never imported, and "saving a
+  pen is keep me signed in". HOSTED-PEERS.md's runtime shape and recovery
+  ladder updated to match.
+
 ## [0.2.0] - 2026-11-05
 
 ### Breaking
