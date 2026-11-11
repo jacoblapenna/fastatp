@@ -13,8 +13,16 @@ const glue = await import(path.join(staticDir, "fastatp_wasm.js"));
 const wasmBytes = await readFile(path.join(staticDir, "fastatp_wasm_bg.wasm"));
 await glue.default({ module_or_path: wasmBytes });
 
-const { connection_zero, verify_proof, bundle_version, generate_pen, pen_did, sign_challenge, BrowserPeer } =
-  glue;
+const {
+  connection_zero,
+  verify_proof,
+  bundle_version,
+  generate_pen,
+  pen_did,
+  sign_challenge,
+  rotation_did_from_secret,
+  BrowserPeer,
+} = glue;
 
 // --- connection zero ---------------------------------------------------------
 const bundle = await connection_zero("shelf.example");
@@ -144,6 +152,49 @@ assert.ok(
   ),
   "device repo challenge verifies",
 );
+
+// --- connection_zero with a pen the app already holds -------------------------------
+const kept = await generate_pen(); // what "keep me signed in" stores in IndexedDB
+const keptDid = await pen_did(kept);
+const withPen = await connection_zero("shelf.example", kept);
+assert.equal(withPen.pen_did, keptDid, "the bundle's pen is the one passed in");
+assert.notEqual(withPen.twin_did, bundle.twin_did, "a new identity all the same");
+const keptPeer = withPen.take_peer();
+assert.equal(keptPeer.pen_did(), keptDid);
+const keptProof = await keptPeer.put_record(
+  "com.example.note",
+  "k-1",
+  JSON.stringify({ $type: "com.example.note", text: "signed by the kept pen" }),
+);
+assert.equal(JSON.parse(verify_proof(keptProof, keptDid, null)).did, withPen.twin_did);
+// the clone IndexedDB hands back after a reload works the same
+assert.equal((await connection_zero("shelf.example", structuredClone(kept))).pen_did, keptDid);
+// omitted, undefined and null all mint a fresh pen, as before
+for (const absent of [undefined, null]) {
+  const minted = await connection_zero("shelf.example", absent);
+  assert.match(minted.pen_did, /^did:key:zDn/);
+  assert.notEqual(minted.pen_did, keptDid);
+}
+await assert.rejects(connection_zero("shelf.example", await ecdsa("P-256", true)), /extractable/);
+await assert.rejects(connection_zero("shelf.example", { privateKey: kept.privateKey }), /publicKey/);
+
+// --- rotation_did_from_secret: the typed-back check, nothing leaves the page ---------
+assert.equal(rotation_did_from_secret(bundle.rotation_secret), bundle.rotation_did);
+assert.equal(rotation_did_from_secret(withPen.rotation_secret), withPen.rotation_did);
+assert.equal(
+  rotation_did_from_secret(` ${bundle.rotation_secret.toUpperCase()} `),
+  bundle.rotation_did,
+  "case and surrounding whitespace are forgiven: the user typed it",
+);
+assert.notEqual(rotation_did_from_secret(other.rotation_secret), bundle.rotation_did);
+const typo = bundle.rotation_secret.slice(0, 63) + (bundle.rotation_secret.endsWith("0") ? "1" : "0");
+assert.notEqual(rotation_did_from_secret(typo), bundle.rotation_did, "one wrong character is a different key");
+assert.throws(() => rotation_did_from_secret(""), /64 hex/);
+assert.throws(() => rotation_did_from_secret("abc"), /64 hex/);
+assert.throws(() => rotation_did_from_secret("zz".repeat(32)), /64 hex/);
+assert.throws(() => rotation_did_from_secret("00".repeat(32)), /not a valid rotation secret/);
+assert.throws(() => rotation_did_from_secret("ff".repeat(32)), /not a valid rotation secret/);
+assert.match(rotation_did_from_secret("01".repeat(32)), /^did:key:zQ3sh/, "any in-range scalar derives a k256 did:key");
 
 // --- BrowserPeer.create / restore ----------------------------------------------------
 // a device repo: the pen's own did:key, signed by that pen

@@ -29,6 +29,11 @@ To upgrade safely within one minor line, pin with `~=`, for example
   verify?)` and `sign_challenge(key_pair, nonce, repo_did)`. Pens cross the
   boundary as non-extractable WebCrypto handles only; every entry point
   refuses an extractable one.
+- Browser bundle: `connection_zero(domain, key_pair?)` takes the pen to sign
+  up with (the one `generate_pen()` minted and the app stored), so the first
+  device's pen can be kept; omitted, it mints one as before.
+  `rotation_did_from_secret(hex)` derives the rotation `did:key` from the
+  paper secret for a typed-back check, entirely on the page.
 - `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
   bytes a pen signs; the Rust core builds the identical bytes.
 - `PeerServer.register(repo, owner_pull=...)`: a host serves a gated repo

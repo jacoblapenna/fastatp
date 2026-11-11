@@ -15,6 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
+use zeroize::Zeroize;
 
 use fastatp_core::challenge::{challenge_message, is_valid_did_syntax};
 use fastatp_core::continuity::Chain;
@@ -134,28 +135,74 @@ pub struct BrowserPeer {
     pen_did: String,
 }
 
-/// Run connection zero for `domain` (twin-only genesis): mint the
-/// pen (WebCrypto, non-extractable) and the paper rotation root, self-sign
-/// the genesis document and chain page one, and create the genesis repo —
-/// all client-side, before any server is involved.
+/// The paper root: raw entropy from `crypto.getRandomValues`, built into a
+/// k256 secret and shown once as hex. Returns `(rotation did:key, hex)`.
+/// The raw bytes and the key are wiped before returning; the hex string is
+/// the one carrier, and it goes into the bundle for the app to show.
+fn mint_paper_root() -> Result<(String, String), JsError> {
+    loop {
+        let mut bytes = random_bytes(32).map_err(|e| js_error("entropy", e))?;
+        // ~2^-128 retry probability: a 32-byte value at or past the curve order
+        let Ok(key) = PrivateKey::from_secret_bytes(&bytes, Curve::K256) else {
+            bytes.zeroize();
+            continue;
+        };
+        let hex = data_encoding::HEXLOWER.encode(&bytes);
+        bytes.zeroize();
+        let did = encode_did_key(&key.public_key());
+        drop(key); // SigningKey zeroizes on drop: the peer retains no rotation material
+        return Ok((did, hex));
+    }
+}
+
+/// The rotation `did:key` the paper secret (64 hex chars) derives, so a
+/// recovery or typed-back screen can check what the user typed against the
+/// chain's `rotationKeys` before anything is done with it. Nothing leaves the
+/// page. The secret is in wasm memory only for the derivation, exactly as
+/// `connection_zero` holds it when minting, and is wiped before returning.
 #[wasm_bindgen]
-pub async fn connection_zero(domain: String) -> Result<ConnectionZeroBundle, JsError> {
-    let signer = WebCryptoSigner::generate()
-        .await
-        .map_err(|e| js_error("webcrypto keygen", e))?;
+pub fn rotation_did_from_secret(mut secret_hex: String) -> Result<String, JsError> {
+    let result = (|| {
+        let typed = secret_hex.trim();
+        let mut bytes = match typed.len() {
+            64 => data_encoding::HEXLOWER_PERMISSIVE
+                .decode(typed.as_bytes())
+                .ok(),
+            _ => None,
+        }
+        .ok_or_else(|| JsError::new("rotation secret must be 64 hex characters"))?;
+        let key = PrivateKey::from_secret_bytes(&bytes, Curve::K256);
+        bytes.zeroize();
+        let key = key.map_err(|_| JsError::new("not a valid rotation secret"))?;
+        Ok(encode_did_key(&key.public_key()))
+    })();
+    secret_hex.zeroize();
+    result
+}
+
+/// Run connection zero for `domain` (twin-only genesis): mint the paper
+/// rotation root, self-sign the genesis document and chain page one, and
+/// create the genesis repo — all client-side, before any server is involved.
+///
+/// `key_pair` is the pen (from `generate_pen()`, possibly loaded back from
+/// IndexedDB). Pass `undefined` to mint one here instead; that pen is then
+/// reachable only through the returned peer, so an app that wants to keep
+/// the user signed in mints it first and passes it in.
+#[wasm_bindgen]
+pub async fn connection_zero(
+    domain: String,
+    key_pair: Option<JsValue>,
+) -> Result<ConnectionZeroBundle, JsError> {
+    let signer = match key_pair.filter(|v| !v.is_undefined() && !v.is_null()) {
+        Some(pair) => checked_pen(&pair).await?.0,
+        None => WebCryptoSigner::generate()
+            .await
+            .map_err(|e| js_error("webcrypto keygen", e))?,
+    };
     let pen_multikey = signer.public_multikey();
     let pen_did = format!("did:key:{pen_multikey}");
 
-    // The paper root: raw entropy from crypto.getRandomValues, built into a
-    // k256 secret, displayed once as hex. (~2^-128 retry probability.)
-    let (rotation_key, rotation_secret) = loop {
-        let bytes = random_bytes(32).map_err(|e| js_error("entropy", e))?;
-        if let Ok(key) = PrivateKey::from_secret_bytes(&bytes, Curve::K256) {
-            break (key, data_encoding::HEXLOWER.encode(&bytes));
-        }
-    };
-    let rotation_did = encode_did_key(&rotation_key.public_key());
-    drop(rotation_key); // the peer retains no rotation material
+    let (rotation_did, rotation_secret) = mint_paper_root()?;
 
     let chain = Chain::create(
         &domain,
