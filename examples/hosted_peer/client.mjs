@@ -17,7 +17,8 @@
 //      delegation
 //   5. a stranger pen with a valid knock is refused
 //   6. device 1 severs device 2's delegation (deletes the record) and pushes;
-//      device 2's next connect is refused: absence IS revocation
+//      device 2's next connect is refused: absence IS revocation; a replay
+//      of the older signed checkpoint is refused and changes nothing
 //   7. recovery: every device is lost; a new pen plus the paper secret turn
 //      the chain, the new pen pulls the repo as its owner, prunes the old
 //      devices, pushes; the old pen can neither pull nor push
@@ -131,6 +132,7 @@ for (const [rkey, subject] of [
     JSON.stringify({ $type: "dev.fastatp.auth.delegation", issuer: twin, subject }),
   );
 }
+const firstCar = peer.export_car(); // kept to replay later
 await pushCar("push-1", peer);
 
 // device 1 reads its own repo back as the owner: no capability record, no
@@ -163,6 +165,10 @@ await knock("sync-stranger", stranger, await pen_did(stranger));
 await peer.delete_record("dev.fastatp.auth.delegation", "pen2");
 await pushCar("push-severance", peer);
 await knock("sync-device2-severed", pen2, pen2Did, { iss: twin });
+// a replay of the earlier, correctly signed checkpoint must not undo the
+// severance: the host refuses a CAR whose rev is not newer than its head
+await send("push-replay", `${peerUrl}/push-car?did=${encodeURIComponent(twin)}`, { body: firstCar, headers: CAR });
+await knock("sync-device2-after-replay", pen2, pen2Did, { iss: twin });
 
 // --- 7. recovery: every device is lost; the paper secret and a new pen ------------
 // a fresh browser: nothing in IndexedDB, so it mints a pen that is nobody yet

@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use fastatp_core::challenge::{challenge_message, is_valid_did_syntax};
 use fastatp_core::continuity::{build_document, Chain};
@@ -82,14 +82,8 @@ pub struct ConnectionZeroBundle {
     rotation_did: String,
     chain_json: String,
     genesis_car: Vec<u8>,
-    rotation_secret: String,
+    rotation_secret: Zeroizing<String>, // wiped when the bundle is freed
     peer: Option<BrowserPeer>,
-}
-
-impl Drop for ConnectionZeroBundle {
-    fn drop(&mut self) {
-        self.rotation_secret.zeroize();
-    }
 }
 
 #[wasm_bindgen]
@@ -121,10 +115,12 @@ impl ConnectionZeroBundle {
 
     /// The paper rotation secret (hex). Show it once; it is never persisted
     /// and cannot be re-derived. Reading it does not clear it — clearing is
-    /// the app's ceremony — but the peer keeps no copy.
+    /// the app's ceremony. The bundle wipes its own copy when freed; the
+    /// copy that crosses to JavaScript is wasm-bindgen's (freed, not wiped)
+    /// and the JavaScript string is the app's to show once and forget.
     #[wasm_bindgen(getter)]
     pub fn rotation_secret(&self) -> String {
-        self.rotation_secret.clone()
+        self.rotation_secret.to_string()
     }
 
     /// Hand over the live peer (once).
@@ -147,19 +143,17 @@ pub struct BrowserPeer {
 /// k256 secret and shown once as hex. Returns `(rotation did:key, hex)`.
 /// The raw bytes and the key are wiped before returning; the hex string is
 /// the one carrier, and it goes into the bundle for the app to show.
-fn mint_paper_root() -> Result<(String, String), JsError> {
+fn mint_paper_root() -> Result<(String, Zeroizing<String>), JsError> {
     loop {
-        let mut bytes = random_bytes(32).map_err(|e| js_error("entropy", e))?;
+        let bytes = Zeroizing::new(random_bytes(32).map_err(|e| js_error("entropy", e))?);
         // ~2^-128 retry probability: a 32-byte value at or past the curve order
         let Ok(key) = PrivateKey::from_secret_bytes(&bytes, Curve::K256) else {
-            bytes.zeroize();
-            continue;
+            continue; // `bytes` wipes itself
         };
-        let hex = data_encoding::HEXLOWER.encode(&bytes);
-        bytes.zeroize();
+        let hex = Zeroizing::new(data_encoding::HEXLOWER.encode(&bytes[..]));
         let did = encode_did_key(&key.public_key());
         drop(key); // SigningKey zeroizes on drop: the peer retains no rotation material
-        return Ok((did, hex));
+        return Ok((did, hex)); // the hex is wiped if connection_zero fails before the bundle owns it
     }
 }
 
@@ -177,21 +171,23 @@ pub fn rotation_did_from_secret(secret_hex: String) -> Result<String, JsError> {
 /// Decode a typed paper secret into its k256 key, wiping every buffer that
 /// held it. The `String` is consumed so the caller cannot keep it either.
 fn paper_root_key(mut secret_hex: String) -> Result<PrivateKey, JsError> {
+    // decode into a buffer we own and wipe on every path, rather than one the
+    // decoder allocates and drops unwiped on a malformed input
+    let mut bytes = Zeroizing::new([0u8; 32]);
     let result = (|| {
         let typed = secret_hex.trim();
-        let mut bytes = match typed.len() {
-            64 => data_encoding::HEXLOWER_PERMISSIVE
-                .decode(typed.as_bytes())
-                .ok(),
-            _ => None,
+        let decoded = typed.len() == 64
+            && data_encoding::HEXLOWER_PERMISSIVE
+                .decode_mut(typed.as_bytes(), &mut bytes[..])
+                .is_ok();
+        if !decoded {
+            return Err(JsError::new("rotation secret must be 64 hex characters"));
         }
-        .ok_or_else(|| JsError::new("rotation secret must be 64 hex characters"))?;
-        let key = PrivateKey::from_secret_bytes(&bytes, Curve::K256);
-        bytes.zeroize();
-        key.map_err(|_| JsError::new("not a valid rotation secret"))
+        PrivateKey::from_secret_bytes(&bytes[..], Curve::K256)
+            .map_err(|_| JsError::new("not a valid rotation secret"))
     })();
     secret_hex.zeroize();
-    result
+    result // `bytes` wipes itself here, success or not
 }
 
 /// Recovery: turn the identity's chain onto a new main pen, signed by the
@@ -275,7 +271,7 @@ pub async fn connection_zero(
     let pen_multikey = signer.public_multikey();
     let pen_did = format!("did:key:{pen_multikey}");
 
-    let (rotation_did, rotation_secret) = mint_paper_root()?;
+    let (rotation_did, rotation_secret) = mint_paper_root()?; // wiped on any early return below
 
     let chain = Chain::create(
         &domain,

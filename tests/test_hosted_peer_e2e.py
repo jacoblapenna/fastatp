@@ -119,6 +119,9 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     # Absence IS revocation.
     assert phases["push-severance"] == 200
     assert phases["sync-device2-severed"] == 404
+    # a replayed older checkpoint, correctly signed, cannot roll the host back
+    assert phases["push-replay"] == 409
+    assert phases["sync-device2-after-replay"] == 404
 
     # recovery: every device lost. The typed-back check passed on the page;
     # the paper secret turned the chain onto a new pen (a LONGER chain, which

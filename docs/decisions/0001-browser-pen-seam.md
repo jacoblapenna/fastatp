@@ -114,12 +114,16 @@ head against the old pen, which signed it), prunes the lost devices'
 delegations, and pushes. The old pen can neither pull nor push.
 
 In `rotation_did_from_secret` and `rotate_pen` the secret is in wasm
-memory only for the derivation or the one signature, and every wasm buffer
-that held it is wiped before returning, on every exit path.
-`connection_zero` is the one place that hands the secret out: the bundle
-carries it until the app frees the bundle (the wasm copy is wiped then),
-and the JavaScript string the getter returns is the app's to show once and
-forget; the bindings cannot wipe a JavaScript string. The bundle's interface for the secret is
+memory only for the derivation or the one signature, in buffers the
+bindings own and wipe on every exit path, including a malformed input
+(the hex is decoded into a fixed buffer, never one the decoder allocates).
+`connection_zero` is the one place that hands the secret out. Inside the
+bindings it is held in wiping wrappers from minting to the bundle, so a
+failure between the two wipes it, and the bundle wipes its copy when the
+app frees the bundle. Two copies are outside the bindings' reach and are
+documented rather than claimed: the transient copy wasm-bindgen makes to
+hand a string to JavaScript is freed, not wiped, and the JavaScript string
+itself is the app's to show once and forget. The bundle's interface for the secret is
 64 hex characters; how an app shows it (a word phrase, a QR card) and how
 many rotation keys it mints are app presentation.
 

@@ -65,7 +65,8 @@ cat /tmp/hosted-demo/report.json
    Device 2's next connect — fresh, valid knock — is refused.
    **Absence is revocation**: no revocation lists, no token
    expiry, nothing to propagate. If the record isn't there, the pen isn't
-   anyone.
+   anyone. Replaying the earlier, correctly signed checkpoint is refused
+   (its rev is not newer than the hosted head), so a replay can't undo it.
 7. **Recovery**: every device is lost. A fresh browser mints a pen that is
    nobody yet. The user types the paper secret; `rotation_did_from_secret`
    checks it against the chain's rotation key on the page. `rotate_pen`

@@ -296,3 +296,33 @@ def test_a_car_whose_head_rev_is_not_a_tid_is_refused_before_any_state_changes()
         target.import_car(car, verify_key=key.public_key())
     assert (target.commit_cid, target.rev, dict(target._entries)) == before
     assert target.get_record("com.example.note", "mine") is not None
+
+
+def test_a_refused_head_never_advances_a_shared_clock():
+    """A head with a valid, far-future rev but a malformed MST fails to load;
+    the clock it was handed must not have learned that rev, or every later
+    commit on a repo sharing the clock would carry a future timestamp."""
+    from fastatp.tid import TidClock, encode_tid
+
+    key = crypto.generate_keypair("k256")
+    store = MemoryBlockStore()
+    future = encode_tid(4_000_000_000_000_000, 7)  # ~2096
+    unsigned = {
+        "did": "did:web:rev.example",
+        "rev": future,
+        "data": None,
+        "prev": None,
+        "version": 3,
+    }
+    bogus = Commit(
+        did="did:web:rev.example",
+        data=None,
+        rev=future,
+        sig=crypto.sign_message(key, dagcbor.encode(unsigned)),
+    )  # type: ignore[arg-type]
+    block = bogus.to_dag_cbor()
+    store.put(bogus.cid(), block)
+    shared = TidClock()
+    with pytest.raises(RepoError):
+        Repo("did:web:rev.example", key, store=store, head_cid=bogus.cid(), clock=shared)
+    assert shared.now() < future, "the refused head's rev leaked into the shared clock"

@@ -26,7 +26,7 @@ from fastatp.repo.car import decode_car, encode_car
 from fastatp.repo.commit import Commit
 from fastatp.repo.mst import MST, validate_mst_key
 from fastatp.repo.store import BlockStore, MemoryBlockStore
-from fastatp.tid import TidClock
+from fastatp.tid import TidClock, decode_tid
 
 RecordLike = Union[Lexicon, dict[str, Any]]  # noqa: UP007 - runtime alias
 
@@ -64,6 +64,15 @@ def _record_bytes(record: RecordLike) -> bytes:
     if isinstance(record, Lexicon):
         return record.to_dag_cbor()
     return dagcbor.encode(datamodel.from_json(record))
+
+
+def _check_rev(rev: str) -> None:
+    """A head rev must be a TID (``Commit.from_map`` takes any string), and
+    must be checked before a repo loads it, without touching any clock."""
+    try:
+        decode_tid(rev)
+    except (ValueError, FastATPError) as e:
+        raise RepoError(f"head commit rev {rev!r} is not a TID: {e}") from None
 
 
 class Repo:
@@ -116,7 +125,7 @@ class Repo:
             raise RepoError(f"stored head commit is not valid DAG-CBOR: {e}") from None
         if commit.did != self.did:
             raise RepoError(f"stored repo is for {commit.did}, not {self.did}")
-        self._observe_rev(commit.rev)  # before any state changes
+        _check_rev(commit.rev)  # refused before any state changes
         try:
             self._entries = self.mst.load(commit.data)
         except DataModelError as e:
@@ -125,6 +134,7 @@ class Repo:
         self._commit_cid = head_cid
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
+        self.clock.observe(commit.rev)  # only once the head is in place (see import_car)
 
     # --- state --------------------------------------------------------------
 
@@ -414,9 +424,7 @@ class Repo:
         commit, entries, blocks = self.read_car(data, verify_key)
         if commit.did != self.did:
             raise RepoError(f"CAR is for {commit.did}, not {self.did}")
-        # the next rev must sort after this head, clock or no clock; a head
-        # whose rev is not a TID is refused here, before any state changes
-        self._observe_rev(commit.rev)
+        _check_rev(commit.rev)  # refused here, before any state changes
         for cid, block in blocks.items():
             self.store.put(cid, block)
         self._entries = entries
@@ -424,14 +432,12 @@ class Repo:
         self._commit_cid = commit.cid()
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
+        # only once the head is in place: the next rev must sort after it,
+        # clock or no clock, and a clock shared with other repos must not
+        # learn a rev from a head that was refused
+        self.clock.observe(commit.rev)
         if gc:
             self._collect_garbage()
-
-    def _observe_rev(self, rev: str) -> None:
-        try:
-            self.clock.observe(rev)
-        except (ValueError, FastATPError) as e:
-            raise RepoError(f"head commit rev {rev!r} is not a TID: {e}") from None
 
     def collect_garbage(self) -> None:
         """Drop store blocks unreachable from the current head.

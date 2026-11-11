@@ -17,7 +17,8 @@ ships primitives; builders compose them). It wires together:
   * ``POST /push-car?did=`` — the example "router": a device pushes its full
     pen-signed CAR; the host re-verifies against the CURRENT chain head key
     (a ``did:web`` main repo) or the DID's own key (a ``did:key`` device
-    repo, hosted on first push) and replaces the hosted state. The host can
+    repo, hosted on first push), refuses a checkpoint whose rev is not
+    newer than the hosted head (a replay), and replaces the hosted state. The host can
     drop or delay, never forge — every byte it holds is signed by a key it
     does not have.
 
@@ -173,6 +174,18 @@ def make_builder(domain: str) -> ExampleBuilder:
                 key = builder.head_key(did)
             except KeyError:
                 return JSONResponse({"error": "NotShelved"}, status_code=404)
+        try:
+            incoming, _entries, _blocks = Repo.read_car(car, verify_key=key)
+        except FastATPError as exc:
+            return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
+        # a signed checkpoint can be replayed; an older one must never roll the
+        # hosted state back. Revs rise strictly across commits, so the head
+        # must move forward. (A durable router would also persist this.)
+        if incoming.rev <= handle.repo.rev:
+            return JSONResponse(
+                {"error": "Stale", "message": f"hosted rev {handle.repo.rev} is not older"},
+                status_code=409,
+            )
         try:
             handle.repo.import_car(car, verify_key=key)
         except FastATPError as exc:
