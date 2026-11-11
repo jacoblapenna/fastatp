@@ -21,6 +21,7 @@ const {
   pen_did,
   sign_challenge,
   rotation_did_from_secret,
+  rotate_pen,
   BrowserPeer,
 } = glue;
 
@@ -241,9 +242,45 @@ try {
   Date.now = realNow;
 }
 
-// recovery shape: restore with the OLD pen as verify key, sign on with a new pen
+// --- recovery: rotate_pen turns the chain onto a new pen, signed by the paper secret --
 const newPen = await generate_pen();
 const newPenDid = await pen_did(newPen);
+const rotatedJson = await rotate_pen(bundle.chain_json, bundle.rotation_secret, newPen);
+const rotated = JSON.parse(rotatedJson);
+assert.equal(rotated.chain.length, 2, "one page turned");
+assert.deepEqual(rotated.chain[0], chain.chain[0], "genesis untouched");
+const head = rotated.chain[1];
+assert.equal(head.document.id, bundle.twin_did, "same identity");
+assert.deepEqual(head.document.rotationKeys, [bundle.rotation_did], "rotation keys kept");
+assert.deepEqual(head.document.alsoKnownAs, [], "aliases kept");
+assert.equal(
+  head.document.verificationMethod[0].publicKeyMultibase,
+  newPenDid.slice("did:key:".length),
+  "the head names the new pen",
+);
+assert.match(head.signature, /^[A-Za-z0-9+/]+=*$/, "rotation-signed");
+// a rotation is a longer chain; it can be turned again from its own output
+const again = JSON.parse(await rotate_pen(rotatedJson, bundle.rotation_secret, await generate_pen()));
+assert.equal(again.chain.length, 3);
+assert.deepEqual(again.chain.slice(0, 2), rotated.chain, "earlier pages untouched");
+// refusals, each before anything is signed
+await assert.rejects(rotate_pen(bundle.chain_json, other.rotation_secret, newPen), /rotation/, "wrong secret");
+await assert.rejects(rotate_pen(bundle.chain_json, "abc", newPen), /64 hex/);
+await assert.rejects(rotate_pen(bundle.chain_json, "00".repeat(32), newPen), /not a valid rotation secret/);
+await assert.rejects(rotate_pen(bundle.chain_json, bundle.rotation_secret, await ecdsa("P-256", true)), /extractable/);
+await assert.rejects(rotate_pen("not json", bundle.rotation_secret, newPen), /chain/);
+const tamperedChain = structuredClone(chain);
+tamperedChain.chain[0].document.rotationKeys = [other.rotation_did];
+await assert.rejects(
+  rotate_pen(JSON.stringify(tamperedChain), other.rotation_secret, newPen),
+  /chain/,
+  "a chain whose genesis no longer matches its slug is refused, even with its own secret",
+);
+const strippedChain = structuredClone(rotated);
+strippedChain.chain[1].signature = null;
+await assert.rejects(rotate_pen(JSON.stringify(strippedChain), bundle.rotation_secret, newPen), /chain/);
+
+// the repo side of recovery: restore with the OLD pen as verify key, sign on with the new pen
 const takenOver = await BrowserPeer.restore(stored, newPen, penDid);
 assert.equal(takenOver.pen_did(), newPenDid);
 const afterProof = await takenOver.put_record(

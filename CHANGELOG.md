@@ -34,6 +34,11 @@ To upgrade safely within one minor line, pin with `~=`, for example
   device's pen can be kept; omitted, it mints one as before.
   `rotation_did_from_secret(hex)` derives the rotation `did:key` from the
   paper secret for a typed-back check, entirely on the page.
+- Browser bundle: `rotate_pen(chain_json, secret_hex, key_pair)`, recovery
+  on the page: the paper secret signs a new chain page naming a new pen,
+  returned as the longer chain for the app to POST to the shelf. A wrong
+  secret, an extractable pen or a chain that does not verify is refused
+  before anything is signed; the secret is wiped afterwards.
 - `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
   bytes a pen signs; the Rust core builds the identical bytes.
 - `PeerServer.register(repo, owner_pull=...)`: a host serves a gated repo

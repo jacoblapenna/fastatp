@@ -18,7 +18,7 @@ use wasm_bindgen::prelude::*;
 use zeroize::Zeroize;
 
 use fastatp_core::challenge::{challenge_message, is_valid_did_syntax};
-use fastatp_core::continuity::Chain;
+use fastatp_core::continuity::{build_document, Chain};
 use fastatp_core::crypto::{
     decode_did_key, decode_multikey, encode_did_key, Curve, PrivateKey, PublicKey, Signer as _,
 };
@@ -161,7 +161,14 @@ fn mint_paper_root() -> Result<(String, String), JsError> {
 /// page. The secret is in wasm memory only for the derivation, exactly as
 /// `connection_zero` holds it when minting, and is wiped before returning.
 #[wasm_bindgen]
-pub fn rotation_did_from_secret(mut secret_hex: String) -> Result<String, JsError> {
+pub fn rotation_did_from_secret(secret_hex: String) -> Result<String, JsError> {
+    let key = paper_root_key(secret_hex)?;
+    Ok(encode_did_key(&key.public_key())) // the key zeroizes on drop
+}
+
+/// Decode a typed paper secret into its k256 key, wiping every buffer that
+/// held it. The `String` is consumed so the caller cannot keep it either.
+fn paper_root_key(mut secret_hex: String) -> Result<PrivateKey, JsError> {
     let result = (|| {
         let typed = secret_hex.trim();
         let mut bytes = match typed.len() {
@@ -173,11 +180,66 @@ pub fn rotation_did_from_secret(mut secret_hex: String) -> Result<String, JsErro
         .ok_or_else(|| JsError::new("rotation secret must be 64 hex characters"))?;
         let key = PrivateKey::from_secret_bytes(&bytes, Curve::K256);
         bytes.zeroize();
-        let key = key.map_err(|_| JsError::new("not a valid rotation secret"))?;
-        Ok(encode_did_key(&key.public_key()))
+        key.map_err(|_| JsError::new("not a valid rotation secret"))
     })();
     secret_hex.zeroize();
     result
+}
+
+/// Recovery: turn the identity's chain onto a new main pen, signed by the
+/// paper secret. Returns the longer chain as JSON for the app to POST to the
+/// shelf (which accepts a longer chain for the same slug, never an edit).
+///
+/// The new page keeps the identity (`id`), its aliases and its rotation
+/// keys, and names `key_pair` as the signing key. Every check runs before
+/// anything is signed: the chain must verify as given, the pen must be a
+/// non-extractable P-256 pair, and the secret must be one of the head's
+/// rotation keys (a wrong secret is refused with the chain untouched). The
+/// secret is in wasm memory only for the signature and is wiped before
+/// returning. Afterwards the app restores the repo with the new pen, pushes,
+/// and the host checks that push against the new head; the old pen is out.
+#[wasm_bindgen]
+pub async fn rotate_pen(
+    chain_json: String,
+    secret_hex: String,
+    key_pair: JsValue,
+) -> Result<String, JsError> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(&chain_json).map_err(|e| js_error("rotate: chain", e))?;
+    let mut chain =
+        Chain::from_value(&json_to_value(&parsed).map_err(|e| js_error("rotate: chain", e))?)
+            .map_err(|e| js_error("rotate: chain", e))?;
+    chain.verify().map_err(|e| js_error("rotate: chain", e))?;
+    let (pen, _) = checked_pen(&key_pair).await?;
+    let rotation_key = paper_root_key(secret_hex)?;
+
+    let head = chain.head();
+    let twin = chain.twin_did().map_err(|e| js_error("rotate: chain", e))?;
+    let str_list = |key: &str| -> Result<Vec<String>, JsError> {
+        head.get(key)
+            .and_then(fastatp_core::dagcbor::Value::as_array)
+            .ok_or_else(|| JsError::new(&format!("rotate: chain head has no {key:?}")))?
+            .iter()
+            .map(|v| v.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| JsError::new(&format!("rotate: chain head {key:?} is not strings")))
+    };
+    let also_known_as = str_list("alsoKnownAs")?;
+    let rotation_keys = str_list("rotationKeys")?;
+    let page = build_document(
+        &twin,
+        &pen.public_multikey(),
+        &also_known_as,
+        &rotation_keys,
+    );
+
+    // append checks the secret against the head's rotationKeys before mutating
+    let appended = chain.append(page, &rotation_key);
+    drop(rotation_key); // SigningKey zeroizes on drop
+    appended.map_err(|e| JsError::new(&format!("rotate: {e}")))?;
+    Ok(value_to_json(&chain.to_value())
+        .map_err(|e| JsError::new(&e))?
+        .to_string())
 }
 
 /// Run connection zero for `domain` (twin-only genesis): mint the paper
