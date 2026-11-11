@@ -19,10 +19,11 @@ import websockets
 
 from fastatp import Peer, PeerServer, crypto
 from fastatp.authz.capability import ACTION_SEND, ACTION_SUBSCRIBE, Capability
+from fastatp.authz.wireguard import overlay_address
 from fastatp.exceptions import RepoError
 from fastatp.repo.repo import Repo
 from fastatp.repo.sync import decode_frame
-from fastatp.server.peer_server import FIREHOSE_PATH, GET_REPO_PATH
+from fastatp.server.peer_server import FIREHOSE_PATH, GET_REPO_PATH, TunnelIdentityResolver
 from fastatp.tid import generate_tid
 
 PRIMARY_DID = "did:web:hub.example"
@@ -36,15 +37,17 @@ def _channel_repo() -> Repo:
     return Repo(crypto.encode_did_key(key.public_key()), key)
 
 
-def _admit(handle, subject, *, actions=(ACTION_SUBSCRIBE,), tunnel_ip=None):
-    """Write a live capability admitting ``subject`` into the handle's repo."""
-    cap = Capability(
-        subject=subject,
-        actions=list(actions),
-        wg_public_key=WG_KEY if tunnel_ip else None,
-        wg_tunnel_ip=tunnel_ip,
-    )
+def _admit(handle, subject, *, actions=(ACTION_SUBSCRIBE,), wg_key=None):
+    """Write a live capability admitting ``subject`` into the handle's repo,
+    optionally by WireGuard key (whose overlay address is derived)."""
+    cap = Capability(subject=subject, actions=list(actions), wg_public_key=wg_key)
     handle.put_record(Capability.nsid, generate_tid(), cap)
+
+
+def _arriving_from(key: str):
+    """A source-address seam presenting the overlay address ``key`` derives,
+    standing in for the kernel's cryptokey routing on a real tunnel."""
+    return lambda conn: overlay_address(key)
 
 
 def _peer():
@@ -128,13 +131,15 @@ async def test_send_only_capability_does_not_confer_read(serve_app):
         assert (await _get(port, a.did)).status_code == 404
 
 
-async def test_tunnel_identity_resolver_maps_source_ip(serve_app):
-    """The default resolver ties the loopback source IP to Alice via A's signed
-    capability (wg_tunnel_ip), with no injected resolver."""
-    srv = PeerServer(_peer())  # default TunnelIdentityResolver
+async def test_tunnel_identity_resolver_maps_source_address(serve_app):
+    """The tunnel resolver ties the source overlay address to Alice via A's
+    signed capability: the address is derived from the granted key, never
+    read from a record."""
+    srv = PeerServer(_peer())
+    srv.identity_resolver = TunnelIdentityResolver(srv, source_address=_arriving_from(WG_KEY))
     a = srv.register(_channel_repo())
     b = srv.register(_channel_repo())
-    _admit(a, ALICE, tunnel_ip="127.0.0.1")  # loopback -> Alice, admitted to A
+    _admit(a, ALICE, wg_key=WG_KEY)  # Alice's key -> her address -> Alice, admitted to A
 
     async with serve_app(srv.app) as port:
         assert (await _get(port, a.did)).status_code == 200  # Alice admitted to A
@@ -144,9 +149,9 @@ async def test_tunnel_identity_resolver_maps_source_ip(serve_app):
 async def test_proxy_warning_on_unidentifiable_loopback_read(serve_app, caplog):
     """A gated read that can't be tied to a tunnel identity, from loopback, logs
     a loud proxy-misconfiguration diagnosis (once)."""
-    srv = PeerServer(_peer())  # default resolver; no cap maps loopback -> anyone
+    srv = PeerServer(_peer())  # default resolver: the real client address, loopback
     a = srv.register(_channel_repo())
-    _admit(a, ALICE, tunnel_ip="10.9.0.2")  # Alice is on the tunnel, not loopback
+    _admit(a, ALICE, wg_key=WG_KEY)  # Alice's derived address is on the overlay, not loopback
 
     async with serve_app(srv.app) as port:
         with caplog.at_level(logging.WARNING, logger="fastatp.peerserver"):

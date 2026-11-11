@@ -70,16 +70,13 @@ def _run_scenario() -> dict:
     return json.loads(line[len("RESULT: ") :])
 
 
-def test_reconciler_gates_real_tunnel_both_families():
+def test_reconciler_gates_real_tunnel_on_the_derived_overlay():
+    """One real tunnel on the key-derived IPv6 overlay, carried over an
+    IPv4-only underlay: grant opens it, revoke tears the live session down,
+    and no address was ever exchanged between the two namespaces."""
     results = _run_scenario()
-
-    # item 4: IPv4 grant opens the tunnel, revoke tears down the live session
-    v4 = results["v4"]
-    assert v4["before_grant"] is False, "tunnel reachable before grant"
-    assert v4["after_grant"] is True, "tunnel not reachable after grant"
-    assert v4["after_revoke"] is False, "session survived revoke (no mid-session teardown)"
-
-    # item 3: IPv6 grant opens a working v6 tunnel end to end
-    v6 = results["v6"]
-    assert v6["before_grant"] is False
-    assert v6["after_grant"] is True, "IPv6 tunnel not reachable after grant"
+    ovl = results["overlay"]
+    assert ovl["address_a"].startswith("fd5a:7a7f:9c3e:")  # OVERLAY_PREFIX
+    assert ovl["before_grant"] is False, "tunnel reachable before grant"
+    assert ovl["after_grant"] is True, "tunnel not reachable after grant"
+    assert ovl["after_revoke"] is False, "session survived revoke (no mid-session teardown)"

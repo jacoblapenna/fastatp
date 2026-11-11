@@ -40,9 +40,10 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from fastatp.authz.capability import ACTION_SUBSCRIBE, live_capabilities
+from fastatp.authz.wireguard import overlay_address
 from fastatp.cid import CID
 from fastatp.crypto import decode_did_key
-from fastatp.exceptions import CryptoError, RepoError
+from fastatp.exceptions import CryptoError, FastATPError, RepoError
 from fastatp.peer import Peer
 from fastatp.repo.repo import CommitEvent, RecordLike, Repo, WriteOp
 from fastatp.repo.store import BlockStore
@@ -265,19 +266,30 @@ def _source_ip(conn: HTTPConnection) -> str | None:
 class TunnelIdentityResolver:
     """Default doorman identity: source tunnel IP -> DID via signed capabilities.
 
-    WireGuard binds each admitted peer's static public key to a unique tunnel
-    IP at handshake, so a connection's source tunnel IP is an unspoofable
-    identity *inside the tunnel*. The IP -> DID map is the union of every
-    hosted repo's live capabilities' ``wg_tunnel_ip`` (signed data) —
-    no new state. A caller whose source IP is in no capability maps to ``None``
-    and is refused for gated repos (fail-closed).
+    WireGuard binds each admitted peer's static public key to one overlay
+    address (derived from the key: ``overlay_address``), so a connection's
+    source address is an unspoofable identity *inside the tunnel*. The
+    address -> DID map is derived from the keys in every hosted repo's live
+    capabilities (signed data) — no new state and no address in any record.
+    A caller whose source address derives from no granted key maps to
+    ``None`` and is refused for gated repos (fail-closed).
+
+    ``source_address`` is the seam for where the address comes from (the
+    connection's client address by default); another enforcement plane, or a
+    test presenting a derived address, supplies its own.
     """
 
-    def __init__(self, server: PeerServer) -> None:
+    def __init__(
+        self,
+        server: PeerServer,
+        *,
+        source_address: Callable[[HTTPConnection], str | None] | None = None,
+    ) -> None:
         self._server = server
+        self._source = source_address or _source_ip
 
     def __call__(self, conn: HTTPConnection) -> ResolvedCaller | None:
-        ip = _source_ip(conn)
+        ip = self._source(conn)
         if ip is None:
             return None
         bound = self._server._ip_to_did().get(ip)
@@ -580,21 +592,38 @@ class PeerServer:
     # --- the doorman (per-repo read gating) ------------------------------------
 
     def _ip_to_did(self) -> dict[str, tuple[str, str]]:
-        """Source tunnel IP -> (DID, the repo whose capability bound it), from
-        every hosted repo's live capabilities.
+        """Source overlay address -> (DID, the repo whose capability granted
+        the key), from every hosted repo's live capabilities.
 
-        The signed IP<->DID binding lives in by-public-key capabilities
-        (``wg_tunnel_ip``). Rebuilt per lookup: repos are few and
+        The address is derived from the capability's ``wg_public_key``; no
+        record ever names an address, so a record cannot claim one it does
+        not hold the key for. Rebuilt per lookup: repos are few and
         in-memory, and a stale map must never outlive a revocation. The repo
-        is kept because a binding is only that repo's word: it admits the DID
+        is kept because a grant is only that repo's word: it admits the DID
         to repos that hold a capability for it, and makes it an *owner* only
-        of the repo that wrote the binding.
+        of the repo that wrote the grant.
+
+        Scale note: this walk is O(all capabilities this host serves), which
+        is right for a peer hosting a few repos and wrong for a host serving
+        millions. That host runs several instances, each with its own
+        WireGuard interface, and keeps "this address is this DID, granted in
+        this repo" as a cache in its own database, updated as repo owners
+        write and delete capabilities in the repos it hosts (the host never
+        writes one) — the bring-your-own-database work makes that the
+        natural place. Like any cache it is for speed, not authority: it only
+        points the doorman at a repo, and the doorman still admits by the
+        capability currently in that repo. The map stays a per-lookup walk
+        until then.
         """
         mapping: dict[str, tuple[str, str]] = {}
         for host in self._hosts.values():
             for subject, (_rkey, cap) in live_capabilities(host.repo).items():
-                if cap.wg_tunnel_ip:
-                    mapping[cap.wg_tunnel_ip] = (subject, host.did)
+                if cap.wg_public_key:
+                    try:
+                        address = overlay_address(cap.wg_public_key)
+                    except FastATPError:
+                        continue  # a malformed key grants nobody
+                    mapping[address] = (subject, host.did)
         return mapping
 
     async def _resolve_caller(self, conn: HTTPConnection) -> ResolvedCaller | None:

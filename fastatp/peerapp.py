@@ -36,7 +36,11 @@ from typing import TYPE_CHECKING, Any
 from fastatp.authz.attestation import Attestation, build_attestation
 from fastatp.authz.capability import ACTION_SUBSCRIBE
 from fastatp.authz.reconciler import WireGuardReconciler
-from fastatp.authz.wireguard import MemoryWireGuardInterface, generate_wireguard_keypair
+from fastatp.authz.wireguard import (
+    MemoryWireGuardInterface,
+    generate_wireguard_keypair,
+    overlay_address,
+)
 from fastatp.cid import CID
 from fastatp.crypto import encode_did_key, generate_keypair
 from fastatp.exceptions import CommitGap, FastATPError, FirehoseErrorFrame
@@ -101,7 +105,6 @@ class PrivateChannel:
     # repr=False: never let the channel's WG private key leak into a log,
     # traceback, or str(channel) (a service opens one of these per request)
     wg_private_key: str = field(repr=False)
-    tunnel_ip: str
     endpoint_host: str | None
     expires_at: str
     issuer_did: str
@@ -109,6 +112,12 @@ class PrivateChannel:
     @property
     def did(self) -> str:
         return self.ephemeral_did
+
+    @property
+    def tunnel_ip(self) -> str:
+        """The channel's overlay address: derived from its WG key, never
+        allocated. The host answers on it by adding it to its interface."""
+        return overlay_address(self.wg_public_key)
 
     def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
         return self.handle.put_record(collection, rkey, record)
@@ -339,7 +348,6 @@ class PeerApp:
             reconciler.interface if reconciler else MemoryWireGuardInterface()
         )
         self._channel_endpoint = channel_endpoint
-        self._channel_ip_counter = 0
         # discovery cache: shipped Attestations seen inbound, by context_id (0015),
         # LRU-bounded so a firehose of attestations can't grow it without bound
         self._attestations: OrderedDict[str, list[tuple[str, Attestation]]] = OrderedDict()
@@ -425,9 +433,7 @@ class PeerApp:
         self,
         issuer_did: str,
         *,
-        channel_tunnel_ip: str,
         issuer_wg_public_key: str | None = None,
-        issuer_tunnel_ip: str | None = None,
         endpoint_host: str | None = None,
         ttl: float = 600.0,
     ) -> PrivateChannel:
@@ -436,11 +442,11 @@ class PeerApp:
         Mints a fresh signing key + WG keypair + in-memory repo, registers it
         gated with ``ttl``, and admits the issuer **by public key**
         into the *channel* repo so the doorman lets exactly that one peer read
-        it. ``channel_tunnel_ip`` is the ``/32`` the channel's firehose answers
-        on (what the attestation points at); ``issuer_wg_public_key`` +
-        ``issuer_tunnel_ip`` are the documentless requester's coordinates (from
-        its want ad / self-attestation). A ``did:web`` issuer is admitted by
-        resolving its document instead (omit the ``issuer_wg_*`` args).
+        it. The channel's overlay address is derived from its fresh WG key
+        (what the attestation points at); ``issuer_wg_public_key`` is the
+        documentless requester's key (from its want ad / self-attestation),
+        whose address is derived the same way. A ``did:web`` issuer is
+        admitted by resolving its document instead (omit the key).
         """
         signing_key = generate_keypair("k256")
         ephemeral_did = encode_did_key(signing_key.public_key())
@@ -449,16 +455,12 @@ class PeerApp:
 
         recon = WireGuardReconciler(handle, self._wg_interface, self._channel_resolver())
         if issuer_did.startswith("did:key:"):
-            if issuer_wg_public_key is None or issuer_tunnel_ip is None:
+            if issuer_wg_public_key is None:
                 raise ValueError(
-                    "a did:key issuer must be admitted by public key: pass "
-                    "issuer_wg_public_key and issuer_tunnel_ip"
+                    "a did:key issuer must be admitted by public key: pass issuer_wg_public_key"
                 )
             await recon.grant(
-                issuer_did,
-                wg_public_key=issuer_wg_public_key,
-                tunnel_ip=issuer_tunnel_ip,
-                actions=(ACTION_SUBSCRIBE,),
+                issuer_did, wg_public_key=issuer_wg_public_key, actions=(ACTION_SUBSCRIBE,)
             )
         else:
             await recon.grant(issuer_did, actions=(ACTION_SUBSCRIBE,))  # resolve the doc
@@ -470,7 +472,6 @@ class PeerApp:
             ephemeral_did=ephemeral_did,
             wg_public_key=wg_public,
             wg_private_key=wg_private,
-            tunnel_ip=channel_tunnel_ip,
             endpoint_host=endpoint_host,
             expires_at=expires_at,
             issuer_did=issuer_did,
@@ -494,7 +495,6 @@ class PeerApp:
             context_id=context_id,
             ephemeral_did=channel.ephemeral_did,
             wg_public_key=channel.wg_public_key,
-            tunnel_ip=channel.tunnel_ip,
             expires_at=channel.expires_at,
             host=channel.endpoint_host,
         )
@@ -544,13 +544,10 @@ class PeerApp:
                 "(WG key + reachability) before it can be admitted by key"
             )
         info = self_att.peer_info()
-        tunnel_ip, endpoint_host = self._allocate_channel_address()
         channel = await self.open_private_channel(
             ctx.issuer_did,
-            channel_tunnel_ip=tunnel_ip,
             issuer_wg_public_key=info.public_key,
-            issuer_tunnel_ip=info.tunnel_ip,
-            endpoint_host=endpoint_host,
+            endpoint_host=self._channel_endpoint,
             ttl=ttl,
         )
         collection = type(record).nsid if isinstance(record, Lexicon) else record["$type"]
@@ -599,17 +596,6 @@ class PeerApp:
             start_cursor=start_cursor,
         )
         return attestation.ephemeral_did
-
-    def _allocate_channel_address(self) -> tuple[str, str | None]:
-        """A fresh channel tunnel ``/32`` + the configured endpoint host.
-
-        Sequential from ``10.99.0.1`` by default; a real deployment either sets
-        ``channel_endpoint`` (the reachable WG endpoint) or overrides the coords
-        per channel via ``open_private_channel`` directly.
-        """
-        self._channel_ip_counter += 1
-        n = self._channel_ip_counter
-        return f"10.99.{(n >> 8) & 0xFF}.{n & 0xFF}", self._channel_endpoint
 
     def _cache_attestation(self, issuer_did: str, attestation: Attestation) -> None:
         bucket = self._attestations.setdefault(attestation.context_id, [])

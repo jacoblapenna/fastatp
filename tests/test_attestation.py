@@ -16,6 +16,7 @@ from fastatp.authz.wireguard import (
     WireGuardPeerInfo,
     build_wireguard_uri,
     generate_wireguard_keypair,
+    overlay_address,
     parse_wireguard_uri,
     validate_wireguard_key,
 )
@@ -31,7 +32,6 @@ def _att():
         context_id=CTX,
         ephemeral_did=EPH_DID,
         wg_public_key=pub,
-        tunnel_ip="10.9.0.7",
         expires_at="2026-07-06T13:00:00Z",
         host="tool.example:51820",
     )
@@ -49,11 +49,17 @@ def test_generate_wireguard_keypair_is_valid():
 
 def test_endpoint_uri_round_trip():
     _priv, pub = generate_wireguard_keypair()
-    uri = build_wireguard_uri(pub, "10.9.0.7", "host.example:51820")
+    uri = build_wireguard_uri(pub, "host.example:51820")
     info = parse_wireguard_uri(uri)
-    assert info == WireGuardPeerInfo(
-        public_key=pub, tunnel_ip="10.9.0.7", endpoint="host.example:51820"
-    )
+    assert info == WireGuardPeerInfo(public_key=pub, endpoint="host.example:51820")
+    assert info.tunnel_ip == overlay_address(pub)
+    assert "ip=" not in uri  # the address is derived, never published
+
+
+def test_parse_wireguard_uri_refuses_the_pre_0_3_ip_form():
+    _priv, pub = generate_wireguard_keypair()
+    with pytest.raises(EnforcementError, match="derived from the key"):
+        parse_wireguard_uri(f"wg://host.example:51820?pubkey={pub}&ip=10.9.0.7")
 
 
 def test_parse_wireguard_uri_rejects_non_wg():
@@ -67,7 +73,7 @@ def test_attestation_peer_info_and_expiry():
     att = _att()  # expires_at = 2026-07-06T13:00:00Z
     info = att.peer_info()
     assert info.public_key == att.wg_public_key
-    assert info.tunnel_ip == "10.9.0.7"
+    assert info.tunnel_ip == overlay_address(att.wg_public_key)
     assert info.endpoint == "tool.example:51820"
     before = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
     after = datetime(2026, 7, 6, 14, 0, tzinfo=UTC)
@@ -109,4 +115,4 @@ async def test_attestation_signed_and_verified_via_commit():
     recovered = await verifier.verify(proof, expected_signer=did)
     assert isinstance(recovered, Attestation)
     assert recovered.context_id == CTX
-    assert recovered.peer_info().tunnel_ip == "10.9.0.7"
+    assert recovered.peer_info().tunnel_ip == overlay_address(recovered.wg_public_key)

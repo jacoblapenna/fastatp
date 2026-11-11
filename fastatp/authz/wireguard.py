@@ -7,19 +7,36 @@ via ``wg set`` — never a wg-quick config rewrite) tears down the session and
 routes immediately and the grantee cannot re-handshake.
 
 Peers advertise their WireGuard identity in their DID document as a service
-entry (type ``WireGuardFirehose``) carrying the static PUBLIC key, the
-tunnel-internal IP, and an optional endpoint. Only public keys are ever
-published; Noise_IK derives session keys independently on each end, and the
-optional WireGuard PSK is deliberately unused — no secret ever crosses the
-wire. The endpoint is optional and unused for enforcement: WireGuard learns
-a peer's endpoint from its handshake, so grantees can roam.
+entry (type ``WireGuardFirehose``) carrying the static PUBLIC key and an
+optional endpoint. Only public keys are ever published; Noise_IK derives
+session keys independently on each end, and the optional WireGuard PSK is
+deliberately unused — no secret ever crosses the wire. The endpoint is
+optional and unused for enforcement: WireGuard learns a peer's endpoint from
+its handshake, so grantees can roam.
+
+**Overlay addresses are derived from keys, never assigned.** WireGuard's
+handshake agrees on session keys, not on addresses: each side must already
+know the inner address the other will use. Rather than allocate addresses
+(a registry) or let peers choose their own (collisions, and a record naming
+an address it does not own), every peer's overlay address is a pure function
+of its public key under one well-known prefix (:data:`OVERLAY_PREFIX`), so
+both ends compute it with nothing crossing the wire and no state anywhere.
+Anyone can compute anyone's address; it is useless without the matching
+private key, because the kernel drops packets from keys it has not been
+told about before any handshake. The overlay is IPv6 only: an IPv4 range has
+too few bits to carry a key hash without collisions. The *transport* can be
+anything — WireGuard's UDP rides IPv4-only networks and NATs unchanged; only
+the local kernel must allow an IPv6 address on a virtual interface, which
+:func:`check_overlay_support` verifies with a clear message when it cannot.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import ipaddress
+import pathlib
 import shutil
 import subprocess
 import urllib.parse
@@ -36,6 +53,50 @@ from fastatp.exceptions import EnforcementError
 WIREGUARD_SERVICE_TYPE = "WireGuardFirehose"
 WIREGUARD_SERVICE_ID = "#wireguard"
 
+# The overlay every FastATP peer lives on: one IPv6 unique-local /64, chosen
+# once at random (RFC 4193) and fixed here. A peer's address is this prefix
+# plus the first 64 bits of SHA-256 of its raw WireGuard public key, so any
+# two peers agree on each other's address with nothing crossing the wire.
+#
+# Change this to make an isolated network: peers built with a different
+# prefix can never talk to peers at large. That is what a VPN-like deployment
+# that must never see outside peers wants, and what an app whose users should
+# meet other apps' users must never do. It names no service and is not a
+# registry: it is a protocol constant, like a port number.
+OVERLAY_PREFIX = ipaddress.IPv6Network("fd5a:7a7f:9c3e::/64")
+
+
+def overlay_address(wg_public_key: str) -> str:
+    """The overlay address a WireGuard public key derives: ``OVERLAY_PREFIX``
+    plus the first 64 bits of SHA-256 over the raw 32-byte key. Deterministic,
+    collision-resistant (a 1-in-2^64 event), and computed identically by
+    every peer, which is why no address is ever assigned or published."""
+    raw = base64.b64decode(validate_wireguard_key(wg_public_key))
+    interface_id = int.from_bytes(hashlib.sha256(raw).digest()[:8], "big")
+    return str(ipaddress.IPv6Address(int(OVERLAY_PREFIX.network_address) | interface_id))
+
+
+def check_overlay_support(ifname: str, *, proc_root: str = "/proc") -> None:
+    """Fail loudly, with the fix, when this kernel will not put an IPv6
+    address on ``ifname``. The one real way to be locked out of the overlay is
+    ``disable_ipv6=1`` (some hardened servers; Docker containers by default),
+    whose symptom otherwise is an unhelpful "Permission denied" from ``ip``.
+    Silently passes where the sysctl is not visible (another network
+    namespace, a non-Linux kernel, an interface not yet created)."""
+    for scope in (ifname, "all"):
+        knob = pathlib.Path(proc_root) / "sys" / "net" / "ipv6" / "conf" / scope / "disable_ipv6"
+        try:
+            disabled = knob.read_text().strip() == "1"
+        except OSError:
+            continue
+        if disabled:
+            raise EnforcementError(
+                f"IPv6 is disabled on {scope!r} (net.ipv6.conf.{scope}.disable_ipv6=1), so the "
+                f"overlay address cannot be assigned to {ifname!r}. Fix: "
+                f"sysctl -w net.ipv6.conf.{scope}.disable_ipv6=0 (in a container, start it "
+                "with IPv6 enabled). Only the local kernel needs IPv6; the transport does not."
+            )
+
 
 def validate_wireguard_key(key: str) -> str:
     """A WireGuard static key: 32 bytes, standard base64 (44 chars)."""
@@ -50,16 +111,19 @@ def validate_wireguard_key(key: str) -> str:
 
 @dataclass(frozen=True)
 class WireGuardPeerInfo:
-    """A peer's published WireGuard identity, parsed from its DID document."""
+    """A peer's published WireGuard identity, parsed from its DID document.
+    Its overlay address is derived from the key, never carried."""
 
     public_key: str
-    tunnel_ip: str
     endpoint: str | None = None
 
     @property
+    def tunnel_ip(self) -> str:
+        return overlay_address(self.public_key)
+
+    @property
     def allowed_ips(self) -> str:
-        address = ipaddress.ip_address(self.tunnel_ip)
-        return f"{self.tunnel_ip}/{128 if address.version == 6 else 32}"
+        return f"{self.tunnel_ip}/128"
 
 
 def generate_wireguard_keypair() -> tuple[str, str]:
@@ -82,50 +146,54 @@ def generate_wireguard_keypair() -> tuple[str, str]:
     return base64.b64encode(priv_raw).decode(), base64.b64encode(pub_raw).decode()
 
 
-def build_wireguard_uri(wg_public_key: str, tunnel_ip: str, host: str | None = None) -> str:
-    """A ``wg://[host]?pubkey=..&ip=..`` URI binding a peer's WG identity.
+def build_wireguard_uri(wg_public_key: str, host: str | None = None) -> str:
+    """A ``wg://[host]?pubkey=..`` URI binding a peer's WG identity.
 
     The canonical way FastATP serializes "how to reach this WireGuard peer":
-    the static PUBLIC key plus the tunnel-internal IP (the ``/32`` the doorman
-    routes on), and an optional endpoint host. Used both in the DID-document
-    service entry and in a channel/self attestation.
+    the static PUBLIC key and an optional endpoint host. The overlay address
+    is not carried; it is derived from the key (:func:`overlay_address`).
+    Used both in the DID-document service entry and in a channel/self
+    attestation.
     """
     validate_wireguard_key(wg_public_key)
-    ipaddress.ip_address(tunnel_ip)  # raises ValueError on garbage
-    query = urllib.parse.urlencode({"pubkey": wg_public_key, "ip": tunnel_ip})
+    query = urllib.parse.urlencode({"pubkey": wg_public_key})
     return f"wg://{host or ''}?{query}"
 
 
 def parse_wireguard_uri(uri: str, *, context: str = "endpoint") -> WireGuardPeerInfo:
-    """Parse a ``wg://`` URI back to a :class:`WireGuardPeerInfo`."""
+    """Parse a ``wg://`` URI back to a :class:`WireGuardPeerInfo`.
+
+    A URI carrying an ``ip`` (the pre-0.3 form) is refused rather than
+    ignored: the address it names is not the one the key derives, and a peer
+    acting on it would configure the wrong address and never connect.
+    """
     parsed = urllib.parse.urlparse(uri)
     if parsed.scheme != "wg":
         raise EnforcementError(f"{context} must be a wg:// URI")
     params = urllib.parse.parse_qs(parsed.query)
     pubkey = params.get("pubkey", [""])[0]
-    tunnel_ip = params.get("ip", [""])[0]
-    if not pubkey or not tunnel_ip:
-        raise EnforcementError(f"{context} is missing pubkey or ip")
+    if not pubkey:
+        raise EnforcementError(f"{context} is missing pubkey")
+    if "ip" in params:
+        raise EnforcementError(
+            f"{context} carries an ip; overlay addresses are derived from the key since "
+            "0.3 and never published — republish the entry without it"
+        )
     validate_wireguard_key(pubkey)
-    try:
-        ipaddress.ip_address(tunnel_ip)
-    except ValueError:
-        raise EnforcementError(f"{context}: invalid tunnel ip {tunnel_ip!r}") from None
-    return WireGuardPeerInfo(public_key=pubkey, tunnel_ip=tunnel_ip, endpoint=parsed.netloc or None)
+    return WireGuardPeerInfo(public_key=pubkey, endpoint=parsed.netloc or None)
 
 
-def build_wireguard_service(
-    wg_public_key: str, tunnel_ip: str, endpoint: str | None = None
-) -> Service:
+def build_wireguard_service(wg_public_key: str, endpoint: str | None = None) -> Service:
     """The DID-document service entry advertising a peer's WireGuard identity.
 
     Pass the result in ``build_did_document(extra_services=[...])``. The key
-    is the static PUBLIC key — publishing it is the point.
+    is the static PUBLIC key — publishing it is the point; the address it
+    derives is not published, because anyone can compute it.
     """
     return Service(
         id=WIREGUARD_SERVICE_ID,
         type=WIREGUARD_SERVICE_TYPE,
-        service_endpoint=build_wireguard_uri(wg_public_key, tunnel_ip, endpoint),
+        service_endpoint=build_wireguard_uri(wg_public_key, endpoint),
     )
 
 
@@ -184,9 +252,13 @@ class WgToolInterface:
         self,
         ifname: str,
         run_command: Callable[[list[str]], str] | None = None,
+        *,
+        check_overlay: bool = True,
     ) -> None:
         self.ifname = ifname
         self._run = run_command or self._run_wg
+        if check_overlay:
+            check_overlay_support(ifname)  # loud, with the fix, if IPv6 is off here
 
     @staticmethod
     def _run_wg(argv: list[str]) -> str:

@@ -24,12 +24,15 @@ from fastatp.authz.delegation import (
 )
 from fastatp.authz.reconciler import ReconcileReport, WireGuardReconciler
 from fastatp.authz.wireguard import (
+    OVERLAY_PREFIX,
     WIREGUARD_SERVICE_TYPE,
     MemoryWireGuardInterface,
     WgToolInterface,
     WireGuardInterface,
     WireGuardPeerInfo,
     build_wireguard_service,
+    check_overlay_support,
+    overlay_address,
     parse_wireguard_service,
 )
 
@@ -37,6 +40,7 @@ __all__ = [
     "ACTION_SEND",
     "ACTION_SUBSCRIBE",
     "AUTH_NAMESPACE",
+    "OVERLAY_PREFIX",
     "WIREGUARD_SERVICE_TYPE",
     "Capability",
     "ChainLink",
@@ -50,8 +54,10 @@ __all__ = [
     "WireGuardPeerInfo",
     "WireGuardReconciler",
     "build_wireguard_service",
+    "check_overlay_support",
     "live_capabilities",
     "live_delegations",
+    "overlay_address",
     "parse_wireguard_service",
     "walk_delegation_chain",
 ]

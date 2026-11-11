@@ -130,12 +130,12 @@ async def main() -> None:
     doc_a = build_did_document(
         did=did_agent,
         signing_key=sk_a.public_key(),
-        extra_services=[build_wireguard_service(wg_a, "10.100.0.1")],
+        extra_services=[build_wireguard_service(wg_a)],
     )
     doc_t = build_did_document(
         did=did_tool,
         signing_key=sk_t.public_key(),
-        extra_services=[build_wireguard_service(wg_t, "10.100.0.2")],
+        extra_services=[build_wireguard_service(wg_t)],
     )
     uv_a, ta = await _serve(doc_a, port_a, sock_a)
     uv_t, tt = await _serve(doc_t, port_t, sock_t)

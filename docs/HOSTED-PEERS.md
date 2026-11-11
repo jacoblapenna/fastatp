@@ -36,6 +36,20 @@ follows from it:
 4. Everything a host can see is the price of step 2. The builder decides how
    much of that price their product needs to charge.
 
+Scale follows the same chain. A single peer hosting a few repos keeps the
+doorman's address-to-identity map as an in-memory walk and one WireGuard
+interface, and that is right at that size. A host serving millions runs
+several instances, each with its own WireGuard interface (a kernel handles
+thousands of peers, not millions), and keeps the commit lock for each repo
+and a cache of "this address is this DID, granted in this repo" in its own
+database, updated as repo owners write and delete capabilities in the repos
+it hosts. The cache is for speed, not authority: it points the doorman at a
+repo, and the doorman still admits by the capability currently in that
+repo. That is what bringing your own database is for, and it is planned,
+not shipped: FastATP knows where the walk stops scaling and says so in the
+code rather than pretending otherwise. At that scale the mass of users
+arrives through the browser knock anyway, which needs no global map.
+
 ## The separation that makes it possible
 
 A "login system" fuses three things FastATP keeps apart:

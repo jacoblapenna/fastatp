@@ -30,6 +30,17 @@ To upgrade safely within one minor line, pin with `~=`, for example
   gated read answered `NotAuthorized` (403), which told strangers which
   DIDs the server hosts. `listRepos` already hid them.
 
+- **WireGuard overlay addresses are derived from keys, never assigned or
+  published.** Every peer's address is `OVERLAY_PREFIX` (one fixed IPv6
+  /64) plus 64 bits of SHA-256 over its WireGuard public key, so both ends
+  of a tunnel agree with nothing crossing the wire. `Capability.wg_tunnel_ip`
+  is removed; `build_wireguard_uri`, `build_wireguard_service`,
+  `build_attestation`, `WireGuardReconciler.grant` and
+  `PeerApp.open_private_channel` no longer take an address, and a `wg://`
+  URI that still carries `ip=` is refused. The overlay is IPv6 only (the
+  transport can be anything); `check_overlay_support` fails loudly with the
+  sysctl to fix when a kernel has IPv6 disabled on the interface.
+
 ### Added
 - Browser bundle: `generate_pen()`, `pen_did(key_pair)`,
   `BrowserPeer.create(did, key_pair)`, `BrowserPeer.restore(car, key_pair,

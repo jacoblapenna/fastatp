@@ -72,7 +72,6 @@ async def test_call_private_round_trip(serve_app):
         context_id=CTX,
         ephemeral_did=req_did,
         wg_public_key=req_wg,
-        tunnel_ip="10.0.0.99",
         expires_at="2027-01-01T00:00:00Z",
         host=None,
     )
@@ -119,7 +118,6 @@ async def test_follow_attested_refuses_expired():
         context_id="ctx-x",
         ephemeral_did="did:key:zGone",
         wg_public_key=wg,
-        tunnel_ip="10.9.0.1",
         expires_at="2000-01-01T00:00:00Z",
         host="x:1",
     )

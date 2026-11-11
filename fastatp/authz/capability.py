@@ -39,11 +39,11 @@ class Capability(Lexicon):
     collections: list[Nsid] | None = None  # None = the whole firehose
     expires_at: Datetime | None = None
     note: str | None = None
-    # by-public-key grants (documentless did:key subjects) embed the WG identity
+    # by-public-key grants (documentless did:key subjects) embed the WG key
     # here so reconcile() can enforce without resolving a DID document. Null for
-    # did:web grants, which re-resolve so key rotation propagates.
+    # did:web grants, which re-resolve so key rotation propagates. The overlay
+    # address is never recorded: it is derived from the key.
     wg_public_key: str | None = None
-    wg_tunnel_ip: str | None = None
 
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:

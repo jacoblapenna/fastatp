@@ -112,8 +112,8 @@ class WireGuardReconciler:
     @staticmethod
     def _peer_info_from_cap(cap: Capability) -> WireGuardPeerInfo | None:
         """The WG identity embedded in a by-public-key capability, if any."""
-        if cap.wg_public_key and cap.wg_tunnel_ip:
-            return WireGuardPeerInfo(public_key=cap.wg_public_key, tunnel_ip=cap.wg_tunnel_ip)
+        if cap.wg_public_key:
+            return WireGuardPeerInfo(public_key=cap.wg_public_key)
         return None
 
     # --- grant ------------------------------------------------------------------
@@ -127,7 +127,6 @@ class WireGuardReconciler:
         expires_at: str | None = None,
         note: str | None = None,
         wg_public_key: str | None = None,
-        tunnel_ip: str | None = None,
     ) -> tuple[str, Capability]:
         """Authorize ``did``: sign a capability, then open the tunnel.
 
@@ -137,10 +136,10 @@ class WireGuardReconciler:
           ``WireGuardFirehose`` service — for ``did:web`` grantees. Strict at
           grant time (an unresolvable grantee is an error); re-resolved on each
           reconcile so key rotation propagates.
-        - **by public key**: pass ``wg_public_key`` + ``tunnel_ip`` directly —
-          for documentless ``did:key`` grantees whose key rides in the request
-          / attestation. The identity is embedded in the capability
-          so ``reconcile()`` enforces it without resolution.
+        - **by public key**: pass ``wg_public_key`` directly — for documentless
+          ``did:key`` grantees whose key rides in the request / attestation.
+          The key is embedded in the capability so ``reconcile()`` enforces
+          it without resolution. The overlay address is derived from it.
 
         An existing grant for the subject is superseded in the same commit
         (old record deleted + revocation reason="superseded"). Returns
@@ -157,13 +156,7 @@ class WireGuardReconciler:
                     "a document-backed DID (e.g. did:web) is admitted by resolving it"
                 )
             validate_wireguard_key(wg_public_key)
-            if tunnel_ip is None:
-                raise AuthzError("grant by public key requires tunnel_ip")
-            try:
-                info = WireGuardPeerInfo(public_key=wg_public_key, tunnel_ip=tunnel_ip)
-                _ = info.allowed_ips  # validate the tunnel ip BEFORE committing
-            except ValueError as e:
-                raise AuthzError(f"invalid tunnel_ip {tunnel_ip!r}: {e}") from None
+            info = WireGuardPeerInfo(public_key=wg_public_key)
         else:
             info = await self._peer_info(did)  # resolve BEFORE committing anything
 
@@ -174,7 +167,6 @@ class WireGuardReconciler:
             expires_at=expires_at,
             note=note,
             wg_public_key=wg_public_key,
-            wg_tunnel_ip=tunnel_ip if wg_public_key is not None else None,
         )
         rkey = generate_tid()
         writes: list[WriteOp] = []

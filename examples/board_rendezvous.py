@@ -189,7 +189,6 @@ async def run_board_rendezvous() -> dict:
         context_id=ctx_id,
         ephemeral_did=req_did,
         wg_public_key=req_wg,
-        tunnel_ip="10.7.0.2",
         expires_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
         host=None,
     )

@@ -35,6 +35,7 @@ from fastatp.authz import (
     MemoryWireGuardInterface,
     WireGuardReconciler,
     build_wireguard_service,
+    overlay_address,
 )
 from fastatp.lex.types import Datetime
 from fastatp.lexicon import Lexicon
@@ -136,12 +137,12 @@ async def env():
     doc1 = build_did_document(
         did=did1,
         signing_key=sk1.public_key(),
-        extra_services=[build_wireguard_service(wg1_pub, "10.100.0.1")],
+        extra_services=[build_wireguard_service(wg1_pub)],
     )
     doc2 = build_did_document(
         did=did2,
         signing_key=sk2.public_key(),
-        extra_services=[build_wireguard_service(wg2_pub, "10.100.0.2")],
+        extra_services=[build_wireguard_service(wg2_pub)],
     )
 
     uv1, t1 = await _serve_did(doc1, port1)
@@ -250,4 +251,4 @@ async def test_reconciler_used_real_did_resolution(env):
     assert cap.subject == env.did2
     # the pubkey now enforced came from the resolved did:web document
     assert env.wg2_pub in env.iface1.peers()
-    assert env.iface1.peers()[env.wg2_pub] == "10.100.0.2/32"
+    assert env.iface1.peers()[env.wg2_pub] == f"{overlay_address(env.wg2_pub)}/128"

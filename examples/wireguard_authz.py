@@ -27,7 +27,7 @@ docs = {
     DEVICE: build_did_document(
         did=DEVICE,
         signing_key=generate_keypair("k256").public_key(),
-        extra_services=[build_wireguard_service(DEVICE_WG_KEY, tunnel_ip="10.100.0.7")],
+        extra_services=[build_wireguard_service(DEVICE_WG_KEY)],
     )
 }
 

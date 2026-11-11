@@ -87,7 +87,8 @@ DIVERGE, wholesale (live-`wg set` only; tenet 5 socket-free core).
 All three model a peer as a long-lived object serialized to a `wg-quick`
 `.conf` file (Fictive Kin), a Django row (`django-wireguard`), or a netlink
 device (`python-wireguard`). FastATP publishes reachability as *data* (public
-key + tunnel IP in a `WireGuardFirehose` DID service entry) and enforces by
+key in a `WireGuardFirehose` DID service entry; the overlay address is derived
+from the key, never published) and enforces by
 live `wg set` mutation only. Fictive Kin's config layer is also where their
 shipping wounds cluster (non-deterministic key ordering fixed in `59cfb77`;
 blank-line/`os.linesep` churn in `06ce96f`/`8b549a4`; an **IPv6 endpoint

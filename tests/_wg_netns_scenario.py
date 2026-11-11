@@ -21,16 +21,16 @@ import subprocess
 import sys
 import time
 
-from fastatp.authz import WgToolInterface, WireGuardReconciler, build_wireguard_service
+from fastatp.authz import (
+    WgToolInterface,
+    WireGuardReconciler,
+    build_wireguard_service,
+    overlay_address,
+)
 from fastatp.authz.wireguard import generate_wireguard_keypair
 from fastatp.crypto import generate_keypair
 from fastatp.did.document import build_did_document
 from fastatp.repo.repo import Repo
-
-FAMILIES = {
-    "v4": {"a": "10.100.0.1", "b": "10.100.0.2", "plen": 24},
-    "v6": {"a": "fd00::1", "b": "fd00::2", "plen": 64},
-}
 
 
 def run(
@@ -40,10 +40,9 @@ def run(
     return subprocess.run(full, capture_output=True, text=True, check=check, input=stdin)
 
 
-def ping(ns: str, target: str, fam: str) -> bool:
-    cmd = "ping6" if fam == "v6" else "ping"
-    # some images fold ping6 into `ping`; fall back if the dedicated tool is absent
-    tool = cmd if _have(cmd) else "ping"
+def ping(ns: str, target: str) -> bool:
+    # the overlay is IPv6; some images fold ping6 into `ping`
+    tool = "ping6" if _have("ping6") else "ping"
     return run([tool, "-c", "1", "-W", "2", target], check=False, ns=ns).returncode == 0
 
 
@@ -53,21 +52,23 @@ def _have(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
-def ping_within(ns: str, target: str, fam: str, timeout: float) -> bool:
+def ping_within(ns: str, target: str, timeout: float) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if ping(ns, target, fam):
+        if ping(ns, target):
             return True
         time.sleep(1.0)
     return False
 
 
-async def scenario(fam: str) -> dict:
-    cfg = FAMILIES[fam]
-    nsa, nsb = f"a_{fam}", f"b_{fam}"
-    va, vb = f"va{fam}", f"vb{fam}"
+async def scenario() -> dict:
+    nsa, nsb = "a_ovl", "b_ovl"
+    va, vb = "vaovl", "vbovl"
     priv_a, pub_a = generate_wireguard_keypair()
     priv_b, pub_b = generate_wireguard_keypair()
+    # overlay addresses derived from each side's own key; the v4 underlay
+    # below carries WireGuard's UDP, proving the transport family is irrelevant
+    addr_a, addr_b = overlay_address(pub_a), overlay_address(pub_b)
     try:
         for ns in (nsa, nsb):
             run(["ip", "netns", "add", ns])
@@ -95,8 +96,8 @@ async def scenario(fam: str) -> dict:
             ns=nsb,
             stdin=priv_b,
         )
-        run(["ip", "addr", "add", f"{cfg['a']}/{cfg['plen']}", "dev", "wgA"], ns=nsa)
-        run(["ip", "addr", "add", f"{cfg['b']}/{cfg['plen']}", "dev", "wgB"], ns=nsb)
+        run(["ip", "addr", "add", f"{addr_a}/64", "dev", "wgA"], ns=nsa)
+        run(["ip", "addr", "add", f"{addr_b}/64", "dev", "wgB"], ns=nsb)
         run(["ip", "link", "set", "wgA", "up"], ns=nsa)
         run(["ip", "link", "set", "wgB", "up"], ns=nsb)
         # ns_b initiates toward wgA's pubkey + endpoint, with keepalive
@@ -110,7 +111,7 @@ async def scenario(fam: str) -> dict:
                 "endpoint",
                 "192.168.99.1:51820",
                 "allowed-ips",
-                f"{cfg['a']}/{128 if fam == 'v6' else 32}",
+                f"{addr_a}/128",
                 "persistent-keepalive",
                 "1",
             ],
@@ -118,11 +119,11 @@ async def scenario(fam: str) -> dict:
         )
 
         # the REAL reconciler drives wgA inside ns_a via WgToolInterface
-        did_b = f"did:web:grantee-{fam}.example"
+        did_b = "did:web:grantee.example"
         doc_b = build_did_document(
             did=did_b,
             signing_key=generate_keypair("k256").public_key(),
-            extra_services=[build_wireguard_service(pub_b, cfg["b"])],
+            extra_services=[build_wireguard_service(pub_b)],
         )
 
         async def resolver(did: str):
@@ -133,15 +134,15 @@ async def scenario(fam: str) -> dict:
             Repo("did:web:host.example", generate_keypair("k256")), interface, resolver
         )
 
-        before = ping_within(nsb, cfg["a"], fam, 3)
+        before = ping_within(nsb, addr_a, 3)
         await rec.grant(did_b)
-        granted = ping_within(nsb, cfg["a"], fam, 20)
+        granted = ping_within(nsb, addr_a, 20)
         # audit item 4: revoke an ESTABLISHED session; packets must stop
         await rec.revoke(did_b, reason="offboarded")
         time.sleep(2.0)
-        after_revoke = ping_within(nsb, cfg["a"], fam, 3)
+        after_revoke = ping_within(nsb, addr_a, 3)
         return {
-            "family": fam,
+            "address_a": addr_a,
             "before_grant": before,  # expect False
             "after_grant": granted,  # expect True
             "after_revoke": after_revoke,  # expect False
@@ -154,22 +155,15 @@ async def scenario(fam: str) -> dict:
 async def main() -> int:
     subprocess.run(["mount", "-t", "tmpfs", "none", "/run"], check=False)
     subprocess.run(["mkdir", "-p", "/run/netns"], check=False)
-    results = {}
-    ok = True
-    for fam in ("v4", "v6"):
-        try:
-            r = await scenario(fam)
-        except Exception as e:  # setup failure on this host/family
-            print(f"SCENARIO-ERROR {fam}: {type(e).__name__}: {e}", file=sys.stderr)
-            return 3
-        results[fam] = r
-        # item 4 (revocation latency) proven on v4; item 3 (e2e) on v6 —
-        # both require grant to open and (for v4) revoke to close the tunnel
-        if r["before_grant"] or not r["after_grant"]:
-            ok = False
-        if fam == "v4" and r["after_revoke"]:
-            ok = False
-    print("RESULT: " + json.dumps(results))
+    try:
+        r = await scenario()
+    except Exception as e:  # setup failure on this host
+        print(f"SCENARIO-ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+        return 3
+    # grant opens the tunnel, revoke closes the live session — on the derived
+    # IPv6 overlay over a v4 underlay
+    ok = not r["before_grant"] and r["after_grant"] and not r["after_revoke"]
+    print("RESULT: " + json.dumps({"overlay": r}))
     return 0 if ok else 1
 
 

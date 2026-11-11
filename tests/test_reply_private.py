@@ -43,7 +43,6 @@ def _requester():
         context_id=CTX,
         ephemeral_did=did,
         wg_public_key=wg,
-        tunnel_ip="10.0.0.42",
         expires_at="2027-01-01T00:00:00Z",
         host="requester.local:51820",
     )
@@ -75,7 +74,6 @@ async def test_inbound_attestation_is_cached_generically():
         context_id="ctx-old",
         ephemeral_did=requester_did,
         wg_public_key=self_att.wg_public_key,
-        tunnel_ip="10.0.0.42",
         expires_at="2000-01-01T00:00:00Z",
         host=None,
     )
@@ -98,7 +96,6 @@ async def test_reply_private_composes_the_producer_side():
     assert requester_did in caps
     assert ACTION_SUBSCRIBE in caps[requester_did][1].actions
     assert caps[requester_did][1].wg_public_key == self_att.wg_public_key
-    assert caps[requester_did][1].wg_tunnel_ip == "10.0.0.42"
 
     # the reply lives in the channel repo, not the tool's public repo
     reply_rkey = channel.handle.repo.list_records(Result.nsid)[0][0]
@@ -142,7 +139,6 @@ async def test_reply_private_allocates_distinct_channel_ips():
         context_id="ctx-2",
         ephemeral_did=r2_did,
         wg_public_key=r2_wg,
-        tunnel_ip="10.0.0.43",
         expires_at="2027-01-01T00:00:00Z",
         host=None,
     )

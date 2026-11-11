@@ -20,11 +20,17 @@ import websockets
 
 from fastatp import Peer, PeerServer, crypto
 from fastatp.authz.capability import Capability
+from fastatp.authz.wireguard import generate_wireguard_keypair, overlay_address
 from fastatp.exceptions import RepoError
 from fastatp.repo.repo import Repo
 from fastatp.repo.sync import decode_frame
 from fastatp.server.browser_gate import CHALLENGE_PATH, BrowserGate, challenge_message
-from fastatp.server.peer_server import FIREHOSE_PATH, GET_REPO_PATH, ResolvedCaller
+from fastatp.server.peer_server import (
+    FIREHOSE_PATH,
+    GET_REPO_PATH,
+    ResolvedCaller,
+    TunnelIdentityResolver,
+)
 from fastatp.tid import generate_tid
 
 ROOT = "did:web:user.shelf.example:aaaabbbbccccddddeeeeffffgggghhhh"
@@ -269,15 +275,20 @@ async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
     scope; only this repo's own binding counts."""
     pen_key, pen_did = _pen()
     builder_key = crypto.generate_keypair("k256")
-    # the default TunnelIdentityResolver: loopback is the "tunnel" here
+    _priv, attacker_wg = generate_wireguard_keypair()
+    # the real TunnelIdentityResolver, with the attacker arriving from the
+    # overlay address its own key derives (what the kernel would enforce)
     srv = PeerServer(Peer(did="did:web:builder.example", signing_key=builder_key))
+    srv.identity_resolver = TunnelIdentityResolver(
+        srv, source_address=lambda conn: overlay_address(attacker_wg)
+    )
     victim = srv.register(Repo(ROOT, pen_key), owner_pull=True)
     attacker = srv.register(Repo("did:web:attacker.example:x", crypto.generate_keypair("k256")))
     for claimed in (ROOT, pen_did):
         attacker.put_record(
             Capability.nsid,
             generate_tid(),
-            Capability(subject=claimed, actions=["send"], wg_tunnel_ip="127.0.0.1"),
+            Capability(subject=claimed, actions=["send"], wg_public_key=attacker_wg),
         )
 
     async with serve_app(srv.app) as port:
@@ -288,7 +299,7 @@ async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
     victim.put_record(
         Capability.nsid,
         generate_tid(),
-        Capability(subject=pen_did, actions=["send"], wg_tunnel_ip="127.0.0.1"),
+        Capability(subject=pen_did, actions=["send"], wg_public_key=attacker_wg),
     )
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200
