@@ -13,7 +13,7 @@ const glue = await import(path.join(staticDir, "fastatp_wasm.js"));
 const wasmBytes = await readFile(path.join(staticDir, "fastatp_wasm_bg.wasm"));
 await glue.default({ module_or_path: wasmBytes });
 
-const { connection_zero, verify_proof, bundle_version, generate_pen, pen_did } = glue;
+const { connection_zero, verify_proof, bundle_version, generate_pen, pen_did, BrowserPeer } = glue;
 
 // --- connection zero ---------------------------------------------------------
 const bundle = await connection_zero("shelf.example");
@@ -97,6 +97,64 @@ await assert.rejects(
 );
 await assert.rejects(pen_did(null), /null or undefined/);
 await assert.rejects(pen_did({ privateKey: pen.privateKey }), /publicKey/);
+
+// --- BrowserPeer.create / restore ----------------------------------------------------
+// a device repo: the pen's own did:key, signed by that pen
+const devicePeer = await BrowserPeer.create(penDid, pen);
+assert.equal(devicePeer.did(), penDid);
+assert.equal(devicePeer.pen_did(), penDid);
+const deviceProof = await devicePeer.put_record(
+  "com.example.note",
+  "d-1",
+  JSON.stringify({ $type: "com.example.note", text: "from a device repo" }),
+);
+assert.equal(JSON.parse(verify_proof(deviceProof, penDid, null)).did, penDid);
+
+// any DID string works; the app decides which pen signs which repo
+const named = await BrowserPeer.create("did:web:example.com:alice", pen);
+assert.equal(named.did(), "did:web:example.com:alice");
+await assert.rejects(BrowserPeer.create("example.com", pen), /not a valid DID/);
+await assert.rejects(BrowserPeer.create("did:web:", pen), /not a valid DID/);
+await assert.rejects(BrowserPeer.create(penDid, await ecdsa("P-256", true)), /extractable/);
+
+// restore: same head, same records, verified against the pen that signed it
+const stored = devicePeer.export_car();
+const restoredRev = devicePeer.rev();
+const restored = await BrowserPeer.restore(stored, cloned, penDid);
+assert.equal(restored.did(), penDid);
+assert.equal(restored.rev(), restoredRev, "restore keeps the head");
+assert.deepEqual(restored.export_car(), stored, "restore is byte-identical");
+await assert.rejects(
+  BrowserPeer.restore(stored, pen, await pen_did(otherPen)),
+  /restore/,
+  "wrong verify key refused",
+);
+await assert.rejects(BrowserPeer.restore(stored, await ecdsa("P-256", true), penDid), /extractable/);
+await assert.rejects(BrowserPeer.restore(new Uint8Array([1, 2, 3]), pen, null), /restore/);
+
+// a device clock far behind the restored head still writes a later rev
+const realNow = Date.now;
+Date.now = () => 0;
+try {
+  const behind = await BrowserPeer.restore(stored, pen, penDid);
+  await behind.put_record("com.example.note", "d-2", JSON.stringify({ $type: "com.example.note", text: "late" }));
+  assert.ok(behind.rev() > restoredRev, `rev ${behind.rev()} must sort after ${restoredRev}`);
+} finally {
+  Date.now = realNow;
+}
+
+// recovery shape: restore with the OLD pen as verify key, sign on with a new pen
+const newPen = await generate_pen();
+const newPenDid = await pen_did(newPen);
+const takenOver = await BrowserPeer.restore(stored, newPen, penDid);
+assert.equal(takenOver.pen_did(), newPenDid);
+const afterProof = await takenOver.put_record(
+  "com.example.note",
+  "d-3",
+  JSON.stringify({ $type: "com.example.note", text: "signed by the new pen" }),
+);
+assert.equal(JSON.parse(verify_proof(afterProof, newPenDid, null)).rkey, "d-3");
+assert.throws(() => verify_proof(afterProof, penDid, null), /refused/, "old pen no longer signs it");
 
 // --- export + version -------------------------------------------------------------
 const car = peer.export_car();

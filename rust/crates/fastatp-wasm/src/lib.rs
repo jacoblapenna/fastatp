@@ -18,7 +18,7 @@ use wasm_bindgen::prelude::*;
 
 use fastatp_core::continuity::Chain;
 use fastatp_core::crypto::{
-    decode_did_key, decode_multikey, encode_did_key, Curve, PrivateKey, Signer as _,
+    decode_did_key, decode_multikey, encode_did_key, Curve, PrivateKey, PublicKey, Signer as _,
 };
 use fastatp_core::mst::MemoryBlockStore;
 use fastatp_core::repo::{ExternalClock, Repo};
@@ -28,6 +28,48 @@ use webcrypto::{generate_key_pair, random_bytes, WebCryptoSigner};
 
 fn js_error(context: &str, error: impl std::fmt::Debug) -> JsError {
     JsError::new(&format!("{context}: {error:?}"))
+}
+
+/// A public key given as a `did:key` or a bare multikey.
+fn parse_public_key(did_key_or_multikey: &str) -> Result<PublicKey, JsError> {
+    if did_key_or_multikey.starts_with("did:key:") {
+        decode_did_key(did_key_or_multikey)
+    } else {
+        decode_multikey(did_key_or_multikey)
+    }
+    .map_err(|e| js_error("key", e))
+}
+
+/// The atproto DID syntax (spec: did): `did:<method>:<id>`, method lowercase
+/// letters, id from `[A-Za-z0-9._:%-]`, not ending in `:` or `%`. Syntax only;
+/// whether the DID resolves is the app's business.
+fn check_did_syntax(did: &str) -> Result<(), JsError> {
+    let ok = did.len() <= 2048
+        && did.strip_prefix("did:").is_some_and(|rest| {
+            rest.split_once(':').is_some_and(|(method, id)| {
+                !method.is_empty()
+                    && method.bytes().all(|b| b.is_ascii_lowercase())
+                    && !id.is_empty()
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b".:_%-".contains(&b))
+                    && !id.ends_with(':')
+                    && !id.ends_with('%')
+            })
+        });
+    if ok {
+        Ok(())
+    } else {
+        Err(JsError::new(&format!("not a valid DID: {did:?}")))
+    }
+}
+
+async fn checked_pen(key_pair: &JsValue) -> Result<(WebCryptoSigner, String), JsError> {
+    let pen = WebCryptoSigner::from_key_pair(key_pair)
+        .await
+        .map_err(|e| js_error("pen", e))?;
+    let did = format!("did:key:{}", pen.public_multikey());
+    Ok((pen, did))
 }
 
 fn date_now_clock() -> Result<ExternalClock<fn() -> u64>, JsError> {
@@ -169,6 +211,60 @@ pub async fn connection_zero(domain: String) -> Result<ConnectionZeroBundle, JsE
 
 #[wasm_bindgen]
 impl BrowserPeer {
+    /// A fresh, empty repo for `did`, signed by the pen `key_pair`.
+    ///
+    /// Any DID works: an identity's own DID, or a pen's own `did:key` for a
+    /// device repo. The bindings do not decide which pen signs which repo;
+    /// the app does, and whoever verifies the repo checks the signer is the
+    /// right one. Refuses a pen that is extractable or not a matching
+    /// ECDSA P-256 pair.
+    pub async fn create(did: String, key_pair: JsValue) -> Result<BrowserPeer, JsError> {
+        check_did_syntax(&did)?;
+        let (signer, pen_did) = checked_pen(&key_pair).await?;
+        let repo = Repo::create(
+            did,
+            signer.clone(),
+            Box::new(MemoryBlockStore::new()),
+            Box::new(date_now_clock()?),
+        )
+        .await
+        .map_err(|e| js_error("create repo", e))?;
+        Ok(BrowserPeer {
+            repo: Rc::new(RefCell::new(repo)),
+            signer,
+            pen_did,
+        })
+    }
+
+    /// Rebuild a peer from a repo CAR (stored locally or fetched from its
+    /// host) and the pen that will sign its next commits.
+    ///
+    /// `verify` (a `did:key` or multikey) checks the stored head commit's
+    /// signature; give the key that signed it, which after a recovery is the
+    /// old pen, not `key_pair`. Without it, only content addressing is
+    /// checked. The next commit sorts after the restored one even if this
+    /// device's clock is behind.
+    pub async fn restore(
+        car: Vec<u8>,
+        key_pair: JsValue,
+        verify: Option<String>,
+    ) -> Result<BrowserPeer, JsError> {
+        let verify_key = verify.as_deref().map(parse_public_key).transpose()?;
+        let (signer, pen_did) = checked_pen(&key_pair).await?;
+        let repo = Repo::from_car(
+            &car,
+            signer.clone(),
+            Box::new(date_now_clock()?),
+            verify_key.as_ref(),
+        )
+        .map_err(|e| js_error("restore", e))?;
+        Ok(BrowserPeer {
+            repo: Rc::new(RefCell::new(repo)),
+            signer,
+            pen_did,
+        })
+    }
+
     /// The repo's DID (the twin for a connection-zero peer).
     pub fn did(&self) -> String {
         self.repo.borrow().did().to_string()
@@ -240,12 +336,16 @@ impl BrowserPeer {
 /// Mint a new pen: a WebCrypto `CryptoKeyPair` whose private key is ECDSA
 /// P-256 and non-extractable. The page can store it in IndexedDB (structured
 /// clone keeps it non-extractable) and hand it back after a reload; its bytes
-/// never enter wasm memory or JavaScript.
+/// never enter wasm memory or JavaScript. The pair passes the same check as
+/// every pen handed in before it is returned.
 #[wasm_bindgen]
 pub async fn generate_pen() -> Result<JsValue, JsError> {
-    generate_key_pair()
+    let pair = generate_key_pair()
         .await
-        .map_err(|e| js_error("webcrypto keygen", e))
+        .map_err(|e| js_error("webcrypto keygen", e))?;
+    // check what the browser actually returned before the app can store it
+    checked_pen(&pair).await?;
+    Ok(pair)
 }
 
 /// The `did:key` of a pen, for showing it during enrollment or checking a
@@ -253,10 +353,7 @@ pub async fn generate_pen() -> Result<JsValue, JsError> {
 /// non-extractable ECDSA P-256 pair, as every entry point taking a pen does.
 #[wasm_bindgen]
 pub async fn pen_did(key_pair: JsValue) -> Result<String, JsError> {
-    let pen = WebCryptoSigner::from_key_pair(&key_pair)
-        .await
-        .map_err(|e| js_error("pen", e))?;
-    Ok(format!("did:key:{}", pen.public_multikey()))
+    Ok(checked_pen(&key_pair).await?.1)
 }
 
 /// Verify a record proof against a did:key or multikey; returns the verified
@@ -267,12 +364,7 @@ pub fn verify_proof(
     did_key_or_multikey: &str,
     path: Option<String>,
 ) -> Result<String, JsError> {
-    let key = if did_key_or_multikey.starts_with("did:key:") {
-        decode_did_key(did_key_or_multikey)
-    } else {
-        decode_multikey(did_key_or_multikey)
-    }
-    .map_err(|e| js_error("key", e))?;
+    let key = parse_public_key(did_key_or_multikey)?;
     let verified = fastatp_core::repo::verify_proof(proof, &key, path.as_deref())
         .map_err(|e| js_error("refused", e))?;
     let report = serde_json::json!({

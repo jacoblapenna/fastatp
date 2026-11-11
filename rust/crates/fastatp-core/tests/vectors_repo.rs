@@ -241,6 +241,38 @@ fn repo_car_round_trip_preserves_root_and_records() {
     });
 }
 
+#[test]
+fn restored_repo_writes_after_its_head_even_with_the_clock_behind() {
+    pollster::block_on(async {
+        let mut repo = Repo::new("did:web:example.com", signer(Curve::P256))
+            .await
+            .unwrap();
+        repo.put_record("com.example.note", "one", record("first"))
+            .await
+            .unwrap();
+        let head = repo.rev().to_owned();
+
+        // a device whose clock reads the epoch: far behind the restored head
+        let mut reloaded = Repo::from_car(
+            &repo.export_car().unwrap(),
+            signer_like_for_reload(),
+            Box::new(fastatp_core::repo::ExternalClock::new(|| 1, 0)),
+            None,
+        )
+        .unwrap();
+        assert_eq!(reloaded.rev(), head);
+        reloaded
+            .put_record("com.example.note", "two", record("second"))
+            .await
+            .unwrap();
+        assert!(
+            reloaded.rev() > head.as_str(),
+            "{} <= {head}",
+            reloaded.rev()
+        );
+    });
+}
+
 fn signer_like_for_reload() -> SoftwareSigner {
     // reloading a CAR does not need the original pen; a different signer only
     // matters at the NEXT commit (which re-signs everything)

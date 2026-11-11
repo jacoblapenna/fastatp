@@ -32,6 +32,11 @@ pub fn random_bytes(n: usize) -> Result<Vec<u8>, JsValue> {
 /// Signed and verified once when a pair is wrapped, to prove the halves match.
 const PAIR_PROBE: &[u8] = b"fastatp pen pair check";
 
+/// Rust has no keyword arguments, so name the flag instead of passing a bare
+/// `false`. It is not the guarantee: `from_key_pair` reads the flag back from
+/// the key the browser returned and refuses an extractable one.
+const EXTRACTABLE: bool = false; // the property everything rests on
+
 /// Mint a WebCrypto ECDSA P-256 pair whose private key is non-extractable.
 pub async fn generate_key_pair() -> Result<JsValue, JsValue> {
     let subtle = crypto()?.subtle();
@@ -39,11 +44,7 @@ pub async fn generate_key_pair() -> Result<JsValue, JsValue> {
     let usages = Array::of2(&JsValue::from_str("sign"), &JsValue::from_str("verify"));
     // NOTE: no cast to js_sys::Object — Node 22's webcrypto returns the
     // pair as a null-prototype dictionary, which fails `instanceof Object`
-    JsFuture::from(subtle.generate_key_with_object(
-        &algorithm, false, // extractable: false — the property everything rests on
-        &usages,
-    )?)
-    .await
+    JsFuture::from(subtle.generate_key_with_object(&algorithm, EXTRACTABLE, &usages)?).await
 }
 
 fn key_field(pair: &JsValue, field: &str) -> Result<CryptoKey, JsValue> {

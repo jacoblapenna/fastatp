@@ -51,6 +51,11 @@ pub enum RepoError {
 pub trait RevClock {
     /// A TID strictly greater than every TID this clock has produced.
     fn next_rev(&mut self) -> String;
+
+    /// Note a rev this repo already has (its restored head), so every later
+    /// `next_rev` is strictly greater even when the clock runs behind it.
+    /// The default does nothing; [`ExternalClock`] honors it.
+    fn observe(&mut self, _rev: &str) {}
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -83,6 +88,12 @@ impl<F: FnMut() -> u64> RevClock for ExternalClock<F> {
         let provided = (self.provider)();
         self.last_us = provided.max(self.last_us + 1);
         tid::encode_tid(self.last_us, self.clock_id).expect("in-range timestamp")
+    }
+
+    fn observe(&mut self, rev: &str) {
+        if let Ok((timestamp_us, _)) = tid::decode_tid(rev) {
+            self.last_us = self.last_us.max(timestamp_us);
+        }
     }
 }
 
@@ -233,10 +244,13 @@ impl<S: Signer> Repo<S> {
     pub fn from_car(
         data: &[u8],
         signer: S,
-        clock: Box<dyn RevClock>,
+        mut clock: Box<dyn RevClock>,
         verify_key: Option<&PublicKey>,
     ) -> Result<Self, RepoError> {
         let (commit, entries, blocks) = read_car(data, verify_key)?;
+        // the next commit must sort after the restored head, whatever the
+        // device clock says
+        clock.observe(&commit.rev);
         let mut store: Box<dyn BlockStore> = Box::new(MemoryBlockStore::new());
         for (cid, block) in &blocks {
             store.put(cid.clone(), block.clone());
