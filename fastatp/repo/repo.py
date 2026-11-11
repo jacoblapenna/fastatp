@@ -18,7 +18,7 @@ from typing import Any, Union
 from fastatp import dagcbor, datamodel
 from fastatp.cid import CID
 from fastatp.crypto import PrivateKey, PublicKey
-from fastatp.exceptions import DataModelError, FastATPError, RepoError
+from fastatp.exceptions import DataModelError, FastATPError, RepoError, StaleCheckpoint
 from fastatp.lex.types import Blob, CidLink, validate_nsid
 from fastatp.lexicon import Lexicon
 from fastatp.repo.blobs import BlobInfo, BlobStore
@@ -409,9 +409,19 @@ class Repo:
         return commit, entries, blocks
 
     def import_car(
-        self, data: bytes, verify_key: PublicKey | None = None, *, gc: bool = True
+        self,
+        data: bytes,
+        verify_key: PublicKey | None = None,
+        *,
+        gc: bool = True,
+        newer_than: str | None = None,
     ) -> None:
         """Replace this repo's state with a CAR's contents (checkpoint load).
+
+        ``newer_than`` is a rev (normally this repo's current ``rev``): a CAR
+        whose head rev is not strictly greater raises :class:`StaleCheckpoint`
+        before any state changes, so a router that re-hosts pushed checkpoints
+        can refuse a replayed or older copy in the same parse that verifies it.
 
         A checkpoint load is not a commit: no ``on_commit`` fires (there is
         no honest CommitEvent to announce — no ops, no valid ``since``). A
@@ -425,6 +435,8 @@ class Repo:
         if commit.did != self.did:
             raise RepoError(f"CAR is for {commit.did}, not {self.did}")
         _check_rev(commit.rev)  # refused here, before any state changes
+        if newer_than is not None and commit.rev <= newer_than:
+            raise StaleCheckpoint(f"checkpoint rev {commit.rev} is not newer than {newer_than}")
         for cid, block in blocks.items():
             self.store.put(cid, block)
         self._entries = entries

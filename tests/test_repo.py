@@ -4,7 +4,7 @@ and steady-state size under sustained FIFO churn."""
 import pytest
 
 from fastatp import crypto, dagcbor
-from fastatp.exceptions import RepoError
+from fastatp.exceptions import RepoError, StaleCheckpoint
 from fastatp.lex.types import Datetime
 from fastatp.lexicon import Lexicon
 from fastatp.repo.car import encode_car
@@ -326,3 +326,29 @@ def test_a_refused_head_never_advances_a_shared_clock():
     with pytest.raises(RepoError):
         Repo("did:web:rev.example", key, store=store, head_cid=bogus.cid(), clock=shared)
     assert shared.now() < future, "the refused head's rev leaked into the shared clock"
+
+
+def test_import_car_newer_than_refuses_a_replayed_or_older_checkpoint():
+    key = crypto.generate_keypair("k256")
+    source = Repo("did:web:fresh.example", key)
+    source.put_record("com.example.note", "n-1", {"$type": "com.example.note", "text": "one"})
+    older = source.export_car()
+    older_rev = source.rev
+    source.put_record("com.example.note", "n-2", {"$type": "com.example.note", "text": "two"})
+    newer = source.export_car()
+
+    host = Repo("did:web:fresh.example", key)
+    # first hosting (the signup shape): a fresh repo's own genesis rev is
+    # newer than this checkpoint, so the first import is unconditional
+    host.import_car(older, verify_key=key.public_key())
+    assert host.rev == older_rev
+    with pytest.raises(StaleCheckpoint):  # a replay: equal rev
+        host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
+    host.import_car(newer, verify_key=key.public_key(), newer_than=host.rev)
+    assert host.rev == source.rev
+    before = (host.commit_cid, host.rev)
+    with pytest.raises(StaleCheckpoint):  # older than the head now
+        host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
+    assert (host.commit_cid, host.rev) == before
+    assert host.get_record("com.example.note", "n-2") is not None
+    assert issubclass(StaleCheckpoint, RepoError)

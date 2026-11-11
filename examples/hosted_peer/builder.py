@@ -40,7 +40,7 @@ from starlette.routing import Route
 from fastatp import Peer, PeerServer, crypto
 from fastatp.crypto import PublicKey
 from fastatp.did.document import DIDDocument
-from fastatp.exceptions import FastATPError
+from fastatp.exceptions import FastATPError, StaleCheckpoint
 from fastatp.repo.repo import Repo
 from fastatp.server.browser_gate import BrowserGate
 from fastatp.server.did_server import DIDServer
@@ -174,20 +174,13 @@ def make_builder(domain: str) -> ExampleBuilder:
                 key = builder.head_key(did)
             except KeyError:
                 return JSONResponse({"error": "NotShelved"}, status_code=404)
-        try:
-            incoming, _entries, _blocks = Repo.read_car(car, verify_key=key)
-        except FastATPError as exc:
-            return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
         # a signed checkpoint can be replayed; an older one must never roll the
         # hosted state back. Revs rise strictly across commits, so the head
-        # must move forward. (A durable router would also persist this.)
-        if incoming.rev <= handle.repo.rev:
-            return JSONResponse(
-                {"error": "Stale", "message": f"hosted rev {handle.repo.rev} is not older"},
-                status_code=409,
-            )
+        # must move forward: one parse verifies, checks freshness, imports.
         try:
-            handle.repo.import_car(car, verify_key=key)
+            handle.repo.import_car(car, verify_key=key, newer_than=handle.repo.rev)
+        except StaleCheckpoint as exc:
+            return JSONResponse({"error": "Stale", "message": str(exc)}, status_code=409)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
         return JSONResponse({"accepted": handle.repo.rev})

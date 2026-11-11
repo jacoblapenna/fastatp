@@ -48,6 +48,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
   before the chain page is signed, and every buffer the bindings hold the
   secret in is wiped on every exit path (the hex is decoded into a fixed
   buffer, so a malformed input leaves nothing behind either).
+- `Repo.import_car(..., newer_than=rev)` refuses a checkpoint whose head rev
+  is not strictly newer, raising `StaleCheckpoint` before any state changes,
+  so a router re-hosting pushed CARs can refuse a replay in the one parse
+  that verifies it. The hosted-peer example uses it.
 - `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
   bytes a pen signs; the Rust core builds the identical bytes.
 - `PeerServer.register(repo, owner_pull=...)`: a host serves a gated repo
