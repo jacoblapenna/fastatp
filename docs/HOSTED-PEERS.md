@@ -232,7 +232,12 @@ sovereign admission policy — edge business logic, never substrate.
   idempotent by CID; the router is a landlord — it can drop or delay, never
   forge or misfile undetectably.
 - Reads are gated per repo by the **doorman**. Native peers: WireGuard
-  cryptokey identity. Browser peers: TLS + one knock —
+  cryptokey identity. The tunnel key is not a pen and has no DID: it is an
+  X25519 key the machine holds beside its pens, it signs nothing, and the
+  only thing that ties it to an identity is a capability record saying
+  "this key is this DID", with the overlay address derived from the key so
+  the record cannot lie about where the DID will arrive from
+  (`docs/decisions/0002`). Browser peers: TLS + one knock —
   `sign_challenge(pair, nonce, repo_did)` signs a single-use host-issued
   nonce together with the DID of the repo being asked for, as the fixed
   message `fastatp-challenge-v1\n<repo DID>\n<nonce>` (a pen can never be
@@ -370,6 +375,10 @@ the product they are building rather than a flaw to be engineered away.
 - Pens as handles, each device writing its own repo, recovery on the page,
   pens never imported, and "saving a pen is keep me signed in":
   `docs/decisions/0001`.
+- Overlay addresses are derived from WireGuard keys under one fixed IPv6
+  prefix, never assigned or published, so no record can claim an address
+  it does not hold the key for and nothing about addresses crosses the
+  wire; IPv6-only on the overlay, any transport (`docs/decisions/0002`).
 - Neutral-shelf conventions: an anti-registry rule (no default shelf domain,
   ever) plus the opt-in shelf-intake route that makes running a shelf commodity.
 - Root-ceremony-deferred lifecycle: cut; the ceremony is mandatory in the v1

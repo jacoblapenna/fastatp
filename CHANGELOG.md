@@ -101,6 +101,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
   subscriber"), recovery on the page, pens never imported, and "saving a
   pen is keep me signed in". HOSTED-PEERS.md's runtime shape and recovery
   ladder updated to match.
+- `docs/decisions/0002-key-derived-overlay-addresses.md`: why an address is
+  a function of a key, the rejected alternatives (a central allocator, host
+  assignment, self-chosen addresses), and the limits (IPv6 overlay, key
+  rotation moves the address, the doorman's walk at scale).
 
 ## [0.2.0] - 2026-11-05
 

@@ -451,7 +451,8 @@ deliberately re-attached to the **repo**, or they evaporate:
   request, check the caller against the *target repo's* live capabilities and
   refuse non-holders. The doorman doesn't take your word for who you are — the
   tunnel you arrived through IS your ID (WireGuard cryptokey routing binds each
-  admitted peer to a unique source tunnel IP, unspoofable in-tunnel; map it to
+  admitted peer to a unique source overlay address derived from its key,
+  unspoofable in-tunnel; map it to
   the DID). Network enforcement still gates the building; the room check is
   app-layer code grounded in the same WG keys — new security-critical code,
   hence a required gate test (admitted-to-A requesting B is refused), because
