@@ -34,7 +34,7 @@ claim, and any repo can write any claim.
 
 An address is a pure function of a key. Every peer's overlay address is
 
-```
+```text
 OVERLAY_PREFIX + first 64 bits of SHA-256(raw 32-byte WireGuard public key)
 ```
 
@@ -108,40 +108,47 @@ cjdns, where the whole address space is a hash of the public key.
   derives is a function of that key alone. (A `did:web` identity also has a
   paper secret, the key that rotates its document; it never touches the
   tunnel either.)
-- **A capability record is what puts a DID on a tunnel.** The kernel admits
-  WireGuard keys; the doorman admits DIDs. The bridge is a record that says
-  "the peer whose WireGuard key is K is identity D", and where K comes from
-  depends on what kind of DID D is. A `did:web` has a document, so D
-  publishes its own K there (the `WireGuardFirehose` entry) and the
-  grantor's reconciler re-reads it on every reconcile. A `did:key` has no
-  document, so the grantor learned K out of band (a self-attestation) and
-  embeds it in the record (`wg_public_key`). Either way the address is
-  derived from K, so no record can claim an address its key does not own.
-- **What each kind of grant reaches.** The doorman builds its "address →
-  DID" map from the keys embedded in records, which means it can name a
-  `did:key` caller and cannot name a `did:web` one (that key lives in a
-  document, not in the record). This is the design, not a gap. A `did:web`
-  repo is the identity's public firehose, and a WireGuard grant to a
-  `did:web` peer admits it to *that*, where reachability is the whole gate:
-  absence is unreachable. Everything gated (a private channel, a device
-  repo) is a `did:key` repo, admitted by embedded key, where the doorman
-  can name the caller. A `did:web` identity reaches a gated repo through
-  its devices: a delegation names a device's pen, and the device is granted
-  by its own WireGuard key over the tunnel, or knocks as the identity
-  through the browser gate. The hosted-users chain in 0001 is exactly this
-  shape: a public `did:web` root, `did:key` devices, private repos read
-  through the knock.
-- **Rotating a WireGuard key moves the address**, correct by construction,
-  and the key is data, so a rotation is a change to data. A `did:web` peer
-  publishes the new key in its DID document; every grantor's next reconcile
-  re-resolves it, programs the new derived address and removes the old one.
-  A documentless peer's key lives in its grantor's capability record, so it
-  asks the grantor to grant again; `grant` supersedes the old record in the
-  same commit (deleted, with a revocation that says so) and the old address
-  goes with it. Either way the rotating peer re-runs its own interface
-  setup with the new address, or the host's kernel drops every packet it
-  sends. Nothing new to build; this is the existing grant and reconcile
-  behaviour, stated.
+- **A capability record is what puts a DID on a tunnel, and it always
+  carries the key.** The kernel admits WireGuard keys; the doorman admits
+  DIDs. The bridge is a record in the gated repo that says "the peer whose
+  WireGuard key is K is identity D, and may subscribe". The doorman walks
+  those records, derives an address from each K, and names a caller
+  arriving from that address as D. So the record must carry K, whatever
+  kind of DID D is; a record without it admits nobody at the door, however
+  the kernel was programmed. Where K comes from is the only thing that
+  differs by DID kind. A `did:web` grantee has a document and publishes its
+  own K there (the `WireGuardFirehose` entry): the grantor's `grant`
+  resolves the document and writes the K it found into the record. A
+  `did:key` grantee has no document, so the grantor learned K out of band
+  (a self-attestation) and passes it to `grant`, which writes it. Either
+  way the address is derived from K, so no record can claim an address its
+  key does not own. This is the record the getting-started tutorial writes
+  by hand; before 0.3 the library helper left K out for `did:web` grantees,
+  which admitted them at the kernel and refused them at the door.
+- **A DID's WireGuard key says where its tunnel is, not whether its repo is
+  private.** The key on a `did:web` document is read by two parties: a
+  grantor, to learn which key to admit, and a counterparty, to learn where
+  to point its own interface. A `did:web` repo is normally public and the
+  gated repos its machine serves are `did:key` repos (a private channel, a
+  device repo), so the key on the document is about the machine that hosts
+  them. The library does not forbid gating a `did:web` repo; whether an
+  app's roots are always public is the app's rule.
+- **Rotating a WireGuard key moves the address, and makes the peer a
+  stranger until it is granted again.** The record is what the grantor
+  signed: "this key is bob". The reconciler enforces the record and never
+  consults a document after grant time, so when bob publishes a new key,
+  nothing follows it; his old key stays admitted and his new one cannot
+  handshake. That is deliberate. A grant that silently followed bob's
+  document would hand bob's seat to whoever controls `bob.lan` the day
+  they publish their own key, and a reconciler that writes grants on its
+  own is a reconciler that decides who is admitted. So rotation is the
+  same for every grantee, `did:web` or `did:key`: ask the grantor to grant
+  again; `grant` supersedes the old record in the same commit and the old
+  address goes with it. An app that watches its grantees' documents can
+  tell the grantor "bob rotated his key, admit him again?", and that
+  question, out of band, is the app's to ask. Either way the rotating peer
+  re-runs its own interface setup with the new address, or the host's
+  kernel drops every packet it sends.
 - **Collisions** are a 1-in-2^64 event; a grant that would produce an
   address already granted on the same host can be refused outright.
 - **The doorman's map is still an O(N) walk** per gated read, N being every

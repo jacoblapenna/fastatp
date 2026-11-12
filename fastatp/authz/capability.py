@@ -39,10 +39,15 @@ class Capability(Lexicon):
     collections: list[Nsid] | None = None  # None = the whole firehose
     expires_at: Datetime | None = None
     note: str | None = None
-    # by-public-key grants (documentless did:key subjects) embed the WG key
-    # here so reconcile() can enforce without resolving a DID document. Null for
-    # did:web grants, which re-resolve so key rotation propagates. The overlay
-    # address is never recorded: it is derived from the key.
+    # the grantee's WireGuard key. The doorman derives the grantee's overlay
+    # address from it, so a record without it admits nobody over a tunnel.
+    # Given by hand for a documentless did:key grantee; read from the DID
+    # document for a did:web grantee, once, at grant time. A grantee that
+    # rotates its key is a stranger until granted again: the record is what
+    # the grantor signed, and nothing follows a document on its own. The
+    # overlay address is never recorded: it is derived from the key. Optional
+    # only so a capability that is not about a tunnel at all (a browser-gate
+    # grant) can omit it.
     wg_public_key: str | None = None
 
     def is_expired(self, now: datetime | None = None) -> bool:

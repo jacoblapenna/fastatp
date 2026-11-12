@@ -90,6 +90,21 @@ To upgrade safely within one minor line, pin with `~=`, for example
   anywhere.
 
 ### Fixed
+- A `did:web` grantee admitted through `WireGuardReconciler.grant` was
+  programmed into the kernel but its capability record carried no key, so
+  the doorman could not name it and refused every gated read (on 0.2.0 the
+  record carried no `wg_tunnel_ip` either). `grant` now writes the key it
+  resolved into the record for every grantee, the same record the
+  getting-started tutorial writes by hand, and `reconcile` enforces the
+  record without consulting any document again. A grantee that rotates its
+  WireGuard key is a stranger until the grantor grants again, for `did:web`
+  and `did:key` alike (before, a `did:web` grantee's new key was followed
+  into the kernel on the next reconcile, which is a seat handed to whoever
+  controls the domain). A record written by 0.2 for a `did:web` grantee
+  carries no key: `reconcile` reports it as `failed` ("grant again") and
+  admits nobody for it until the grantor does. A re-grant that supersedes
+  a record carrying a different key removes that key from the interface in
+  the same call, rather than leaving it admitted until the next reconcile.
 - A repo restored from a CAR, or reopened from a durable head, on a machine
   whose clock is behind that head no longer writes a lower rev: the clock
   observes the restored rev (Rust core `RevClock::observe`; Python

@@ -234,11 +234,14 @@ sovereign admission policy — edge business logic, never substrate.
 - Reads are gated per repo by the **doorman**. Native peers: WireGuard
   cryptokey identity. The tunnel key is not a pen and has no DID: it is an
   X25519 key the machine holds beside its pens, it signs nothing, and the
-  only thing that ties it to an identity is a capability record saying
-  "this key is this DID": the record embeds the key for a `did:key` peer,
-  and names a `did:web` peer whose own document publishes it. Either way
-  the overlay address is derived from the key, so the record cannot lie
-  about where the DID will arrive from (`docs/decisions/0002`). Browser peers: TLS + one knock —
+  only thing that ties it to an identity is a capability record in the
+  gated repo saying "this key is this DID". The record always carries the
+  key: handed over out of band for a `did:key` peer, read from the DID
+  document for a `did:web` peer, once, when the grant is written. A peer
+  that rotates its key is a stranger until granted again; nothing follows
+  a document on its own. The overlay address is derived from the key, so
+  the record cannot lie about where the DID will arrive from
+  (`docs/decisions/0002`). Browser peers: TLS + one knock —
   `sign_challenge(pair, nonce, repo_did)` signs a single-use host-issued
   nonce together with the DID of the repo being asked for, as the fixed
   message `fastatp-challenge-v1\n<repo DID>\n<nonce>` (a pen can never be

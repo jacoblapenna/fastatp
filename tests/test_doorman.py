@@ -146,6 +146,36 @@ async def test_tunnel_identity_resolver_maps_source_address(serve_app):
         assert (await _get(port, b.did)).status_code == 404  # Alice not in B
 
 
+async def test_a_did_web_grantee_admitted_through_the_reconciler_is_named_at_the_door(serve_app):
+    """The helper writes the same record the tutorial writes by hand: the
+    grantee's key, read from its DID document, is in the capability, so the
+    doorman derives the address the kernel admitted and names the caller.
+    (Before 0.3 the helper left the key out, and a did:web grantee was
+    admitted by the kernel and refused at the door.)"""
+    from fastatp import build_did_document
+    from fastatp.authz import MemoryWireGuardInterface, WireGuardReconciler, build_wireguard_service
+
+    bob = "did:web:bob.example"
+    bob_doc = build_did_document(
+        did=bob,
+        signing_key=crypto.generate_keypair("k256").public_key(),
+        extra_services=[build_wireguard_service(WG_KEY)],
+    )
+
+    async def resolver(did: str):
+        return bob_doc if did == bob else None
+
+    srv = PeerServer(_peer())
+    srv.identity_resolver = TunnelIdentityResolver(srv, source_address=_arriving_from(WG_KEY))
+    channel = srv.register(_channel_repo())
+    interface = MemoryWireGuardInterface()
+    await WireGuardReconciler(channel, interface, resolver).grant(bob)
+    assert WG_KEY in interface.peers()  # the kernel admits bob's key...
+
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, channel.did)).status_code == 200  # ...and the door names him
+
+
 async def test_proxy_warning_on_unidentifiable_loopback_read(serve_app, caplog):
     """A gated read that can't be tied to a tunnel identity, from loopback, logs
     a loud proxy-misconfiguration diagnosis (once)."""
