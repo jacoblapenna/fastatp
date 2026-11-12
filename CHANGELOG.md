@@ -33,7 +33,8 @@ To upgrade safely within one minor line, pin with `~=`, for example
 - **WireGuard overlay addresses are derived from keys, never assigned or
   published.** Every peer's address is `OVERLAY_PREFIX` (one fixed IPv6
   /64) plus 64 bits of SHA-256 over its WireGuard public key, so both ends
-  of a tunnel agree with nothing crossing the wire. `Capability.wg_tunnel_ip`
+  of a tunnel agree with no address crossing the wire (the public key
+  crosses it exactly as before). `Capability.wg_tunnel_ip`
   is removed; `build_wireguard_uri`, `build_wireguard_service`,
   `build_attestation`, `WireGuardReconciler.grant` and
   `PeerApp.open_private_channel` no longer take an address, and a `wg://`

@@ -206,6 +206,6 @@ re-probed directly with `wg` in the harness and pinned from that observation.
 | Publish reachability as DID-document data; enforce separately | Tenet 2 (data, not calls); the doorman |
 | No PSK | Tenet 7 (no shared secrets) |
 | Subprocess to `wg`, not C bindings / netlink | Tenet 5 (socket-free, dependency-light core); pure-`any` wheel; no C surface |
-| Endpoints optional/unused (peers roam) | Identity is the overlay address the key derives (`docs/decisions/0002`), which the doorman routes on, not the external endpoint |
+| Endpoints optional/unused (peers roam) | The doorman routes on the overlay address the key derives (`docs/decisions/0002`), not the external endpoint; the address is a route, and the capability record is what makes it a DID |
 | Always-on strict key validation | records/keys are the trust boundary in signed mail |
 | WG is an optional adapter (graceful degradation) | The enforcement-plane design + the browser-gate alternative |

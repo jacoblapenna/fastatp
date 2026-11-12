@@ -26,8 +26,8 @@ follows from it:
 
 1. A hosted user's peer runs in a browser, because a browser is what they
    have.
-2. A browser cannot open a socket or join a WireGuard tunnel, so it cannot
-   serve its own repo. Someone else must host that repo: the app's peer.
+2. A browser cannot listen on a socket or join a WireGuard tunnel, so it
+   cannot serve its own repo. Someone else must host that repo: the app's peer.
 3. A host serving repos for pens it does not carry is a new thing. It must
    admit the pen that writes a repo without holding it (owner pull), admit
    a browser with no tunnel identity (the knock), let a lost pen be replaced
@@ -235,9 +235,10 @@ sovereign admission policy — edge business logic, never substrate.
   cryptokey identity. The tunnel key is not a pen and has no DID: it is an
   X25519 key the machine holds beside its pens, it signs nothing, and the
   only thing that ties it to an identity is a capability record saying
-  "this key is this DID", with the overlay address derived from the key so
-  the record cannot lie about where the DID will arrive from
-  (`docs/decisions/0002`). Browser peers: TLS + one knock —
+  "this key is this DID": the record embeds the key for a `did:key` peer,
+  and names a `did:web` peer whose own document publishes it. Either way
+  the overlay address is derived from the key, so the record cannot lie
+  about where the DID will arrive from (`docs/decisions/0002`). Browser peers: TLS + one knock —
   `sign_challenge(pair, nonce, repo_did)` signs a single-use host-issued
   nonce together with the DID of the repo being asked for, as the fixed
   message `fastatp-challenge-v1\n<repo DID>\n<nonce>` (a pen can never be
@@ -320,7 +321,9 @@ the product they are building rather than a flaw to be engineered away.
 1. **The host can read tier-1 data.** This is not a weakness; it is the
    price of serving someone who will not self-host, and it is the same price
    every app charges today. There is no app that reads none of a
-   non-technical user's data, whatever its authentication rests on. The
+   non-technical user's data, whatever its authentication rests on: even an
+   end-to-end encrypted one reads who talks to whom and when, and that is
+   tier-1 data here. The
    builder decides the price: a product that needs out-of-band
    notifications, search or moderation reads what those need, exactly as a
    landlord reads the mail it forwards; a builder who believes they can reach
@@ -333,7 +336,7 @@ the product they are building rather than a flaw to be engineered away.
    A user who loses every device and the paper is a visible rebirth, which
    is a loud, per-user failure rather than a silent, archive-shaped one.
 3. **The browser knock is different from WireGuard, not lesser.** A browser
-   cannot open a socket or join a tunnel. That is a relic of an internet
+   cannot listen on a socket or join a tunnel. That is a relic of an internet
    built for documents and shared secrets, a norm and not a law of nature,
    and FastATP does not get to repeal it. Within it, the knock is the most
    on-philosophy way in: a single-use nonce signed by a non-extractable pen,

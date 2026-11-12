@@ -330,9 +330,10 @@ def test_partial_failure_heals_on_next_reconcile():
 
 def test_endpoint_roaming_never_pinned():
     """Audit item 7: a grantee's published endpoint is informational only.
-    allowed-ips comes from the tunnel IP (the stable /32 the doorman routes
-    on), and the reconciler never sends the roaming external endpoint to the
-    interface — WireGuard learns it from the handshake."""
+    allowed-ips is the /128 overlay address derived from the key (the stable
+    address the doorman routes on), and the reconciler never sends the
+    roaming external endpoint to the interface — WireGuard learns it from
+    the handshake."""
     import asyncio
 
     from fastatp.authz.wireguard import MemoryWireGuardInterface, parse_wireguard_service
@@ -344,7 +345,7 @@ def test_endpoint_roaming_never_pinned():
         assert info.endpoint == "roamer.example:51820"  # present in the doc
         assert info.allowed_ips == f"{overlay_address(pub)}/128"  # derived from the key only
         await rec.grant(did_b)
-        # the interface stores exactly the /32 allowed-ips, no endpoint anywhere
+        # the interface stores exactly the derived /128 allowed-ips, no endpoint anywhere
         assert iface.peers()[pub] == f"{overlay_address(pub)}/128"
 
     asyncio.run(run())
