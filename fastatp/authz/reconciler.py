@@ -211,7 +211,19 @@ class WireGuardReconciler:
         if existing is not None:
             old_key = existing[1].wg_public_key
             if old_key and old_key != info.public_key and old_key not in self.pinned_pubkeys:
-                self.interface.remove_peer(old_key)  # the superseded key goes with its record
+                # the superseded key goes with its record, unless another live
+                # grant still names it (two DIDs on one machine share a key)
+                still_named = any(
+                    cap.wg_public_key == old_key
+                    for _subject, (_rkey, cap) in live_capabilities(_repo_of(self.writer)).items()
+                )
+                if not still_named:
+                    self.interface.remove_peer(old_key)
+            elif not old_key:
+                # the superseded record (written by 0.2) named no key, so the
+                # peer it once opened cannot be named either: prune whatever
+                # no live record explains, as revoke does for such a record
+                await self._apply_desired(ReconcileReport())
         return rkey, capability
 
     # --- revoke ------------------------------------------------------------------

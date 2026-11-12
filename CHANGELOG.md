@@ -104,7 +104,8 @@ To upgrade safely within one minor line, pin with `~=`, for example
   carries no key: `reconcile` reports it as `failed` ("grant again") and
   admits nobody for it until the grantor does. A re-grant that supersedes
   a record carrying a different key removes that key from the interface in
-  the same call, rather than leaving it admitted until the next reconcile.
+  the same call, rather than leaving it admitted until the next reconcile,
+  unless the key is pinned or another live grant still names it.
 - A repo restored from a CAR, or reopened from a durable head, on a machine
   whose clock is behind that head no longer writes a lower rev: the clock
   observes the restored rev (Rust core `RevClock::observe`; Python

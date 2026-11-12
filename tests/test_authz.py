@@ -452,6 +452,26 @@ async def test_a_rotated_key_is_a_stranger_until_granted_again(grantor):
     assert [(r["capability_rkey"], r["reason"]) for r in revocations] == [(old_rkey, "superseded")]
 
 
+async def test_a_regrant_keeps_a_key_another_grant_still_names(grantor):
+    """Two DIDs on one machine share a WireGuard key. Re-granting one of them
+    with a new key must not pull the shared key out from under the other."""
+    _server, interface, reconciler = grantor
+    device = _did_key_subject()
+    await reconciler.grant(ALICE)  # alice's document says ALICE_KEY
+    await reconciler.grant(device, wg_public_key=ALICE_KEY)  # a device on alice's machine
+    new_key = _wg_key(9)
+    saved = DOCS[ALICE]
+    _register(ALICE, new_key, "203.0.113.5:51820")
+    try:
+        await reconciler.grant(ALICE)  # alice re-granted with her new key
+    finally:
+        DOCS[ALICE] = saved
+    assert interface.peers() == {
+        ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128",  # still named by the device's grant
+        new_key: f"{overlay_address(new_key)}/128",
+    }
+
+
 async def test_a_record_without_a_key_is_reported_not_resolved(grantor):
     """A record written by a pre-0.3 reconciler for a did:web grantee carries
     no key. Reconcile does not go and fetch one: it reports the record and
@@ -465,6 +485,21 @@ async def test_a_record_without_a_key_is_reported_not_resolved(grantor):
     assert live_capabilities(server.repo)[ALICE][1].wg_public_key is None  # untouched
     _rkey, cap = await reconciler.grant(ALICE)
     assert cap.wg_public_key == ALICE_KEY
+    assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
+
+
+async def test_regranting_a_keyless_record_prunes_the_peer_it_once_opened(grantor):
+    """0.2 programmed the kernel from the document and wrote no key. When the
+    grantor grants again after a rotation, the record cannot say which old
+    peer to remove, so grant prunes every peer no live record explains, the
+    way revoke does for such a record."""
+    server, interface, reconciler = grantor
+    stale = _wg_key(7)  # the key 0.2 resolved and programmed back then
+    server.put_record(
+        Capability.nsid, generate_tid(), Capability(subject=ALICE, actions=[ACTION_SUBSCRIBE])
+    )
+    interface.add_peer(stale, f"{overlay_address(stale)}/128")
+    await reconciler.grant(ALICE)  # alice's document now says ALICE_KEY
     assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
 
 

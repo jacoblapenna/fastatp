@@ -46,8 +46,9 @@ class Capability(Lexicon):
     # rotates its key is a stranger until granted again: the record is what
     # the grantor signed, and nothing follows a document on its own. The
     # overlay address is never recorded: it is derived from the key. Optional
-    # only so a capability that is not about a tunnel at all (a browser-gate
-    # grant) can omit it.
+    # so a capability that is not about a tunnel at all (a browser-gate
+    # grant) can omit it; a tunnel record without it (written by 0.2 for a
+    # did:web grantee) still parses, and admits nobody until granted again.
     wg_public_key: str | None = None
 
     def is_expired(self, now: datetime | None = None) -> bool:
