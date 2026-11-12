@@ -25,8 +25,11 @@ from fastatp.exceptions import RepoError
 from fastatp.repo.repo import Repo
 from fastatp.repo.sync import decode_frame
 from fastatp.server.browser_gate import (
+    CHALLENGE_LABEL,
     CHALLENGE_PATH,
+    MAX_NONCE_LEN,
     BrowserGate,
+    challenge_message,
     compose_caller_resolvers,
 )
 from fastatp.server.peer_server import FIREHOSE_PATH, GET_REPO_PATH
@@ -71,9 +74,13 @@ async def _nonce(port: int) -> str:
         return response.json()["nonce"]
 
 
-def _sign(pen_key, nonce: str) -> str:
-    raw = crypto.sign_message(pen_key, nonce.encode("ascii"))
+def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _sign(pen_key, nonce: str, *, repo_did: str = ROOT) -> str:
+    """The knock, as the bundle's ``sign_challenge(pen, nonce, repo_did)`` makes it."""
+    return _b64url(crypto.sign_message(pen_key, challenge_message(repo_did, nonce)))
 
 
 def _params(pen_did: str, nonce: str, sig: str, *, iss: str | None = ROOT) -> dict[str, str]:
@@ -125,7 +132,7 @@ async def test_admitted_pen_subscribes_and_severed_pen_is_refused(serve_app):
 
         handle.delete_record(Delegation.nsid, rkey)  # sever: the revocation act
         nonce = await _nonce(port)  # fresh, valid challenge — chain is what fails
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        with pytest.raises(RepoError, match="RepoNotFound"):
             await _subscribe_first_frame(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
 
 
@@ -140,8 +147,8 @@ async def test_replayed_nonce_is_refused(serve_app):
         sig = _sign(pen_key, nonce)
         assert (await _get_repo(port, ROOT, _params(pen_did, nonce, sig))).status_code == 200
         replay = await _get_repo(port, ROOT, _params(pen_did, nonce, sig))
-        assert replay.status_code == 403
-        assert replay.json()["error"] == "NotAuthorized"
+        assert replay.status_code == 404
+        assert replay.json()["error"] == "RepoNotFound"
 
 
 async def test_no_identity_is_refused_and_bad_signature_burns_the_nonce(serve_app):
@@ -152,13 +159,13 @@ async def test_no_identity_is_refused_and_bad_signature_burns_the_nonce(serve_ap
 
     async with serve_app(srv.app) as port:
         # no challenge params at all → the doorman sees no identity
-        assert (await _get_repo(port, ROOT, {})).status_code == 403
+        assert (await _get_repo(port, ROOT, {})).status_code == 404
         # signature by the wrong key → refused, and the nonce is consumed
         nonce = await _nonce(port)
         forged = _params(pen_did, nonce, _sign(other_key, nonce))
-        assert (await _get_repo(port, ROOT, forged)).status_code == 403
+        assert (await _get_repo(port, ROOT, forged)).status_code == 404
         honest = _params(pen_did, nonce, _sign(pen_key, nonce))
-        assert (await _get_repo(port, ROOT, honest)).status_code == 403  # burned
+        assert (await _get_repo(port, ROOT, honest)).status_code == 404  # burned
 
 
 async def test_undelegated_pen_is_refused_even_with_valid_challenge(serve_app):
@@ -169,7 +176,7 @@ async def test_undelegated_pen_is_refused_even_with_valid_challenge(serve_app):
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
         response = await _get_repo(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 async def test_documentless_pen_speaks_for_itself(serve_app):
@@ -195,7 +202,128 @@ async def test_challenge_route_is_opt_in(serve_app):
         assert (await client.get(f"http://127.0.0.1:{port}{CHALLENGE_PATH}")).status_code == 404
 
 
-# --- unit: nonce lifecycle and composition ----------------------------------------
+async def test_signature_is_bound_to_the_requested_repo(serve_app):
+    """A knock names the repo it wants. The bare nonce (the 0.2 message) and a
+    signature made for another repo's DID both fail against this repo."""
+    srv, _gate = _server_with_gate()
+    handle = _user_repo(srv)
+    pen_key, pen_did = _pen()
+    _delegate(handle, pen_did)
+
+    async with serve_app(srv.app) as port:
+        nonce = await _nonce(port)
+        bare = _b64url(crypto.sign_message(pen_key, nonce.encode("ascii")))
+        assert (await _get_repo(port, ROOT, _params(pen_did, nonce, bare))).status_code == 404
+        nonce = await _nonce(port)
+        elsewhere = _sign(pen_key, nonce, repo_did="did:web:other.example:x")
+        assert (await _get_repo(port, ROOT, _params(pen_did, nonce, elsewhere))).status_code == 404
+        nonce = await _nonce(port)
+        honest = _params(pen_did, nonce, _sign(pen_key, nonce))
+        assert (await _get_repo(port, ROOT, honest)).status_code == 200
+
+
+async def test_a_knock_for_an_unhosted_did_still_burns_its_nonce(serve_app):
+    """The caller is resolved BEFORE the host is looked up, so a stranger
+    probing DIDs runs the same checks whether or not the repo exists: the
+    nonce is spent either way, and the answer is RepoNotFound either way."""
+    srv, _gate = _server_with_gate()
+    handle = _user_repo(srv)
+    pen_key, pen_did = _pen()
+    _delegate(handle, pen_did)
+    absent = "did:web:nobody.example"
+
+    async with serve_app(srv.app) as port:
+        nonce = await _nonce(port)
+        elsewhere = _params(pen_did, nonce, _sign(pen_key, nonce, repo_did=absent))
+        probe = await _get_repo(port, absent, elsewhere)
+        assert probe.status_code == 404 and probe.json()["error"] == "RepoNotFound"
+        # the same nonce, now for the repo this pen IS admitted to: already spent
+        reuse = await _get_repo(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
+        assert reuse.status_code == 404 and reuse.json()["error"] == "RepoNotFound"
+        nonce = await _nonce(port)
+        fresh = _params(pen_did, nonce, _sign(pen_key, nonce))
+        assert (await _get_repo(port, ROOT, fresh)).status_code == 200
+
+
+async def test_list_repos_resolves_a_knock_once_and_lists_what_the_pen_holds(serve_app):
+    """A knock is single-use. listRepos resolves the caller once for the whole
+    listing (not per repo, which would spend the nonce on the first), then
+    applies the capability rule per repo: the pen sees every gated repo its
+    identity is admitted to, naming its own root as ``did``."""
+    from fastatp.server.peer_server import LIST_REPOS_PATH
+
+    srv, _gate = _server_with_gate()
+    handle = _user_repo(srv)
+    other = srv.register(Repo("did:web:other.example:x", crypto.generate_keypair("k256")))
+    other.put_record(
+        Capability.nsid, generate_tid(), Capability(subject=ROOT, actions=["subscribe"])
+    )
+    hidden = srv.register(Repo("did:web:hidden.example:x", crypto.generate_keypair("k256")))
+    pen_key, pen_did = _pen()
+    _delegate(handle, pen_did)
+
+    async with serve_app(srv.app) as port, httpx.AsyncClient() as client:
+        anonymous = await client.get(f"http://127.0.0.1:{port}{LIST_REPOS_PATH}")
+        assert [r["did"] for r in anonymous.json()["repos"]] == ["did:web:builder.example"]
+        nonce = await _nonce(port)
+        params = {"did": ROOT, **_params(pen_did, nonce, _sign(pen_key, nonce))}
+        listed = await client.get(f"http://127.0.0.1:{port}{LIST_REPOS_PATH}", params=params)
+        dids = {r["did"] for r in listed.json()["repos"]}
+        assert ROOT in dids and other.did in dids
+        assert hidden.did not in dids
+
+
+# --- unit: the challenge message, nonce lifecycle and composition -------------------
+
+
+def test_challenge_message_matches_the_rust_vector():
+    # pinned in rust/crates/fastatp-core/src/challenge.rs; both sides must agree
+    assert (
+        challenge_message("did:web:shelf.example:abc", "n0nce_-A")
+        == b"fastatp-challenge-v1\ndid:web:shelf.example:abc\nn0nce_-A"
+    )
+    assert CHALLENGE_LABEL == "fastatp-challenge-v1"
+
+
+def test_challenge_message_can_never_look_like_dag_cbor():
+    # a commit is a dag-cbor map; its first byte is 0xa0..=0xbf, never ASCII
+    assert challenge_message("did:key:zDnaeABC", "nonce")[0:1].isalpha()
+
+
+@pytest.mark.parametrize(
+    "did",
+    [
+        "",
+        "shelf.example",
+        "did:",
+        "did:web:",
+        "did:Web:x",
+        "did:web:x:",
+        "did:web:x%",
+        "did:web:x\n",
+    ],
+)
+def test_challenge_message_refuses_bad_dids(did):
+    with pytest.raises(ValueError, match="DID"):
+        challenge_message(did, "nonce")
+    with pytest.raises(ValueError, match="DID"):
+        challenge_message("did:web:" + "a" * 2048, "nonce")
+
+
+@pytest.mark.parametrize(
+    "nonce",
+    ["", "has space", "has\nnewline", "nonce\n", "padded==", "plus+slash/", "did:web:x"],
+)
+def test_challenge_message_refuses_bad_nonces(nonce):
+    with pytest.raises(ValueError, match="nonce"):
+        challenge_message("did:web:x", nonce)
+    assert challenge_message("did:web:x", "A" * MAX_NONCE_LEN)
+    with pytest.raises(ValueError, match="nonce"):
+        challenge_message("did:web:x", "A" * (MAX_NONCE_LEN + 1))
+
+
+def test_issued_nonces_are_valid_challenge_nonces():
+    assert challenge_message("did:web:x", BrowserGate().issue())
 
 
 def test_expired_nonce_is_refused():

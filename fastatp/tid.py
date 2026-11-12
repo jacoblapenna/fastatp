@@ -62,6 +62,17 @@ class TidClock:
             self._last_us = timestamp_us
             return encode_tid(timestamp_us, self._clock_id)
 
+    def observe(self, tid: str) -> None:
+        """Never issue a TID at or below ``tid`` from now on.
+
+        A repo loaded from a CAR or a durable head calls this with the head
+        commit's rev: revs must rise strictly across commits, and the device
+        that wrote the last one may have had a faster clock than this one.
+        """
+        timestamp_us, _clock_id = decode_tid(tid)
+        with self._lock:
+            self._last_us = max(self._last_us, timestamp_us)
+
 
 tid_clock = TidClock()
 """Process-wide default clock."""

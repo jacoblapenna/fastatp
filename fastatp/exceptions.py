@@ -84,6 +84,12 @@ class RepoError(FastATPError):
     """Base class for repository errors."""
 
 
+class StaleCheckpoint(RepoError):
+    """A checkpoint CAR whose head rev is not newer than the one the repo
+    already has: a replay, or an older copy. Refused before any state
+    changes (``Repo.import_car(..., newer_than=...)``)."""
+
+
 class FirehoseErrorFrame(RepoError):
     """The producer sent an event-stream error frame (``op: -1``).
 

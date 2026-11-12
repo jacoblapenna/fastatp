@@ -16,6 +16,40 @@ the user's behalf, so a password/token over the wire *is* the user. The goal:
 full sovereignty — no secret, plaintext or ciphertext, ever crossing the wire —
 with a UX of "tap Face ID / scan a QR."
 
+Call the people who will never run a server **hosted users**, as against
+self-hosters. FastATP exists because its author hates shared secrets and
+the authentication built on them, and still wants privacy; atproto today has
+no privacy without shared secrets, and this design is the answer. It has to
+work for hosted users and home-lab nerds alike, or it is a toy. Letting
+hosted users in is one chain of consequences, and most of this document
+follows from it:
+
+1. A hosted user's peer runs in a browser, because a browser is what they
+   have.
+2. A browser cannot listen on a socket or join a WireGuard tunnel, so it
+   cannot serve its own repo. Someone else must host that repo: the app's peer.
+3. A host serving repos for pens it does not carry is a new thing. It must
+   admit the pen that writes a repo without holding it (owner pull), admit
+   a browser with no tunnel identity (the knock), let a lost pen be replaced
+   from paper (recovery on the page), and never be able to forge what it
+   hosts (every reader verifies).
+4. Everything a host can see is the price of step 2. The builder decides how
+   much of that price their product needs to charge.
+
+Scale follows the same chain. A single peer hosting a few repos keeps the
+doorman's address-to-identity map as an in-memory walk and one WireGuard
+interface, and that is right at that size. A host serving millions runs
+several instances, each with its own WireGuard interface (a kernel handles
+thousands of peers, not millions), and keeps the commit lock for each repo
+and a cache of "this address is this DID, granted in this repo" in its own
+database, updated as repo owners write and delete capabilities in the repos
+it hosts. The cache is for speed, not authority: it points the doorman at a
+repo, and the doorman still admits by the capability currently in that
+repo. That is what bringing your own database is for, and it is planned,
+not shipped: FastATP knows where the walk stops scaling and says so in the
+code rather than pretending otherwise. At that scale the mass of users
+arrives through the browser knock anyway, which needs no global map.
+
 ## The separation that makes it possible
 
 A "login system" fuses three things FastATP keeps apart:
@@ -58,15 +92,24 @@ Chosen model:
     root stays offline for the entire device lifecycle.
   - The device constellation is **private by default** — disclosed
     per-counterparty when a pen signs at them, never published in the doc.
-- **Enrollment ceremony**: new device shows its public key as a QR; an
-  existing device scans and signs the attestation. Public key one way,
-  signature the other. Same interaction users know from passkey cross-device
-  sign-in. The attestation is a repo record → device history is auditable
-  provenance.
-- **Paper root** (rotation keys): BIP-39 phrase, shown once at
-  signup, never persisted, never networked. The only zero-device recovery
-  path, and the backstop that rotates away any pen compromise while the DID
-  survives.
+- **Enrollment ceremony**: new device shows its public key (`pen_did`) as a
+  QR; an existing device scans and writes the delegation record. Public key
+  one way, record presence the other. Same interaction users know from
+  passkey cross-device sign-in. The record is in the repo → device history
+  is auditable provenance. When the existing device has no camera, the app
+  relays the `pen_did` behind a short code and both devices show a hash of
+  it as about six words for the user to compare; app code, never package.
+- **Pens are never imported.** A key imported into WebCrypto as
+  non-extractable passes every check the bindings make, so this is a rule,
+  not a mechanism: importing a key puts one pen on two devices. A
+  self-hoster brings their DID, not their pen; their browser enrolls as a
+  device like any other.
+- **Paper root** (rotation keys): 32 random bytes the bundle hands the app
+  once, as 64 hex characters, never persisted by the package, never
+  networked. How the app shows it (a 24-word phrase, a printed QR card) and
+  how many rotation keys it mints are app presentation; the bundle takes
+  hex back. The only zero-device recovery path, and the backstop that
+  rotates away any pen compromise while the DID survives.
 - **Revocation is per-pen**: losing a device severs one capability; the other
   devices are untouched.
   - "Log out everywhere else" = current device signs revocations for all
@@ -83,10 +126,20 @@ anything — so "lose the main pen, lose all app data" is false under this
 design. The ladder, cheapest rung first:
 
 1. **Any surviving device** → attest a new pen sideways. Nothing was lost.
-2. **Paper rotation phrase** (case 2) → rotate the DID document to a fresh
-   pen (page-append); identity, repo, and relationships survive.
-   For case 1, the equivalent lives at the identity's home (PLC rotation
-   keys, their own did:web chain).
+2. **Paper secret** (case 2) → rotate the DID document to a fresh pen
+   (page-append); identity, repo, and relationships survive. On the page:
+   a fresh browser mints a pen that is nobody yet; `rotation_did_from_secret`
+   checks the typed secret against the chain's rotation key before anything
+   is done with it; `rotate_pen` signs a new page naming the new pen and
+   returns the longer chain, which the app posts to the shelf (a longer
+   chain for the same slug; never an edit, never a rollback). The new pen
+   pulls the repo as its owner — the host's rule reads the chain head, so
+   it needs no record and has signed nothing yet — restores it, verifying
+   the head against the *old* pen that signed it, prunes the lost devices'
+   delegations, and pushes against the new head. The old pen can neither
+   pull nor push. The secret touches wasm memory for one signature and is
+   wiped. For case 1, the equivalent lives at the identity's home (PLC
+   rotation keys, their own did:web chain).
 3. **Builder recovery policy (optional): sub-promotion.** Promoting a device
    pen to identity control inverts the hierarchy — a stolen device could take
    over the identity — so if offered it must be friction-gated: quarantine
@@ -148,6 +201,29 @@ sovereign admission policy — edge business logic, never substrate.
 
 ## Runtime shape (all shipped)
 
+- **The pen is a handle.** Every binding takes and returns a WebCrypto
+  `CryptoKeyPair` (ECDSA P-256, `extractable: false`) and re-checks it on
+  the way in: curve, type, the flag read back from the browser, and that
+  the halves are a pair. Private-key bytes never enter wasm or JavaScript
+  (the public half is exported to name the pen).
+  `generate_pen()` mints one; `pen_did(pair)` names it;
+  `connection_zero(domain, pair)` signs up with it;
+  `BrowserPeer.create(did, pair)` starts a repo for any DID (a device repo
+  is the pen's own `did:key`); `BrowserPeer.restore(car, pair, verify?)`
+  rebuilds one from a stored or pulled CAR; with `verify` it checks the
+  head against the pen named, and without it only content addressing is
+  checked, so a CAR from an untrusted host must be restored with `verify`.
+  Either way it never writes a lower rev than the restored head, even when
+  the device clock is behind.
+- **IMPORTANT — saving a pen is "keep me signed in".** The bindings store
+  nothing. A pen lives in memory and is gone with the tab unless the app
+  puts the handle in IndexedDB (structured clone keeps it non-extractable)
+  and hands it back after a reload. That choice is the "keep me signed in"
+  box and should be presented as one: ephemeral by default; a shared-machine
+  session enrolled like any device with `expires_at` on its delegation as
+  the backstop and deletion on sign-out; signup refusing to make the first
+  device on a machine that is not the user's own. App policy, not library
+  code.
 - Browser peer pushes signed records via **push intake**:
   `Repo.prove()` slice POSTed, `Peer.verify()`d, dispatched.
 - The **router** ("when content arrives signed by this pen, deliver to that
@@ -156,13 +232,51 @@ sovereign admission policy — edge business logic, never substrate.
   idempotent by CID; the router is a landlord — it can drop or delay, never
   forge or misfile undetectably.
 - Reads are gated per repo by the **doorman**. Native peers: WireGuard
-  cryptokey identity. Browser peers: TLS + signed-challenge admission at the
-  WSS layer — a single-use connection-bound nonce signed by the pen, resolved
-  pen → DID through the live delegation chain, feeding the doorman check; the
-  honest weakening stands: "absence = every request rejected" rather than
-  "absence = unreachable".
-- Multi-device sync is free: every device is an admitted subscriber of the
-  user's own hosted repo; the firehose is the sync protocol.
+  cryptokey identity. The tunnel key is not a pen and has no DID: it is an
+  X25519 key the machine holds beside its pens, it signs nothing, and the
+  only thing that ties it to an identity is a capability record in the
+  gated repo saying "this key is this DID". The record always carries the
+  key: handed over out of band for a `did:key` peer, read from the DID
+  document for a `did:web` peer, once, when the grant is written. A peer
+  that rotates its key is a stranger until granted again; nothing follows
+  a document on its own. The overlay address is derived from the key, so
+  the record cannot lie about where the DID will arrive from
+  (`docs/decisions/0002`). Browser peers: TLS + one knock —
+  `sign_challenge(pair, nonce, repo_did)` signs a single-use host-issued
+  nonce together with the DID of the repo being asked for, as the fixed
+  message `fastatp-challenge-v1\n<repo DID>\n<nonce>` (a pen can never be
+  handed commit bytes as a "challenge", and a signature for one repo cannot
+  be spent on another). The gate resolves pen → DID through the live
+  delegation chain and feeds the doorman; the honest weakening stands:
+  "absence = every request rejected" rather than "absence = unreachable".
+  The knock needs no repo loaded: it is about the repo asked for.
+- **Owner pull** (`PeerServer.register(repo, owner_pull=...)`, off by
+  default): a host serves a gated repo to its owner with no capability
+  record — the pen that writes it, or the identity itself when a device
+  speaks for it through a live delegation record in that repo. The owner is
+  not a subscriber; a pen reading its own repo back from the host is the
+  peer reaching its own storage. The pen still proves itself (WireGuard
+  identity, or the browser's signed knock, with `iss` omitted for the pen
+  or set to the identity for a device), and the proof must be this repo's
+  own — a signature, or a binding or delegation in this repo's records —
+  since any hosted repo can write a record naming any DID. Everyone else
+  goes through the capability rule.
+  The host answers "which pen writes this repo" either from the head commit
+  (`True`) or from its own knowledge of the identity's chain head (a rule),
+  which is what admits a freshly rotated pen before it has pushed.
+- Hosted repos whose pen lives on another peer are **read-only on the
+  host**. Today the host's `Repo` object still carries whatever key it was
+  built with, and nothing in the process stops a write; what stops the host
+  forging is that readers that verify against the identity's real pen
+  reject it (`restore` with a verify key, a mirror, the next push's
+  `verify_key`), and a reader that skips verification has trusted the host
+  by choice. The planned external-signer work
+  makes this mechanical: a repo can be opened **frozen** (no pen on this
+  host, every write raises), and an `owner_pull` registration will require
+  it, so a host serving a repo to its pen can never hold a pen for it.
+- Multi-device sync: a device reads the user's other repos the same way
+  any peer does, admitted by capability record, with the firehose as the
+  sync protocol. Its *own* repo it pulls as the owner.
 - Pairwise privacy = the isolation pattern: a conversation is
   a dedicated repo whose firehose admits exactly the counterpart.
 
@@ -201,20 +315,55 @@ public DID documents and chains, signed records, CAR slices. No password, no
 bearer token, no raw key, no wrapped key. A fully compromised host or wire
 observer obtains nothing that lets it *be* anyone.
 
-## Honest weaknesses (ranked)
+## Costs, stated plainly
 
-1. **Host-visible metadata** (both tiers) and tier-1 contents: the builder is
-   a reachability/metadata authority for its user population — legitimate the
-   way PHILOSOPHY.md's tailnet clause is, and mitigated by cheap exit.
-2. **Zero-device recovery requires the paper root** — lose every device and
-   the phrase, and the identity is a visible rebirth. Deliberate trade: a
-   per-user, loud, recoverable failure instead of a systemic, silent,
-   archive-shaped one.
-3. **Browser gate is weaker than WireGuard**: TLS + signature admission
-   instead of cryptographic unreachability.
-4. Platform trust in device keystores/browser storage (Secure Enclave, OPFS
-   eviction policies) — the expected-case dependency that replaces the
-   sync-fabric/blob trust the rejected design carried.
+Each of these is a cost of letting hosted users in, with what a builder does
+about it. None is hidden, and most are a decision the builder makes about
+the product they are building rather than a flaw to be engineered away.
+
+1. **The host can read tier-1 data.** This is not a weakness; it is the
+   price of serving someone who will not self-host, and it is the same price
+   every app charges today. There is no app that reads none of a
+   non-technical user's data, whatever its authentication rests on: even an
+   end-to-end encrypted one reads who talks to whom and when, and that is
+   tier-1 data here. The
+   builder decides the price: a product that needs out-of-band
+   notifications, search or moderation reads what those need, exactly as a
+   landlord reads the mail it forwards; a builder who believes they can reach
+   scale on self-hosters alone hosts nothing and is a highway. Tier 2 exists
+   for the parts that must be host-blind regardless.
+2. **Zero-device recovery needs the paper secret.** That is atproto's own
+   rotation-key model, not something added here. A builder may hold the
+   secret for users who want it, as Bluesky does, on the condition that it
+   says so: holding it makes the app a custodian that can take the identity.
+   A user who loses every device and the paper is a visible rebirth, which
+   is a loud, per-user failure rather than a silent, archive-shaped one.
+3. **The browser knock is different from WireGuard, not lesser.** A browser
+   cannot listen on a socket or join a tunnel. That is a relic of an internet
+   built for documents and shared secrets, a norm and not a law of nature,
+   and FastATP does not get to repeal it. Within it, the knock is the most
+   on-philosophy way in: a single-use nonce signed by a non-extractable pen,
+   bound to the repo asked for, so no secret ever crosses the wire. It has
+   precedent (passkeys work this way). What it gives up is unreachability:
+   a refused caller gets refused requests instead of silence, so the
+   builder rate-limits the knock at the edge, as it would any login page.
+4. **You trust something to speak over distance.** A kernel, a secure
+   enclave, a browser's key store. It is turtles all the way down, and
+   pretending otherwise is the dishonest option. The choice here is which
+   turtle: the user's own device keystore rather than a server-side key
+   archive, because a device's compromise is one user's problem and an
+   archive's compromise is everyone's. While the browser is the more
+   dangerous place, it is also the smaller blast radius, the app
+   builder can choose accordingly and host keys if they still want to.
+   Stated as an opinion, because it is one.
+5. **Timing on gated reads.** A refused read of a gated repo and a read of
+   a DID the host does not serve answer identically and run the same checks
+   in the same order, but the refusal also scans that repo's in-memory
+   capabilities, which an absent DID has nothing to do. Accepted: for an
+   owner pull the caller already holds the pen, so there is nothing left to
+   enumerate; for a follow request the attacker can name any DID anyway, so
+   the defence is the same rate limit on the knock as in 3, not equalized
+   timing.
 
 ## Design decisions
 
@@ -223,7 +372,19 @@ observer obtains nothing that lets it *be* anyone.
   revocation "propagation" dissolved — there is nothing to propagate when
   absence is the revocation.
 - The browser admission gate: signed-challenge `CallerResolver` feeding the
-  doorman; honest weakening documented above.
+  doorman; honest weakening documented above. One knock for every read, its
+  message labelled and bound to the repo asked for (`docs/decisions/0001`).
+- Owner pull revises "every device is an admitted subscriber": the owner of
+  a repo — its pen, or the identity through a delegated device — is not a
+  subscriber and needs no capability record; opt-in per hosted repo
+  (`docs/decisions/0001`).
+- Pens as handles, each device writing its own repo, recovery on the page,
+  pens never imported, and "saving a pen is keep me signed in":
+  `docs/decisions/0001`.
+- Overlay addresses are derived from WireGuard keys under one fixed IPv6
+  prefix, never assigned or published, so no record can claim an address
+  it does not hold the key for and nothing about addresses crosses the
+  wire; IPv6-only on the overlay, any transport (`docs/decisions/0002`).
 - Neutral-shelf conventions: an anti-registry rule (no default shelf domain,
   ever) plus the opt-in shelf-intake route that makes running a shelf commodity.
 - Root-ceremony-deferred lifecycle: cut; the ceremony is mandatory in the v1

@@ -111,10 +111,19 @@ class WireGuardReconciler:
 
     @staticmethod
     def _peer_info_from_cap(cap: Capability) -> WireGuardPeerInfo | None:
-        """The WG identity embedded in a by-public-key capability, if any."""
-        if cap.wg_public_key and cap.wg_tunnel_ip:
-            return WireGuardPeerInfo(public_key=cap.wg_public_key, tunnel_ip=cap.wg_tunnel_ip)
+        """The WG key the capability carries, if any.
+
+        Every grant written since 0.3 carries one. A record written by an
+        older reconciler for a ``did:web`` grantee does not; the grantor
+        grants again.
+        """
+        if cap.wg_public_key:
+            return WireGuardPeerInfo(public_key=cap.wg_public_key)
         return None
+
+    @staticmethod
+    def _has_document(did: str) -> bool:
+        return not did.startswith("did:key:")
 
     # --- grant ------------------------------------------------------------------
 
@@ -127,20 +136,26 @@ class WireGuardReconciler:
         expires_at: str | None = None,
         note: str | None = None,
         wg_public_key: str | None = None,
-        tunnel_ip: str | None = None,
     ) -> tuple[str, Capability]:
         """Authorize ``did``: sign a capability, then open the tunnel.
 
-        Two admission sources for the grantee's WG identity:
+        The capability always carries the grantee's WireGuard key: it is what
+        the doorman derives the grantee's overlay address from, so a record
+        without it admits nobody. Two sources for that key:
 
         - **by DID document** (default): resolve ``did`` and read its
           ``WireGuardFirehose`` service — for ``did:web`` grantees. Strict at
-          grant time (an unresolvable grantee is an error); re-resolved on each
-          reconcile so key rotation propagates.
-        - **by public key**: pass ``wg_public_key`` + ``tunnel_ip`` directly —
-          for documentless ``did:key`` grantees whose key rides in the request
-          / attestation. The identity is embedded in the capability
-          so ``reconcile()`` enforces it without resolution.
+          grant time (an unresolvable grantee is an error). The document is
+          consulted here and never again: the record is what the grantor
+          signed, and ``reconcile()`` enforces the record.
+        - **by public key**: pass ``wg_public_key`` directly — for documentless
+          ``did:key`` grantees whose key rides in the request / attestation.
+
+        Either way a grantee that rotates its WireGuard key is a stranger
+        until the grantor grants again; the reconciler never follows a key
+        change on its own. An app that watches grantees' documents can tell
+        the grantor "bob rotated his key, admit him again?", and that is the
+        app's call to make, out of band.
 
         An existing grant for the subject is superseded in the same commit
         (old record deleted + revocation reason="superseded"). Returns
@@ -148,22 +163,16 @@ class WireGuardReconciler:
         """
         validate_did(did)
         if wg_public_key is not None:
-            if not did.startswith("did:key:"):
+            if self._has_document(did):
                 # by-public-key is for documentless subjects only. A did:web
-                # grantee has a document; admitting it by an embedded key would
-                # skip resolution forever and freeze its key rotation.
+                # grantee's document is the one source for its key: nobody
+                # else can say which key is theirs.
                 raise AuthzError(
                     "grant by public key is only for documentless did:key subjects; "
                     "a document-backed DID (e.g. did:web) is admitted by resolving it"
                 )
             validate_wireguard_key(wg_public_key)
-            if tunnel_ip is None:
-                raise AuthzError("grant by public key requires tunnel_ip")
-            try:
-                info = WireGuardPeerInfo(public_key=wg_public_key, tunnel_ip=tunnel_ip)
-                _ = info.allowed_ips  # validate the tunnel ip BEFORE committing
-            except ValueError as e:
-                raise AuthzError(f"invalid tunnel_ip {tunnel_ip!r}: {e}") from None
+            info = WireGuardPeerInfo(public_key=wg_public_key)
         else:
             info = await self._peer_info(did)  # resolve BEFORE committing anything
 
@@ -173,8 +182,7 @@ class WireGuardReconciler:
             collections=collections,
             expires_at=expires_at,
             note=note,
-            wg_public_key=wg_public_key,
-            wg_tunnel_ip=tunnel_ip if wg_public_key is not None else None,
+            wg_public_key=info.public_key,  # the record names the key the doorman admits
         )
         rkey = generate_tid()
         writes: list[WriteOp] = []
@@ -200,6 +208,22 @@ class WireGuardReconciler:
         self.writer.apply_writes(writes)  # record first: the source of truth
 
         self.interface.add_peer(info.public_key, info.allowed_ips)  # then the teeth
+        if existing is not None:
+            old_key = existing[1].wg_public_key
+            if old_key and old_key != info.public_key and old_key not in self.pinned_pubkeys:
+                # the superseded key goes with its record, unless another live
+                # grant still names it (two DIDs on one machine share a key)
+                still_named = any(
+                    cap.wg_public_key == old_key
+                    for _subject, (_rkey, cap) in live_capabilities(_repo_of(self.writer)).items()
+                )
+                if not still_named:
+                    self.interface.remove_peer(old_key)
+            elif not old_key:
+                # the superseded record (written by 0.2) named no key, so the
+                # peer it once opened cannot be named either: prune whatever
+                # no live record explains, as revoke does for such a record
+                await self._apply_desired(ReconcileReport())
         return rkey, capability
 
     # --- revoke ------------------------------------------------------------------
@@ -254,11 +278,14 @@ class WireGuardReconciler:
 
         1. Expiry sweep: expired capabilities become lifecycle revocations
            (record delete + revocation reason="expired").
-        2/3. Resolve each live subject and diff the interface: add missing
-           peers, remove peers no capability explains (except pinned). A
-           subject that fails to RESOLVE keeps its existing peer and is
-           reported in ``failed`` — a DNS blip must not drop connectivity;
-           grant-time resolution is the strict gate.
+        2. Diff the interface against the keys the live capabilities carry:
+           add missing peers, remove peers no capability explains (except
+           pinned). No DID document is consulted: the record is what the
+           grantor signed, so a grantee whose document changed its key is
+           not followed, and a DNS blip cannot touch connectivity. A record
+           that carries no key (written before 0.3) is reported in
+           ``failed`` and its peer, if any, is left alone until the grantor
+           grants again.
         """
         report = ReconcileReport()
         await self._sweep_expired(report, now or datetime.now(UTC))
@@ -307,11 +334,12 @@ class WireGuardReconciler:
         pubkey_to_did: dict[str, str] = {}
         unresolved_subjects: list[str] = []
         for subject, (_rkey, cap) in live_capabilities(repo, moment).items():
-            try:
-                # embedded WG info (by-public-key / did:key) wins; else resolve
-                info = self._peer_info_from_cap(cap) or await self._peer_info(subject)
-            except Exception as e:  # resolution failure keeps existing peers
-                report.failed[subject] = str(e)
+            info = self._peer_info_from_cap(cap)
+            if info is None:
+                # a record written before 0.3 for a did:web grantee carries no
+                # key. The reconciler does not resolve documents; the grantor
+                # grants again and the new record says who is admitted.
+                report.failed[subject] = "capability carries no WireGuard key; grant again"
                 unresolved_subjects.append(subject)
                 continue
             desired[info.public_key] = info.allowed_ips

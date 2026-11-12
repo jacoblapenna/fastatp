@@ -37,11 +37,12 @@ AUTH_NAMESPACE = "dev.fastatp.auth"
 class Attestation(Lexicon):
     """A signed pointer to a WireGuard-reachable repo, bound to a context.
 
-    ``endpoint`` is a ``wg://[host]?pubkey=..&ip=..`` URI (the attestation
-    reuses the DID-document ``WireGuardFirehose`` URI shape) so
-    a single field carries the peer's tunnel IP — the ``/32`` the doorman routes
-    on — and its optional endpoint host. ``wg_public_key`` repeats the static
-    key at top level for convenience and cross-checking.
+    ``endpoint`` is a ``wg://[host]?pubkey=..`` URI (the attestation reuses
+    the DID-document ``WireGuardFirehose`` URI shape) so a single field
+    carries the peer's static key — from which its overlay address, the
+    ``/128`` the doorman routes on, is derived — and its optional endpoint
+    host. ``wg_public_key`` repeats the static key at top level for
+    convenience and cross-checking.
     """
 
     nsid = f"{AUTH_NAMESPACE}.attestation"
@@ -80,15 +81,15 @@ def build_attestation(
     context_id: str,
     ephemeral_did: str,
     wg_public_key: str,
-    tunnel_ip: str,
     expires_at: str,
     host: str | None = None,
 ) -> Attestation:
-    """Assemble an :class:`Attestation` with a well-formed ``wg://`` endpoint."""
+    """Assemble an :class:`Attestation` with a well-formed ``wg://`` endpoint.
+    The overlay address is not carried; it is derived from the key."""
     return Attestation(
         context_id=context_id,
         ephemeral_did=ephemeral_did,
         wg_public_key=wg_public_key,
-        endpoint=build_wireguard_uri(wg_public_key, tunnel_ip, host),
+        endpoint=build_wireguard_uri(wg_public_key, host),
         expires_at=expires_at,
     )

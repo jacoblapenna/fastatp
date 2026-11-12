@@ -20,7 +20,7 @@ import websockets
 from fastatp import Peer, PeerServer, crypto
 from fastatp.authz.attestation import Attestation
 from fastatp.authz.capability import ACTION_SUBSCRIBE, live_capabilities
-from fastatp.authz.wireguard import generate_wireguard_keypair
+from fastatp.authz.wireguard import generate_wireguard_keypair, overlay_address
 from fastatp.exceptions import RepoError
 from fastatp.peerapp import PeerApp
 from fastatp.repo.sync import decode_frame
@@ -51,9 +51,7 @@ def _issuer():
 async def _open(app, issuer_did, issuer_wg, *, ttl=60):
     return await app.open_private_channel(
         issuer_did,
-        channel_tunnel_ip="10.99.0.1",
         issuer_wg_public_key=issuer_wg,
-        issuer_tunnel_ip="10.0.0.5",
         endpoint_host="tool.example:51820",
         ttl=ttl,
     )
@@ -87,7 +85,7 @@ async def test_channel_admits_only_its_issuer(serve_app):
             assert header["t"] == "#commit"
             assert body["repo"] == channel.did
         # anyone else is refused by the doorman
-        with pytest.raises(RepoError, match="NotAuthorized"):
+        with pytest.raises(RepoError, match="RepoNotFound"):
             async with websockets.connect(f"{base}&as=did:key:zIntruder") as ws2:
                 decode_frame(await asyncio.wait_for(cast("Awaitable[bytes]", ws2.recv()), 5.0))
 
@@ -105,7 +103,7 @@ async def test_did_key_issuer_requires_coordinates():
     app, _server, _key = _tool_app()
     issuer_did, _wg = _issuer()
     with pytest.raises(ValueError, match="admitted by public key"):
-        await app.open_private_channel(issuer_did, channel_tunnel_ip="10.99.0.1", ttl=60)
+        await app.open_private_channel(issuer_did, ttl=60)
 
 
 async def test_attest_posts_signed_attestation_under_stable_did():
@@ -119,7 +117,7 @@ async def test_attest_posts_signed_attestation_under_stable_did():
     assert isinstance(att, Attestation)
     assert att.context_id == "ctx-42"
     assert att.ephemeral_did == channel.did
-    assert att.peer_info().tunnel_ip == "10.99.0.1"
+    assert att.peer_info().tunnel_ip == channel.tunnel_ip == overlay_address(channel.wg_public_key)
 
     # the attestation is in the tool's public repo, signed by the tool's DID
     records = server.repo.list_records(Attestation.nsid)

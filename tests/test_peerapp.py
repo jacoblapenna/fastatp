@@ -165,12 +165,12 @@ async def two_apps():
     doc_a = build_did_document(
         did=did_a,
         signing_key=sk_a.public_key(),
-        extra_services=[build_wireguard_service(wg_a, "10.100.0.1")],
+        extra_services=[build_wireguard_service(wg_a)],
     )
     doc_b = build_did_document(
         did=did_b,
         signing_key=sk_b.public_key(),
-        extra_services=[build_wireguard_service(wg_b, "10.100.0.2")],
+        extra_services=[build_wireguard_service(wg_b)],
     )
 
     uv_a, t_a = await _serve_did(doc_a, port_a, sock_a)

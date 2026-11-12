@@ -18,7 +18,7 @@ from typing import Any, Union
 from fastatp import dagcbor, datamodel
 from fastatp.cid import CID
 from fastatp.crypto import PrivateKey, PublicKey
-from fastatp.exceptions import DataModelError, RepoError
+from fastatp.exceptions import DataModelError, FastATPError, RepoError, StaleCheckpoint
 from fastatp.lex.types import Blob, CidLink, validate_nsid
 from fastatp.lexicon import Lexicon
 from fastatp.repo.blobs import BlobInfo, BlobStore
@@ -26,7 +26,7 @@ from fastatp.repo.car import decode_car, encode_car
 from fastatp.repo.commit import Commit
 from fastatp.repo.mst import MST, validate_mst_key
 from fastatp.repo.store import BlockStore, MemoryBlockStore
-from fastatp.tid import TidClock
+from fastatp.tid import TidClock, decode_tid
 
 RecordLike = Union[Lexicon, dict[str, Any]]  # noqa: UP007 - runtime alias
 
@@ -64,6 +64,15 @@ def _record_bytes(record: RecordLike) -> bytes:
     if isinstance(record, Lexicon):
         return record.to_dag_cbor()
     return dagcbor.encode(datamodel.from_json(record))
+
+
+def _check_rev(rev: str) -> None:
+    """A head rev must be a TID (``Commit.from_map`` takes any string), and
+    must be checked before a repo loads it, without touching any clock."""
+    try:
+        decode_tid(rev)
+    except (ValueError, FastATPError) as e:
+        raise RepoError(f"head commit rev {rev!r} is not a TID: {e}") from None
 
 
 class Repo:
@@ -116,6 +125,7 @@ class Repo:
             raise RepoError(f"stored head commit is not valid DAG-CBOR: {e}") from None
         if commit.did != self.did:
             raise RepoError(f"stored repo is for {commit.did}, not {self.did}")
+        _check_rev(commit.rev)  # refused before any state changes
         try:
             self._entries = self.mst.load(commit.data)
         except DataModelError as e:
@@ -124,6 +134,7 @@ class Repo:
         self._commit_cid = head_cid
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
+        self.clock.observe(commit.rev)  # only once the head is in place (see import_car)
 
     # --- state --------------------------------------------------------------
 
@@ -398,9 +409,19 @@ class Repo:
         return commit, entries, blocks
 
     def import_car(
-        self, data: bytes, verify_key: PublicKey | None = None, *, gc: bool = True
+        self,
+        data: bytes,
+        verify_key: PublicKey | None = None,
+        *,
+        gc: bool = True,
+        newer_than: str | None = None,
     ) -> None:
         """Replace this repo's state with a CAR's contents (checkpoint load).
+
+        ``newer_than`` is a rev (normally this repo's current ``rev``): a CAR
+        whose head rev is not strictly greater raises :class:`StaleCheckpoint`
+        before any state changes, so a router that re-hosts pushed checkpoints
+        can refuse a replayed or older copy in the same parse that verifies it.
 
         A checkpoint load is not a commit: no ``on_commit`` fires (there is
         no honest CommitEvent to announce — no ops, no valid ``since``). A
@@ -413,6 +434,9 @@ class Repo:
         commit, entries, blocks = self.read_car(data, verify_key)
         if commit.did != self.did:
             raise RepoError(f"CAR is for {commit.did}, not {self.did}")
+        _check_rev(commit.rev)  # refused here, before any state changes
+        if newer_than is not None and commit.rev <= newer_than:
+            raise StaleCheckpoint(f"checkpoint rev {commit.rev} is not newer than {newer_than}")
         for cid, block in blocks.items():
             self.store.put(cid, block)
         self._entries = entries
@@ -420,6 +444,10 @@ class Repo:
         self._commit_cid = commit.cid()
         self._root = commit.data
         self._mst_nodes = self.mst.node_cids(commit.data)
+        # only once the head is in place: the next rev must sort after it,
+        # clock or no clock, and a clock shared with other repos must not
+        # learn a rev from a head that was refused
+        self.clock.observe(commit.rev)
         if gc:
             self._collect_garbage()
 

@@ -7,6 +7,7 @@ import pytest
 
 from fastatp import DIDDocument, Peer, PeerServer, RepoMirror, build_did_document, crypto
 from fastatp.authz import (
+    ACTION_SUBSCRIBE,
     Capability,
     MemoryWireGuardInterface,
     Revocation,
@@ -14,10 +15,12 @@ from fastatp.authz import (
     WireGuardReconciler,
     build_wireguard_service,
     live_capabilities,
+    overlay_address,
     parse_wireguard_service,
 )
 from fastatp.exceptions import AuthzError, EnforcementError
 from fastatp.lex.schema import LexiconDoc
+from fastatp.tid import generate_tid
 
 GRANTOR = "did:web:grantor.example"
 ALICE = "did:web:alice.example"
@@ -34,17 +37,17 @@ BOB_KEY = _wg_key(2)
 DOCS: dict[str, DIDDocument] = {}
 
 
-def _register(did: str, wg_key: str, tunnel_ip: str, endpoint: str | None = None):
+def _register(did: str, wg_key: str, endpoint: str | None = None):
     key = crypto.generate_keypair("k256")
     DOCS[did] = build_did_document(
         did=did,
         signing_key=key.public_key(),
-        extra_services=[build_wireguard_service(wg_key, tunnel_ip, endpoint)],
+        extra_services=[build_wireguard_service(wg_key, endpoint)],
     )
 
 
-_register(ALICE, ALICE_KEY, "10.100.0.2", "203.0.113.5:51820")
-_register(BOB, BOB_KEY, "fd00::2")
+_register(ALICE, ALICE_KEY, "203.0.113.5:51820")
+_register(BOB, BOB_KEY)
 
 
 async def resolver(did: str):
@@ -82,20 +85,18 @@ def test_capability_expiry_semantics():
 def test_wireguard_service_round_trip():
     info = parse_wireguard_service(DOCS[ALICE])
     assert info.public_key == ALICE_KEY
-    assert info.tunnel_ip == "10.100.0.2"
+    assert info.tunnel_ip == overlay_address(ALICE_KEY)  # derived, never carried
     assert info.endpoint == "203.0.113.5:51820"
-    assert info.allowed_ips == "10.100.0.2/32"
-    # IPv6 grantee, no endpoint (roaming)
+    assert info.allowed_ips == f"{overlay_address(ALICE_KEY)}/128"
+    # no endpoint (roaming)
     info6 = parse_wireguard_service(DOCS[BOB])
     assert info6.endpoint is None
-    assert info6.allowed_ips == "fd00::2/128"
+    assert info6.allowed_ips == f"{overlay_address(BOB_KEY)}/128"
 
 
 def test_wireguard_service_validation():
     with pytest.raises(EnforcementError):
-        build_wireguard_service("not-a-key", "10.0.0.1")
-    with pytest.raises(ValueError):
-        build_wireguard_service(ALICE_KEY, "not-an-ip")
+        build_wireguard_service("not-a-key")
     doc = build_did_document(
         did="did:web:nowg.example",
         signing_key=crypto.generate_keypair("k256").public_key(),
@@ -114,7 +115,7 @@ async def test_grant_signs_capability_and_opens_tunnel(grantor):
     stored = server.repo.get_record(Capability.nsid, rkey)
     assert stored["subject"] == ALICE and stored["actions"] == ["subscribe"]
     # enforcement plane: pubkey present with the grantee's tunnel ip
-    assert interface.peers() == {ALICE_KEY: "10.100.0.2/32"}
+    assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
 
 
 async def test_grant_unresolvable_did_is_strict(grantor):
@@ -155,7 +156,7 @@ async def test_supersession_in_one_commit(grantor):
         for rk, _ in server.repo.list_records(Revocation.nsid)
     ]
     assert reasons == ["superseded"]
-    assert interface.peers() == {ALICE_KEY: "10.100.0.2/32"}
+    assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
 
 
 # --- reconcile -----------------------------------------------------------------------
@@ -207,18 +208,20 @@ async def test_expiry_is_a_lifecycle_revocation(grantor):
     assert reasons == ["expired"]
 
 
-async def test_reconcile_keeps_peers_when_resolution_fails(grantor):
+async def test_reconcile_never_consults_a_document(grantor):
+    """The record carries the key, so reconcile has no reason to resolve: a
+    grantee whose document vanished (DNS blip) is healed from the record and
+    nothing is reported failed."""
     _server, interface, reconciler = grantor
     await reconciler.grant(ALICE)
-    # the grantee's document becomes unreachable (DNS blip): reconcile must
-    # NOT drop the live tunnel, and must report the failure
+    interface.remove_peer(ALICE_KEY)  # drift
     saved = DOCS.pop(ALICE)
     try:
         report = await reconciler.reconcile()
-        assert ALICE in report.failed
-        assert ALICE_KEY in interface.peers()  # connectivity preserved
     finally:
         DOCS[ALICE] = saved
+    assert report.added == [ALICE] and report.failed == {}
+    assert ALICE_KEY in interface.peers()
 
 
 # --- audit trail over the firehose ------------------------------------------------
@@ -357,24 +360,15 @@ def _did_key_subject() -> str:
 async def test_capability_carries_wg_info_on_by_key_grant(grantor):
     server, interface, reconciler = grantor
     did = _did_key_subject()
-    rkey, cap = await reconciler.grant(did, wg_public_key=CAROL_KEY, tunnel_ip="10.100.0.3")
-    # authorization plane: the capability is self-contained (embeds the WG id)
-    assert cap.wg_public_key == CAROL_KEY and cap.wg_tunnel_ip == "10.100.0.3"
+    rkey, cap = await reconciler.grant(did, wg_public_key=CAROL_KEY)
+    # authorization plane: the capability is self-contained (embeds the WG key)
+    assert cap.wg_public_key == CAROL_KEY
     stored = server.repo.get_record(Capability.nsid, rkey)
     assert stored["wg_public_key"] == CAROL_KEY
     # enforcement plane: peer added by key, no resolution needed
-    assert interface.peers() == {CAROL_KEY: "10.100.0.3/32"}
+    assert interface.peers() == {CAROL_KEY: f"{overlay_address(CAROL_KEY)}/128"}
     # and it still exports as a valid lexicon: 1 doc with the new fields
     LexiconDoc.from_json_dict(Capability.to_lexicon_json())
-
-
-async def test_by_key_grant_needs_tunnel_ip(grantor):
-    _server, interface, reconciler = grantor
-    with pytest.raises(AuthzError, match="tunnel_ip"):
-        await reconciler.grant(_did_key_subject(), wg_public_key=CAROL_KEY)
-    with pytest.raises(AuthzError, match="tunnel_ip"):
-        await reconciler.grant(_did_key_subject(), wg_public_key=CAROL_KEY, tunnel_ip="not-an-ip")
-    assert interface.peers() == {}  # nothing committed, nothing opened
 
 
 async def test_did_key_subject_is_reconcilable_without_resolution(grantor):
@@ -382,7 +376,7 @@ async def test_did_key_subject_is_reconcilable_without_resolution(grantor):
     the capability, never resolving (which would fail), so drift heals."""
     _server, interface, reconciler = grantor
     did = _did_key_subject()
-    await reconciler.grant(did, wg_public_key=CAROL_KEY, tunnel_ip="10.100.0.3")
+    await reconciler.grant(did, wg_public_key=CAROL_KEY)
 
     # drift: the peer vanished (crash after the record committed)
     interface.remove_peer(CAROL_KEY)
@@ -396,7 +390,7 @@ async def test_did_key_subject_is_reconcilable_without_resolution(grantor):
 async def test_by_key_revoke_removes_the_right_peer(grantor):
     _server, interface, reconciler = grantor
     did = _did_key_subject()
-    await reconciler.grant(did, wg_public_key=CAROL_KEY, tunnel_ip="10.100.0.3")
+    await reconciler.grant(did, wg_public_key=CAROL_KEY)
     assert CAROL_KEY in interface.peers()
     await reconciler.revoke(did, reason="done")
     # removed directly from the capability's embedded key — no resolution attempt
@@ -407,30 +401,113 @@ async def test_by_key_expiry_is_a_lifecycle_revocation(grantor):
     server, interface, reconciler = grantor
     did = _did_key_subject()
     soon = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
-    await reconciler.grant(did, wg_public_key=CAROL_KEY, tunnel_ip="10.100.0.3", expires_at=soon)
+    await reconciler.grant(did, wg_public_key=CAROL_KEY, expires_at=soon)
     report = await reconciler.reconcile()
     assert report.expired == [did]
     assert interface.peers() == {}  # expired did:key peer swept without resolution
     assert server.repo.record_count(Capability.nsid) == 0
 
 
-async def test_did_web_grant_unchanged_leaves_wg_fields_null(grantor):
-    """The by-DID path is untouched: capability WG fields stay null so did:web
-    key rotation still propagates via re-resolution."""
-    _server, interface, reconciler = grantor
-    _rkey, cap = await reconciler.grant(ALICE)  # resolves the did:web document
-    assert cap.wg_public_key is None and cap.wg_tunnel_ip is None
-    assert interface.peers() == {ALICE_KEY: "10.100.0.2/32"}
-    # reconcile still resolves alice (embedded info is null) — unchanged behavior
+async def test_did_web_grant_carries_the_resolved_key(grantor):
+    """A did:web grant resolves the document and writes the key it found into
+    the record: the doorman reads records, not documents, so a record without
+    the key would open the kernel to a caller the doorman cannot name."""
+    server, interface, reconciler = grantor
+    rkey, cap = await reconciler.grant(ALICE)  # resolves the did:web document
+    assert cap.wg_public_key == ALICE_KEY
+    assert server.repo.get_record(Capability.nsid, rkey)["wg_public_key"] == ALICE_KEY
+    assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
+    # drift heals from the record, not the document
     interface.remove_peer(ALICE_KEY)
     report = await reconciler.reconcile()
     assert report.added == [ALICE] and ALICE_KEY in interface.peers()
 
 
+async def test_a_rotated_key_is_a_stranger_until_granted_again(grantor):
+    """A did:web grantee that publishes a new WireGuard key is not followed:
+    the record is what the grantor signed, so reconcile keeps enforcing the
+    old key and the new one cannot handshake. Granting again is the
+    grantor's act, and supersedes the record with the new key."""
+    server, interface, reconciler = grantor
+    old_rkey, _cap = await reconciler.grant(ALICE, note="field gateway")
+    new_key = _wg_key(9)
+    saved = DOCS[ALICE]
+    _register(ALICE, new_key, "203.0.113.5:51820")  # alice rotates her WireGuard key
+    try:
+        report = await reconciler.reconcile()
+        # nothing moved: the old key is still the admitted one
+        assert report.kept == [ALICE] and not report.changed and report.failed == {}
+        assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
+        assert live_capabilities(server.repo)[ALICE][1].wg_public_key == ALICE_KEY
+        # the grantor decides, by granting again
+        rkey, cap = await reconciler.grant(ALICE, note="field gateway")
+    finally:
+        DOCS[ALICE] = saved
+    assert rkey != old_rkey and cap.wg_public_key == new_key
+    assert interface.peers() == {new_key: f"{overlay_address(new_key)}/128"}
+    revocations = [
+        server.repo.get_record(Revocation.nsid, r)
+        for r, _ in server.repo.list_records(Revocation.nsid)
+    ]
+    assert [(r["capability_rkey"], r["reason"]) for r in revocations] == [(old_rkey, "superseded")]
+
+
+async def test_a_regrant_keeps_a_key_another_grant_still_names(grantor):
+    """Two DIDs on one machine share a WireGuard key. Re-granting one of them
+    with a new key must not pull the shared key out from under the other."""
+    _server, interface, reconciler = grantor
+    device = _did_key_subject()
+    await reconciler.grant(ALICE)  # alice's document says ALICE_KEY
+    await reconciler.grant(device, wg_public_key=ALICE_KEY)  # a device on alice's machine
+    new_key = _wg_key(9)
+    saved = DOCS[ALICE]
+    _register(ALICE, new_key, "203.0.113.5:51820")
+    try:
+        await reconciler.grant(ALICE)  # alice re-granted with her new key
+    finally:
+        DOCS[ALICE] = saved
+    assert interface.peers() == {
+        ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128",  # still named by the device's grant
+        new_key: f"{overlay_address(new_key)}/128",
+    }
+
+
+async def test_a_record_without_a_key_is_reported_not_resolved(grantor):
+    """A record written by a pre-0.3 reconciler for a did:web grantee carries
+    no key. Reconcile does not go and fetch one: it reports the record and
+    admits nobody for it until the grantor grants again."""
+    server, interface, reconciler = grantor
+    old = Capability(subject=ALICE, actions=[ACTION_SUBSCRIBE])  # as 0.2 wrote it
+    server.put_record(Capability.nsid, generate_tid(), old)
+    report = await reconciler.reconcile()
+    assert "grant again" in report.failed[ALICE]
+    assert interface.peers() == {}
+    assert live_capabilities(server.repo)[ALICE][1].wg_public_key is None  # untouched
+    _rkey, cap = await reconciler.grant(ALICE)
+    assert cap.wg_public_key == ALICE_KEY
+    assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
+
+
+async def test_regranting_a_keyless_record_prunes_the_peer_it_once_opened(grantor):
+    """0.2 programmed the kernel from the document and wrote no key. When the
+    grantor grants again after a rotation, the record cannot say which old
+    peer to remove, so grant prunes every peer no live record explains, the
+    way revoke does for such a record."""
+    server, interface, reconciler = grantor
+    stale = _wg_key(7)  # the key 0.2 resolved and programmed back then
+    server.put_record(
+        Capability.nsid, generate_tid(), Capability(subject=ALICE, actions=[ACTION_SUBSCRIBE])
+    )
+    interface.add_peer(stale, f"{overlay_address(stale)}/128")
+    await reconciler.grant(ALICE)  # alice's document now says ALICE_KEY
+    assert interface.peers() == {ALICE_KEY: f"{overlay_address(ALICE_KEY)}/128"}
+
+
 async def test_by_key_grant_rejects_did_web(grantor):
-    """The by-public-key path is did:key-only: a did:web grantee must resolve
-    (so key rotation propagates) and cannot be pinned to a static key."""
+    """The by-public-key path is did:key-only: a did:web grantee's document is
+    the one source for its key, and the next reconcile would overwrite a
+    hand-given key from it anyway."""
     _server, interface, reconciler = grantor
     with pytest.raises(AuthzError, match="did:key"):
-        await reconciler.grant(ALICE, wg_public_key=CAROL_KEY, tunnel_ip="10.100.0.3")
+        await reconciler.grant(ALICE, wg_public_key=CAROL_KEY)
     assert interface.peers() == {}  # nothing committed, nothing opened

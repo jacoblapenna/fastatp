@@ -15,6 +15,114 @@ To upgrade safely within one minor line, pin with `~=`, for example
 
 ## [Unreleased]
 
+### Breaking
+- The browser bundle's `BrowserPeer.sign_challenge(nonce)` is removed. The
+  knock at a host is now one free function, `sign_challenge(key_pair, nonce,
+  repo_did)`, which needs no repo loaded and names the repo the pen is
+  asking for. The browser gate verifies the new labelled message
+  (`fastatp-challenge-v1\n<repo DID>\n<nonce>`), so a 0.2 client's bare-nonce
+  signature is refused by a 0.3 host.
+- A gated repo a caller may not read is now answered exactly like a DID the
+  server does not host: `RepoNotFound` (404) with the same body, on every
+  single-repo sync route and the firehose, and the caller is resolved
+  before the host is looked up so the two cases run the same checks (a
+  knock for an unhosted DID still burns its nonce). Previously a refused
+  gated read answered `NotAuthorized` (403), which told strangers which
+  DIDs the server hosts. `listRepos` already hid them.
+
+- **WireGuard overlay addresses are derived from keys, never assigned or
+  published.** Every peer's address is `OVERLAY_PREFIX` (one fixed IPv6
+  /64) plus 64 bits of SHA-256 over its WireGuard public key, so both ends
+  of a tunnel agree with no address crossing the wire (the public key
+  crosses it exactly as before). `Capability.wg_tunnel_ip`
+  is removed; `build_wireguard_uri`, `build_wireguard_service`,
+  `build_attestation`, `WireGuardReconciler.grant` and
+  `PeerApp.open_private_channel` no longer take an address, and a `wg://`
+  URI that still carries `ip=` is refused. The overlay is IPv6 only (the
+  transport can be anything); `check_overlay_support` fails loudly with the
+  sysctl to fix when a kernel has IPv6 disabled on the interface.
+
+### Added
+- Browser bundle: `generate_pen()`, `pen_did(key_pair)`,
+  `BrowserPeer.create(did, key_pair)`, `BrowserPeer.restore(car, key_pair,
+  verify?)` and `sign_challenge(key_pair, nonce, repo_did)`. Pens cross the
+  boundary as non-extractable WebCrypto handles only; every entry point
+  refuses an extractable one.
+- Browser bundle: `connection_zero(domain, key_pair?)` takes the pen to sign
+  up with (the one `generate_pen()` minted and the app stored), so the first
+  device's pen can be kept; omitted, it mints one as before.
+  `rotation_did_from_secret(hex)` derives the rotation `did:key` from the
+  paper secret for a typed-back check, entirely on the page.
+- Browser bundle: `rotate_pen(chain_json, secret_hex, key_pair)`, recovery
+  on the page: the paper secret signs a new chain page naming a new pen,
+  returned as the longer chain for the app to POST to the shelf. A wrong
+  secret, an extractable pen or a chain that does not verify is refused
+  before the chain page is signed, and every buffer the bindings hold the
+  secret in is wiped on every exit path (the hex is decoded into a fixed
+  buffer, so a malformed input leaves nothing behind either).
+- `Repo.import_car(..., newer_than=rev)` refuses a checkpoint whose head rev
+  is not strictly newer, raising `StaleCheckpoint` before any state changes,
+  so a router re-hosting pushed CARs can refuse a replay in the one parse
+  that verifies it. The hosted-peer example uses it.
+- `fastatp.server.browser_gate.challenge_message(repo_did, nonce)`, the
+  bytes a pen signs; the Rust core builds the identical bytes.
+- `PeerServer.register(repo, owner_pull=...)`: a host serves a gated repo
+  to the pen that writes it, with no capability record. Off by default.
+  `True` admits the `did:key` whose key verifies the head commit; an
+  `OwnerRule` callable names the current pen when the host knows it (its
+  chain head), so a freshly rotated pen pulls before it has pushed.
+  Owner pull decides who reads; a frozen (penless) hosted repo, which will
+  be required for it, is planned separately.
+- `ResolvedCaller(did, proof)`: a `CallerResolver` may now say how it knows
+  who is asking (`"signature"`, or `"repo:<did>"` for a tunnel binding or
+  delegation chain rooted in that repo). A bare DID still works for the
+  capability rule. Owner pull requires a proof that is a signature or this
+  repo's own records, so a capability written in *another* hosted repo can
+  never make its author the owner here. The tunnel resolver and the browser
+  gate return scoped callers. `listRepos` resolves the caller once for the
+  whole listing, so a browser knock (single-use) lists every gated repo the
+  identity holds.
+- The hosted-peer example (`examples/hosted_peer/`) runs the whole
+  lifecycle: a kept pen signs up, reads its own repo back as its owner,
+  enrolls devices that sync as the identity, severs one, then loses every
+  device and recovers with the paper secret onto a new pen, which pulls,
+  prunes and pushes while the old pen is refused. No `self` capability
+  anywhere.
+
+### Fixed
+- A `did:web` grantee admitted through `WireGuardReconciler.grant` was
+  programmed into the kernel but its capability record carried no key, so
+  the doorman could not name it and refused every gated read (on 0.2.0 the
+  record carried no `wg_tunnel_ip` either). `grant` now writes the key it
+  resolved into the record for every grantee, the same record the
+  getting-started tutorial writes by hand, and `reconcile` enforces the
+  record without consulting any document again. A grantee that rotates its
+  WireGuard key is a stranger until the grantor grants again, for `did:web`
+  and `did:key` alike (before, a `did:web` grantee's new key was followed
+  into the kernel on the next reconcile, which is a seat handed to whoever
+  controls the domain). A record written by 0.2 for a `did:web` grantee
+  carries no key: `reconcile` reports it as `failed` ("grant again") and
+  admits nobody for it until the grantor does. A re-grant that supersedes
+  a record carrying a different key removes that key from the interface in
+  the same call, rather than leaving it admitted until the next reconcile,
+  unless the key is pinned or another live grant still names it.
+- A repo restored from a CAR, or reopened from a durable head, on a machine
+  whose clock is behind that head no longer writes a lower rev: the clock
+  observes the restored rev (Rust core `RevClock::observe`; Python
+  `TidClock.observe`, called by `Repo.import_car` and the head load).
+
+### Docs
+- `docs/decisions/0001-browser-pen-seam.md`, the first public decision
+  record: pens as handles, each device writes its own repo, one knock,
+  owner pull (revising HOSTED-PEERS.md's "every device is an admitted
+  subscriber"), recovery on the page, pens never imported, and "saving a
+  pen is keep me signed in". HOSTED-PEERS.md's runtime shape and recovery
+  ladder updated to match.
+- `docs/decisions/0002-key-derived-overlay-addresses.md`: why an address is
+  a function of a key, the rejected alternatives (a central allocator, host
+  assignment, self-chosen addresses), and the limits (IPv6 overlay, key
+  rotation moves the address, the doorman's walk at scale).
+
 ## [0.2.0] - 2026-11-05
 
 ### Breaking

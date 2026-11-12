@@ -3,10 +3,11 @@ and steady-state size under sustained FIFO churn."""
 
 import pytest
 
-from fastatp import crypto
-from fastatp.exceptions import RepoError
+from fastatp import crypto, dagcbor
+from fastatp.exceptions import RepoError, StaleCheckpoint
 from fastatp.lex.types import Datetime
 from fastatp.lexicon import Lexicon
+from fastatp.repo.car import encode_car
 from fastatp.repo.commit import Commit
 from fastatp.repo.repo import Repo, WriteOp
 from fastatp.repo.store import MemoryBlockStore
@@ -231,3 +232,123 @@ def test_read_car_malformed_blocks_raise_repo_error(repo):
     cid = CID.for_dag_cbor(junk)
     with pytest.raises(RepoError, match="DAG-CBOR"):
         Repo.read_car(encode_car([cid], {cid: junk}))
+
+
+def test_restored_repo_writes_after_its_head_even_with_the_clock_behind(monkeypatch):
+    """A CAR (or a durable head) written on a machine with a faster clock
+    must not make this machine's next commit sort BEFORE it: the clock
+    observes the restored rev. Mirrors the Rust core's RevClock::observe."""
+    import time
+
+    from fastatp.tid import TidClock
+
+    key = crypto.generate_keypair("k256")
+    source = Repo("did:web:clock.example", key)
+    source.put_record("com.example.note", "n-1", {"$type": "com.example.note", "text": "ahead"})
+    head_rev = source.rev
+    car = source.export_car()
+
+    monkeypatch.setattr(time, "time_ns", lambda: 1_000_000)  # 1970-01-01, far behind the head
+    restored = Repo("did:web:clock.example", key, clock=TidClock())
+    restored.import_car(car, verify_key=key.public_key())
+    restored.put_record("com.example.note", "n-2", {"$type": "com.example.note", "text": "late"})
+    assert restored.rev > head_rev, f"{restored.rev} must sort after {head_rev}"
+
+    # the same for a repo reopened from a durable store at a stored head
+    store = restored.store
+    reopened = Repo(
+        "did:web:clock.example", key, store=store, head_cid=restored.commit_cid, clock=TidClock()
+    )
+    reopened.put_record("com.example.note", "n-3", {"$type": "com.example.note", "text": "later"})
+    assert reopened.rev > restored.rev
+
+
+def test_a_car_whose_head_rev_is_not_a_tid_is_refused_before_any_state_changes():
+    """``import_car`` observes the head rev on the clock. A rev that is not a
+    TID is refused up front, with the repo exactly as it was — not after the
+    blocks and head have already been replaced."""
+    key = crypto.generate_keypair("k256")
+    source = Repo("did:web:rev.example", key)
+    source.put_record("com.example.note", "n-1", {"$type": "com.example.note", "text": "x"})
+    commit, _entries, blocks = Repo.read_car(source.export_car())
+    # Commit.create validates the rev, but a CAR is decoded with from_map,
+    # which takes any string: build the block the way a hostile host would
+    unsigned = {
+        "did": commit.did,
+        "rev": "not-a-tid",
+        "data": commit.data,
+        "prev": None,
+        "version": 3,
+    }
+    forged = Commit(
+        did=commit.did,
+        data=commit.data,
+        rev="not-a-tid",
+        sig=crypto.sign_message(key, dagcbor.encode(unsigned)),
+    )
+    blocks[forged.cid()] = forged.to_dag_cbor()
+    car = encode_car([forged.cid()], blocks)
+
+    target = Repo("did:web:rev.example", key)
+    target.put_record("com.example.note", "mine", {"$type": "com.example.note", "text": "keep"})
+    before = (target.commit_cid, target.rev, dict(target._entries))
+    with pytest.raises(RepoError, match="not a TID"):
+        target.import_car(car, verify_key=key.public_key())
+    assert (target.commit_cid, target.rev, dict(target._entries)) == before
+    assert target.get_record("com.example.note", "mine") is not None
+
+
+def test_a_refused_head_never_advances_a_shared_clock():
+    """A head with a valid, far-future rev but a malformed MST fails to load;
+    the clock it was handed must not have learned that rev, or every later
+    commit on a repo sharing the clock would carry a future timestamp."""
+    from fastatp.tid import TidClock, encode_tid
+
+    key = crypto.generate_keypair("k256")
+    store = MemoryBlockStore()
+    future = encode_tid(4_000_000_000_000_000, 7)  # ~2096
+    unsigned = {
+        "did": "did:web:rev.example",
+        "rev": future,
+        "data": None,
+        "prev": None,
+        "version": 3,
+    }
+    bogus = Commit(
+        did="did:web:rev.example",
+        data=None,
+        rev=future,
+        sig=crypto.sign_message(key, dagcbor.encode(unsigned)),
+    )  # type: ignore[arg-type]
+    block = bogus.to_dag_cbor()
+    store.put(bogus.cid(), block)
+    shared = TidClock()
+    with pytest.raises(RepoError):
+        Repo("did:web:rev.example", key, store=store, head_cid=bogus.cid(), clock=shared)
+    assert shared.now() < future, "the refused head's rev leaked into the shared clock"
+
+
+def test_import_car_newer_than_refuses_a_replayed_or_older_checkpoint():
+    key = crypto.generate_keypair("k256")
+    source = Repo("did:web:fresh.example", key)
+    source.put_record("com.example.note", "n-1", {"$type": "com.example.note", "text": "one"})
+    older = source.export_car()
+    older_rev = source.rev
+    source.put_record("com.example.note", "n-2", {"$type": "com.example.note", "text": "two"})
+    newer = source.export_car()
+
+    host = Repo("did:web:fresh.example", key)
+    # first hosting (the signup shape): a fresh repo's own genesis rev is
+    # newer than this checkpoint, so the first import is unconditional
+    host.import_car(older, verify_key=key.public_key())
+    assert host.rev == older_rev
+    with pytest.raises(StaleCheckpoint):  # a replay: equal rev
+        host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
+    host.import_car(newer, verify_key=key.public_key(), newer_than=host.rev)
+    assert host.rev == source.rev
+    before = (host.commit_cid, host.rev)
+    with pytest.raises(StaleCheckpoint):  # older than the head now
+        host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
+    assert (host.commit_cid, host.rev) == before
+    assert host.get_record("com.example.note", "n-2") is not None
+    assert issubclass(StaleCheckpoint, RepoError)

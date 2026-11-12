@@ -2,10 +2,11 @@
 
 The shipped wasm bundle (driven under Node 22 — same artifact, same WebCrypto)
 runs connection zero against an example builder composed ONLY of shipped
-primitives, posts pen-signed state through the example router, delegates a
-second device pen, syncs through the browser gate, and is locked out at the
-next connect after the delegation is deleted. Every hop verifies; no secret
-ever crosses the wire.
+primitives, posts pen-signed state through the example router, reads its own
+repo back as its owner, delegates device pens that sync through the browser
+gate, locks one out at the next connect after its delegation is deleted, and
+then loses every device and recovers with the paper secret onto a new pen.
+Every hop verifies; no secret ever crosses the wire.
 """
 
 import asyncio
@@ -80,38 +81,81 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     # re-hosted (the router can never forge, only withhold)
     assert phases["push-1"] == 200
 
-    # device 2, delegated by a record PRESENT in the hosted repo, passes the
-    # signed-challenge gate and syncs the full repo (multi-device sync)
+    # the pen that writes the repo reads it back as its owner: no capability
+    # record, no delegation, no iss — owner pull, not a subscription
+    assert phases["owner-pull-device1"] == 200
+    hosted = builder.handles[twin].repo
+    assert live_capabilities(hosted) == {}  # nobody is admitted by record, ever
+
+    # each device writes its own repo: device 2's is hosted on first push,
+    # verified against its DID (its pen), and only that pen reads it back
+    assert phases["push-device2-repo"] == 201
+    assert phases["owner-pull-device2-repo"] == 200
+    assert phases["stranger-pull-device2-repo"] == 404
+    device2 = builder.handles[report["pen2_did"]].repo
+    assert device2.commit.verify(crypto.decode_did_key(report["pen2_did"]))
+    d2_note = device2.get_record("com.example.hosted.note", "d2-1")
+    assert d2_note is not None and d2_note["text"] == "written on device 2"
+    assert live_capabilities(device2) == {}
+
+    # device 2, delegated by a record PRESENT in the hosted repo, knocks as the
+    # identity and syncs the full repo (multi-device sync)
     assert phases["sync-device2"] == 200
     synced = Repo(twin, crypto.generate_keypair("k256"))
     synced.import_car(
-        Path(report["files"]["device2_sync_car"]).read_bytes(),
-        verify_key=builder.head_key(twin),
+        Path(report["files"]["device2-sync"]).read_bytes(),
+        verify_key=crypto.decode_did_key(report["pen_did"]),  # the pen of that moment
     )
     note = synced.get_record("com.example.hosted.note", "note-1")
     assert note is not None and note["text"] == "hello hosted world"
-    assert report["pen2_did"] in live_delegations(synced)
+    assert {report["pen2_did"], report["pen3_did"]} <= set(live_delegations(synced))
 
-    # a stranger pen with a perfectly valid challenge is refused: identity
-    # comes from the delegation chain, not from holding a signature
-    assert phases["sync-stranger"] == 403
+    # a stranger pen with a perfectly valid knock is refused: identity comes
+    # from the delegation chain, not from holding a signature
+    assert phases["sync-stranger"] == 404
 
     # severance: the delegation record was DELETED and the new state pushed;
-    # device 2's next connect — fresh, valid challenge — is refused.
+    # device 2's next connect — fresh, valid knock — is refused.
     # Absence IS revocation.
     assert phases["push-severance"] == 200
-    assert phases["sync-device2-severed"] == 403
-    hosted = builder.handles[twin].repo
-    assert live_delegations(hosted) == {}
-    assert twin in live_capabilities(hosted)  # the self-capability survives
+    assert phases["sync-device2-severed"] == 404
+    # a replayed older checkpoint, correctly signed, cannot roll the host back
+    assert phases["push-replay"] == 409
+    assert phases["sync-device2-after-replay"] == 404
+
+    # recovery: every device lost. The typed-back check passed on the page;
+    # the paper secret turned the chain onto a new pen (a LONGER chain, which
+    # the shelf accepts and the old one cannot roll back)
+    assert report["typed_back_ok"] is True
+    assert report["rotated_chain_pages"] == 2
+    assert phases["recovery-put-chain"] == 201
+    new_pen = crypto.decode_did_key(report["new_pen_did"])
+    assert crypto.encode_did_key(builder.head_key(twin)) == report["new_pen_did"]
+    # the new pen pulled the repo as its owner BEFORE it had signed anything:
+    # the builder's rule reads the chain head, not the hosted head commit
+    assert phases["recovery-pull"] == 200
+    # restored (verified against the old pen), pruned, wrote, pushed: the
+    # push verified against the NEW chain head, and the rev kept climbing
+    assert phases["recovery-push"] == 200
+    assert report["recovered_rev"] > report["restored_rev"]
+    assert hosted.commit.verify(new_pen)
+    recovered = hosted.get_record("com.example.hosted.note", "note-recovered")
+    assert recovered is not None and recovered["n"] == 2
+    assert live_delegations(hosted) == {}  # device 3 pruned, device 2 already severed
+    # the old pen is out: it is nobody's owner and its commits no longer verify
+    assert phases["old-pen-pull"] == 404
+    assert phases["old-pen-push"] == 400
+    assert hosted.get_record("com.example.hosted.note", "note-stale") is None
+    assert phases["sync-device3-pruned"] == 404
 
     # no secret ever crossed the wire: every body the client sent is on disk;
-    # none contains the paper-root secret (hex or raw), and the pen is
-    # non-extractable so there is nothing else to leak
+    # none contains the paper-root secret (hex or raw) — including the rotated
+    # chain, which carries only the rotation key's PUBLIC half — and the pen
+    # is non-extractable so there is nothing else to leak
     secret_hex = report["rotation_secret"].encode("ascii")
     secret_raw = binascii.unhexlify(report["rotation_secret"])
     bodies = sorted((tmp_path / "bodies").glob("*.bin"))
-    assert len(bodies) >= 4  # chain, signup CAR, two pushes
+    assert len(bodies) >= 7  # chain, signup CAR, three pushes, rotated chain, stale push
     for body in bodies:
         data = body.read_bytes()
         assert secret_hex not in data, f"paper secret leaked in {body.name}"

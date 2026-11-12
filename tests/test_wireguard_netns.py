@@ -12,11 +12,11 @@ Run it deliberately, as root, on a host with wireguard-tools:
 
 Topology (grantor = ns_a hosting wgA; grantee = ns_b initiating from wgB):
 
-    ns_a  wgA 10.100.0.1/24   <== WireGuard over UDP ==>   wgB 10.100.0.2/24  ns_b
+    ns_a  wgA <addr(pub_a)>/64  <== WireGuard over UDP ==>  wgB <addr(pub_b)>/64  ns_b
           vethA 192.168.99.1/24                            vethB 192.168.99.2/24
 
 ns_b is fully pre-configured and initiates; ns_a adds/removes wgB as a peer
-ONLY through the reconciler (via WgToolInterface). Ping ns_b -> 10.100.0.1
+ONLY through the reconciler (via WgToolInterface). Ping ns_b -> addr(pub_a)
 therefore succeeds iff the reconciler has granted did_b.
 """
 
@@ -28,7 +28,12 @@ import time
 
 import pytest
 
-from fastatp.authz import WgToolInterface, WireGuardReconciler, build_wireguard_service
+from fastatp.authz import (
+    WgToolInterface,
+    WireGuardReconciler,
+    build_wireguard_service,
+    overlay_address,
+)
 from fastatp.crypto import generate_keypair
 from fastatp.did.document import build_did_document
 
@@ -134,8 +139,11 @@ def netns():
             ["wg", "set", "wgB", "private-key", "/dev/stdin", "listen-port", "51821"],
             stdin=priv_b,
         )
-        _in(NS_A, ["ip", "addr", "add", "10.100.0.1/24", "dev", "wgA"])
-        _in(NS_B, ["ip", "addr", "add", "10.100.0.2/24", "dev", "wgB"])
+        # each side's overlay address is derived from its own key: nothing
+        # about addresses was ever exchanged between the namespaces
+        addr_a, addr_b = overlay_address(pub_a), overlay_address(pub_b)
+        _in(NS_A, ["ip", "addr", "add", f"{addr_a}/64", "dev", "wgA"])
+        _in(NS_B, ["ip", "addr", "add", f"{addr_b}/64", "dev", "wgB"])
         _in(NS_A, ["ip", "link", "set", "wgA", "up"])
         _in(NS_B, ["ip", "link", "set", "wgB", "up"])
 
@@ -158,12 +166,12 @@ def netns():
                 "endpoint",
                 "192.168.99.1:51820",
                 "allowed-ips",
-                "10.100.0.1/32",
+                f"{addr_a}/128",
                 "persistent-keepalive",
                 "1",
             ],
         )
-        yield {"pub_a": pub_a, "pub_b": pub_b}
+        yield {"pub_a": pub_a, "pub_b": pub_b, "addr_a": addr_a}
     finally:
         for ns in created:
             _run(["ip", "netns", "del", ns], check=False)
@@ -196,16 +204,17 @@ def _wg_diag() -> str:
 
 async def test_reconciler_grant_revoke_gates_real_tunnel(netns):
     pub_b = netns["pub_b"]
+    addr_a = netns["addr_a"]
 
     # underlay sanity: the veth carrying WireGuard's UDP must itself work, so a
     # tunnel failure below is unambiguously WireGuard, not the netns plumbing
     assert _ping_once(NS_B, "192.168.99.1"), "veth underlay is broken" + _wg_diag()
 
-    # the grantee's DID document advertises its real WG pubkey + tunnel ip
+    # the grantee's DID document advertises its real WG pubkey; its address is derived
     doc_b = build_did_document(
         did=DID_B,
         signing_key=generate_keypair("k256").public_key(),
-        extra_services=[build_wireguard_service(pub_b, "10.100.0.2")],
+        extra_services=[build_wireguard_service(pub_b)],
     )
 
     async def resolver(did: str):
@@ -219,18 +228,16 @@ async def test_reconciler_grant_revoke_gates_real_tunnel(netns):
     reconciler = WireGuardReconciler(Repo(DID_A, repo_a), interface, resolver)
 
     # 1. BEFORE grant: ns_b is not a peer on wgA -> handshake refused -> no tunnel
-    assert not _ping_within(NS_B, "10.100.0.1", 3), "tunnel reachable before grant"
+    assert not _ping_within(NS_B, addr_a, 3), "tunnel reachable before grant"
 
     # 2. GRANT: reconciler adds ns_b as a real wg peer via `wg set`
     await reconciler.grant(DID_B)
     assert pub_b in interface.peers()
-    assert _ping_within(NS_B, "10.100.0.1", 20), "tunnel not reachable after grant" + _wg_diag()
+    assert _ping_within(NS_B, addr_a, 20), "tunnel not reachable after grant" + _wg_diag()
 
     # 3. REVOKE: reconciler removes the peer live -> kernel drops the session
     await reconciler.revoke(DID_B, reason="offboarded")
     assert pub_b not in interface.peers()
     # allow a moment for any in-flight session to be torn down, then confirm dead
     time.sleep(2.0)
-    assert not _ping_within(NS_B, "10.100.0.1", 3), (
-        "tunnel still reachable after revoke" + _wg_diag()
-    )
+    assert not _ping_within(NS_B, addr_a, 3), "tunnel still reachable after revoke" + _wg_diag()

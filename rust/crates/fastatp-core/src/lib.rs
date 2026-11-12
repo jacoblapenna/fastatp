@@ -9,6 +9,7 @@
 //! so a pen never exists in linear memory.
 
 pub mod car;
+pub mod challenge;
 pub mod cid;
 pub mod commit;
 pub mod continuity;

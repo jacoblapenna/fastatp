@@ -7,16 +7,20 @@ revocation latency) live in tests/test_wireguard_rootless_netns.py where a real
 tunnel can prove them.
 """
 
+import base64
+import ipaddress
 import subprocess
 
 import pytest
 
 from fastatp.authz.wireguard import (
+    OVERLAY_PREFIX,
     WgToolInterface,
-    WireGuardPeerInfo,
     build_wireguard_service,
     build_wireguard_uri,
+    check_overlay_support,
     generate_wireguard_keypair,
+    overlay_address,
     parse_wireguard_service,
     parse_wireguard_uri,
     validate_wireguard_key,
@@ -142,41 +146,52 @@ def test_enforcement_error_passes_through_unwrapped():
 # --- audit item 3 (unit half): IPv6 through the full URI/service/peer path -------
 #
 # The netns v6 tunnel proof is in test_wireguard_rootless_netns.py; here the
-# data path: a v6 tunnel IP survives build->parse->service->peer_info and
-# yields a /128 allowed-ips. IPv6 sample addresses harvested from
-# fictive-kin/wireguard test_peers.py (MIT).
+# data path: the overlay address is a pure function of the key — the same on
+# every peer, never carried — and yields a /128 allowed-ips. The vector pins
+# the function: a change here is a change to every peer's address at once.
 
 
-def test_ipv6_tunnel_ip_end_to_end():
+def test_overlay_address_is_derived_from_the_key_and_pinned():
+    key = base64.b64encode(bytes(range(32))).decode()
+    assert overlay_address(key) == "fd5a:7a7f:9c3e:0:630d:cd29:66c4:3366"
+    net = ipaddress.IPv6Network(OVERLAY_PREFIX)
+    assert ipaddress.IPv6Address(overlay_address(key)) in net
+    assert net.prefixlen == 64  # 64 bits of key hash per address
     _, pub = generate_wireguard_keypair()
-    v6 = "fde2:3a65:ca93:3125:1234:abcd:4321:32"
-    uri = build_wireguard_uri(pub, v6)
-    info = parse_wireguard_uri(uri)
-    assert info.tunnel_ip == v6
-    assert info.allowed_ips == f"{v6}/128"  # /128 for v6, not /32
+    _, pub2 = generate_wireguard_keypair()
+    assert overlay_address(pub) == overlay_address(pub)  # deterministic
+    assert overlay_address(pub) != overlay_address(pub2)  # one address per key
+    with pytest.raises(EnforcementError):
+        overlay_address("not-a-key")
 
+
+def test_overlay_address_survives_uri_service_and_peer_info():
+    _, pub = generate_wireguard_keypair()
+    uri = build_wireguard_uri(pub)
+    info = parse_wireguard_uri(uri)
+    assert info.tunnel_ip == overlay_address(pub)
+    assert info.allowed_ips == f"{overlay_address(pub)}/128"  # /128: one key, one address
     doc = build_did_document(
         did="did:web:v6.example",
         signing_key=generate_keypair("k256").public_key(),
-        extra_services=[build_wireguard_service(pub, v6)],
+        extra_services=[build_wireguard_service(pub)],
     )
-    assert parse_wireguard_service(doc).allowed_ips == f"{v6}/128"
+    assert parse_wireguard_service(doc).allowed_ips == f"{overlay_address(pub)}/128"
 
 
-def test_ipv4_allowed_ips_is_slash_32():
-    """/32 for v4 (matches fictive-kin/wireguard test_peers.py, MIT)."""
-    _, pub = generate_wireguard_keypair()
-    assert WireGuardPeerInfo(public_key=pub, tunnel_ip="192.168.1.12").allowed_ips == (
-        "192.168.1.12/32"
-    )
-
-
-# --- add_peer normalization: comma/space churn -----------------------------------
-#
-# Vector table harvested from django-wireguard (MIT) test_package.py:229-250
-# (test_comma_separated_list_clean): mixed separators, whitespace, and
-# trailing commas must normalize to the same canonical comma list so a
-# multi-IP peer never churns add_peer.
+def test_check_overlay_support_names_the_sysctl(tmp_path):
+    knob = tmp_path / "sys" / "net" / "ipv6" / "conf" / "wg0" / "disable_ipv6"
+    knob.parent.mkdir(parents=True)
+    knob.write_text("1\n")
+    with pytest.raises(EnforcementError, match=r"net\.ipv6\.conf\.wg0\.disable_ipv6=0"):
+        check_overlay_support("wg0", proc_root=str(tmp_path))
+    knob.write_text("0\n")
+    check_overlay_support("wg0", proc_root=str(tmp_path))  # enabled: silent
+    check_overlay_support("wg1", proc_root=str(tmp_path))  # not visible: silent
+    (tmp_path / "sys" / "net" / "ipv6" / "conf" / "all").mkdir()
+    (tmp_path / "sys" / "net" / "ipv6" / "conf" / "all" / "disable_ipv6").write_text("1")
+    with pytest.raises(EnforcementError, match=r"net\.ipv6\.conf\.all\.disable_ipv6=0"):
+        check_overlay_support("wg1", proc_root=str(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -246,7 +261,7 @@ def _reconciler_fixture(interface):
     doc = build_did_document(
         did=did_b,
         signing_key=generate_keypair("k256").public_key(),
-        extra_services=[build_wireguard_service(wg_pub, "10.100.0.2", "roamer.example:51820")],
+        extra_services=[build_wireguard_service(wg_pub, "roamer.example:51820")],
     )
 
     async def resolver(did: str):
@@ -315,9 +330,10 @@ def test_partial_failure_heals_on_next_reconcile():
 
 def test_endpoint_roaming_never_pinned():
     """Audit item 7: a grantee's published endpoint is informational only.
-    allowed-ips comes from the tunnel IP (the stable /32 the doorman routes
-    on), and the reconciler never sends the roaming external endpoint to the
-    interface — WireGuard learns it from the handshake."""
+    allowed-ips is the /128 overlay address derived from the key (the stable
+    address the doorman routes on), and the reconciler never sends the
+    roaming external endpoint to the interface — WireGuard learns it from
+    the handshake."""
     import asyncio
 
     from fastatp.authz.wireguard import MemoryWireGuardInterface, parse_wireguard_service
@@ -327,10 +343,10 @@ def test_endpoint_roaming_never_pinned():
         rec, did_b, pub = _reconciler_fixture(iface)
         info = parse_wireguard_service(await rec.resolver(did_b))
         assert info.endpoint == "roamer.example:51820"  # present in the doc
-        assert info.allowed_ips == "10.100.0.2/32"  # derived from tunnel_ip only
+        assert info.allowed_ips == f"{overlay_address(pub)}/128"  # derived from the key only
         await rec.grant(did_b)
-        # the interface stores exactly the /32 allowed-ips, no endpoint anywhere
-        assert iface.peers()[pub] == "10.100.0.2/32"
+        # the interface stores exactly the derived /128 allowed-ips, no endpoint anywhere
+        assert iface.peers()[pub] == f"{overlay_address(pub)}/128"
 
     asyncio.run(run())
 

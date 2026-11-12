@@ -149,7 +149,8 @@ async def run_demo(domain: str, state_dir: str) -> dict[str, Any]:
                 f"{base}/xrpc/com.atproto.sync.getRepo", params={"did": curator.did}
             )
             wire_capture.append(refused.content)
-            assert refused.status_code == 403
+            # a gated repo a stranger may not read does not exist for them
+            assert refused.status_code == 404 and refused.json()["error"] == "RepoNotFound"
     finally:
         uv.should_exit = True
         with contextlib.suppress(Exception):
