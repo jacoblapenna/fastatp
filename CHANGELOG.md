@@ -16,6 +16,25 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- `PeerServer.register(repo, owner_pull=...)` requires a frozen repo. A
+  repo served back to its own pen is one whose pen lives elsewhere, so a host
+  holding a pen for it is refused at registration with a `ValueError`.
+  Pushes land through `repo.import_car` as before.
+- The repo write path is async, and a pen is a handle. `Repo.put_record`,
+  `delete_record`, `apply_writes` and `recommit`, `PeerServer`/`RepoHandle`
+  /`PrivateChannel` writes, `PeerApp.emit` and `publish_schemas`,
+  `Peer.create_repo`, `Commit.create`, `Identity.bootstrap`/`adopt_web`/
+  `rotate` are all awaited. A fresh repo is `await Repo.create(did,
+  signing_key)`; `Repo(did, signing_key, head_cid=...)` reopens a stored
+  head and signs nothing, and a `Repo(...)` with no head has no commit until
+  its first write. `PeerServer(peer, repo)` takes the repo; `await
+  PeerServer.create(peer)` makes a fresh one, and `await server.serve()`
+  serves on a running loop where `run()` cannot. Every `signing_key=`
+  argument that takes a private key (`Repo`, `Repo.create`, `Peer`,
+  `Commit.create`, `Identity.adopt_web`) also accepts a `Signer`, so the
+  same code runs with a key in memory or in a TPM; the repo and peer hold
+  it as `.signer`. `build_did_document(signing_key=)` takes the public key
+  as before: pass `signer.public_key`.
 - The browser bundle's `BrowserPeer.sign_challenge(nonce)` is removed. The
   knock at a host is now one free function, `sign_challenge(key_pair, nonce,
   repo_did)`, which needs no repo loaded and names the repo the pen is
@@ -43,6 +62,33 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- The signer seam: `fastatp.Signer` (a `public_key` and `async sign`) is
+  what an app implements to sign with a key the process cannot hold (a TPM,
+  an HSM, a secure element, a YubiKey); `fastatp.SoftwareSigner` is the
+  in-memory implementation every bare `PrivateKey` is wrapped in.
+  `crypto.normalize_signature` turns a device's DER or raw `r||s`, low-S or
+  not, into compact low-S in one place; `crypto.sign_with` signs,
+  normalizes and verifies against the signer's own key before anything is
+  committed, so a misbehaving device fails at the write with the repo
+  unchanged. `Identity.bootstrap(..., signer=)`, `adopt_web(domain, signer,
+  ...)` and `rotate(signer, ...)` put a durable identity's pen in hardware:
+  its state directory records only the public key, the signer is required
+  again on every load and checked against it, and `Identity.signer` is what
+  the identity signs with (`signing_key` is the software key when there is
+  one, else `None`). The package ships no adapter; `docs/HOSTED-PEERS.md`
+  "Hardware-held pens" sketches one.
+- `RepoHandle.emit_sync()` announces a hosted repo's current head as a
+  `#sync` event, for a host whose repo took a push through `import_car`
+  (which commits nothing and so emits nothing by itself). The hosted-peer
+  example calls it after every landed push.
+- Frozen repos: `Repo(did, None, store=..., head_cid=...)` reopens a repo
+  with no pen on this host. It serves `getRepo` and the firehose exactly as
+  before, publicly or to live capability holders, refuses every commit with
+  a clear error, and still takes pushes through `import_car`, which for a
+  frozen repo requires `verify_key` (a host with no pen has no other way to
+  know the bytes are the owner's). `Repo.frozen`
+  says which it is, and a `PeerServer` no longer needs its peer to carry a
+  pen, only a DID.
 - Browser bundle: `generate_pen()`, `pen_did(key_pair)`,
   `BrowserPeer.create(did, key_pair)`, `BrowserPeer.restore(car, key_pair,
   verify?)` and `sign_challenge(key_pair, nonce, repo_did)`. Pens cross the
@@ -71,8 +117,8 @@ To upgrade safely within one minor line, pin with `~=`, for example
   `True` admits the `did:key` whose key verifies the head commit; an
   `OwnerRule` callable names the current pen when the host knows it (its
   chain head), so a freshly rotated pen pulls before it has pushed.
-  Owner pull decides who reads; a frozen (penless) hosted repo, which will
-  be required for it, is planned separately.
+  Owner pull decides who reads; a frozen (penless) hosted repo is required
+  for it (see Breaking).
 - `ResolvedCaller(did, proof)`: a `CallerResolver` may now say how it knows
   who is asking (`"signature"`, or `"repo:<did>"` for a tunnel binding or
   delegation chain rooted in that repo). A bare DID still works for the

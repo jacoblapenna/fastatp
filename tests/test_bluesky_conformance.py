@@ -39,8 +39,8 @@ def _note(i: int) -> dict[str, Any]:
     return {"$type": NSID, "n": i}
 
 
-def _repo() -> Repo:
-    return Repo(DID, crypto.generate_keypair("k256"))
+async def _repo() -> Repo:
+    return await Repo.create(DID, crypto.generate_keypair("k256"))
 
 
 def _assert_inverts(event, seq: int = 1) -> None:
@@ -51,33 +51,33 @@ def _assert_inverts(event, seq: int = 1) -> None:
 # --- every emitted commit passes inversion, standalone -------------------------
 
 
-def test_single_op_commits_invert():
-    repo = _repo()
-    _assert_inverts(repo.put_record(NSID, "only", _note(0)))  # create
-    _assert_inverts(repo.put_record(NSID, "only", _note(1)))  # update
-    _assert_inverts(repo.delete_record(NSID, "only"))  # delete
-    _assert_inverts(repo.recommit())  # empty ops (re-sign)
+async def test_single_op_commits_invert():
+    repo = await _repo()
+    _assert_inverts(await repo.put_record(NSID, "only", _note(0)))  # create
+    _assert_inverts(await repo.put_record(NSID, "only", _note(1)))  # update
+    _assert_inverts(await repo.delete_record(NSID, "only"))  # delete
+    _assert_inverts(await repo.recommit())  # empty ops (re-sign)
 
 
-def test_deep_tree_commits_invert():
+async def test_deep_tree_commits_invert():
     """Creates, updates, and deletes across a many-node tree — including ops
     whose MST neighbors live in otherwise-untouched nodes (the case a
     new-nodes-only diff gets wrong)."""
-    repo = _repo()
+    repo = await _repo()
     for i in range(120):
-        _assert_inverts(repo.put_record(NSID, f"k{i:03d}", _note(i)))
+        _assert_inverts(await repo.put_record(NSID, f"k{i:03d}", _note(i)))
     # scattered deletes: each op's neighbors sit in untouched nodes
     for i in (0, 17, 39, 58, 77, 96, 119):
-        _assert_inverts(repo.delete_record(NSID, f"k{i:03d}"))
+        _assert_inverts(await repo.delete_record(NSID, f"k{i:03d}"))
     # scattered updates
     for i in (1, 40, 95):
-        _assert_inverts(repo.put_record(NSID, f"k{i:03d}", _note(1000 + i)))
+        _assert_inverts(await repo.put_record(NSID, f"k{i:03d}", _note(1000 + i)))
 
 
-def test_batched_writes_invert():
-    repo = _repo()
+async def test_batched_writes_invert():
+    repo = await _repo()
     for i in range(60):
-        repo.put_record(NSID, f"k{i:03d}", _note(i))
+        await repo.put_record(NSID, f"k{i:03d}", _note(i))
     batch = [
         WriteOp("create", NSID, "zz-new-1", _note(-1)),
         WriteOp("create", NSID, "aa-new-2", _note(-2)),
@@ -85,17 +85,17 @@ def test_batched_writes_invert():
         WriteOp("delete", NSID, "k010"),
         WriteOp("delete", NSID, "k055"),
     ]
-    _assert_inverts(repo.apply_writes(batch))
+    _assert_inverts(await repo.apply_writes(batch))
 
 
-def test_tampered_events_fail_inversion():
+async def test_tampered_events_fail_inversion():
     import pytest
 
     from fastatp.exceptions import RepoError
 
-    repo = _repo()
-    repo.put_record(NSID, "a", _note(0))
-    event = repo.put_record(NSID, "b", _note(1))
+    repo = await _repo()
+    await repo.put_record(NSID, "a", _note(0))
+    event = await repo.put_record(NSID, "b", _note(1))
     # lie about the op path
     body = commit_frame_body(DID, 2, event)
     body["ops"] = [dict(body["ops"][0], path=f"{NSID}/liar")]
@@ -113,7 +113,7 @@ def test_tampered_events_fail_inversion():
         verify_commit_inversion(body)
 
 
-def test_mirror_round_trip_with_inversion():
+async def test_mirror_round_trip_with_inversion():
     """The consumer path (RepoMirror.apply_commit) runs the inversion check
     on every event and still tracks state exactly."""
 
@@ -124,33 +124,33 @@ def test_mirror_round_trip_with_inversion():
         async def resolver(did):
             return doc if did == DID else None
 
-        repo = Repo(DID, key)
+        repo = await Repo.create(DID, key)
         mirror = RepoMirror(DID, resolver=resolver)
         seq = 0
         for i in range(30):
             seq += 1
             await mirror.apply_commit(
-                commit_frame_body(DID, seq, repo.put_record(NSID, f"r{i:02d}", _note(i)))
+                commit_frame_body(DID, seq, await repo.put_record(NSID, f"r{i:02d}", _note(i)))
             )
         for i in (3, 11, 27):
             seq += 1
             await mirror.apply_commit(
-                commit_frame_body(DID, seq, repo.delete_record(NSID, f"r{i:02d}"))
+                commit_frame_body(DID, seq, await repo.delete_record(NSID, f"r{i:02d}"))
             )
         assert mirror.rev == repo.rev
         assert len(mirror.entries) == 27
 
-    asyncio.run(run())
+    await run()
 
 
 # --- frame hygiene: #sync carries the commit block only ------------------------
 
 
-def test_sync_frame_commit_block_only():
+async def test_sync_frame_commit_block_only():
     peer = Peer(did=DID, signing_key=crypto.generate_keypair("k256"))
-    srv = PeerServer(peer)
+    srv = await PeerServer.create(peer)
     for i in range(5):
-        srv.put_record(NSID, f"s{i}", _note(i))
+        await srv.put_record(NSID, f"s{i}", _note(i))
     header, body = decode_frame(srv._primary.sync_frame())
     assert header["t"] == "#sync"
     roots, blocks = decode_car(body["blocks"])
@@ -179,15 +179,15 @@ def test_account_and_identity_bodies():
     )
 
 
-def test_hosted_repo_announces_before_commits(serve_app):
+async def test_hosted_repo_announces_before_commits(serve_app):
     """A fresh subscriber replaying from cursor 0 sees #identity and #account
     {active: true} before any #commit (relays ignore commits from accounts
     not known to be active)."""
 
     async def run() -> None:
         peer = Peer(did=DID, signing_key=crypto.generate_keypair("k256"))
-        srv = PeerServer(peer)
-        srv.put_record(NSID, "x", _note(0))
+        srv = await PeerServer.create(peer)
+        await srv.put_record(NSID, "x", _note(0))
         async with serve_app(srv.app) as port:
             url = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}?cursor=0"
             async with websockets.connect(url) as ws:
@@ -200,18 +200,18 @@ def test_hosted_repo_announces_before_commits(serve_app):
         assert account_body["active"] is True and account_body["did"] == DID
         assert [b["seq"] for _, b in frames] == [1, 2, 3]
 
-    asyncio.run(run())
+    await run()
 
 
 # --- discovery / resync routes ---------------------------------------------------
 
 
-def test_discovery_routes(serve_app):
+async def test_discovery_routes(serve_app):
     async def run() -> None:
         peer = Peer(did=DID, signing_key=crypto.generate_keypair("k256"))
-        srv = PeerServer(peer)
-        srv.put_record(NSID, "rec1", _note(1))
-        gated = Repo("did:web:gated.example", crypto.generate_keypair("k256"))
+        srv = await PeerServer.create(peer)
+        await srv.put_record(NSID, "rec1", _note(1))
+        gated = await Repo.create("did:web:gated.example", crypto.generate_keypair("k256"))
         srv.register(gated, public=False)
         async with serve_app(srv.app) as port:
             base = f"http://127.0.0.1:{port}"
@@ -258,4 +258,4 @@ def test_discovery_routes(serve_app):
                 r = await client.get(f"{base}{GET_RECORD_PATH}", params={"did": DID})
                 assert r.status_code == 400
 
-    asyncio.run(run())
+    await run()

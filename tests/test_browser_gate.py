@@ -38,9 +38,9 @@ from fastatp.tid import generate_tid
 ROOT = "did:web:user.shelf.example:aaaabbbbccccddddeeeeffffgggghhhh"
 
 
-def _server_with_gate() -> tuple[PeerServer, BrowserGate]:
+async def _server_with_gate() -> tuple[PeerServer, BrowserGate]:
     key = crypto.generate_keypair("k256")
-    srv = PeerServer(Peer(did="did:web:builder.example", signing_key=key))
+    srv = await PeerServer.create(Peer(did="did:web:builder.example", signing_key=key))
     gate = BrowserGate(ttl=5.0)
     gate.install(srv)
     return srv, gate
@@ -51,19 +51,19 @@ def _pen() -> tuple[object, str]:
     return key, crypto.encode_did_key(key.public_key())
 
 
-def _user_repo(srv: PeerServer, *, subject: str = ROOT):
+async def _user_repo(srv: PeerServer, *, subject: str = ROOT):
     """Host ROOT's gated repo, holding its own subscribe capability."""
-    repo = Repo(ROOT, crypto.generate_keypair("k256"))
+    repo = await Repo.create(ROOT, crypto.generate_keypair("k256"))
     handle = srv.register(repo)  # gated by default
-    handle.put_record(
+    await handle.put_record(
         Capability.nsid, generate_tid(), Capability(subject=subject, actions=["subscribe"])
     )
     return handle
 
 
-def _delegate(handle, pen_did: str) -> str:
+async def _delegate(handle, pen_did: str) -> str:
     rkey = generate_tid()
-    handle.put_record(Delegation.nsid, rkey, Delegation(issuer=ROOT, subject=pen_did))
+    await handle.put_record(Delegation.nsid, rkey, Delegation(issuer=ROOT, subject=pen_did))
     return rkey
 
 
@@ -117,11 +117,11 @@ async def test_admitted_pen_subscribes_and_severed_pen_is_refused(serve_app):
     """The full loop: delegated pen passes the challenge and receives frames;
     after its delegation record is DELETED, the same pen with a fresh, valid
     challenge is refused at its next connect — absence is revocation."""
-    srv, _gate = _server_with_gate()
-    handle = _user_repo(srv)
+    srv, _gate = await _server_with_gate()
+    handle = await _user_repo(srv)
     pen_key, pen_did = _pen()
-    rkey = _delegate(handle, pen_did)
-    handle.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "hi"})
+    rkey = await _delegate(handle, pen_did)
+    await handle.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "hi"})
 
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
@@ -130,17 +130,17 @@ async def test_admitted_pen_subscribes_and_severed_pen_is_refused(serve_app):
         )
         assert header["t"] == "#commit" and body["repo"] == ROOT
 
-        handle.delete_record(Delegation.nsid, rkey)  # sever: the revocation act
+        await handle.delete_record(Delegation.nsid, rkey)  # sever: the revocation act
         nonce = await _nonce(port)  # fresh, valid challenge — chain is what fails
         with pytest.raises(RepoError, match="RepoNotFound"):
             await _subscribe_first_frame(port, ROOT, _params(pen_did, nonce, _sign(pen_key, nonce)))
 
 
 async def test_replayed_nonce_is_refused(serve_app):
-    srv, _gate = _server_with_gate()
-    handle = _user_repo(srv)
+    srv, _gate = await _server_with_gate()
+    handle = await _user_repo(srv)
     pen_key, pen_did = _pen()
-    _delegate(handle, pen_did)
+    await _delegate(handle, pen_did)
 
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
@@ -152,8 +152,8 @@ async def test_replayed_nonce_is_refused(serve_app):
 
 
 async def test_no_identity_is_refused_and_bad_signature_burns_the_nonce(serve_app):
-    srv, _gate = _server_with_gate()
-    _user_repo(srv)
+    srv, _gate = await _server_with_gate()
+    await _user_repo(srv)
     pen_key, pen_did = _pen()
     other_key, _ = _pen()
 
@@ -169,8 +169,8 @@ async def test_no_identity_is_refused_and_bad_signature_burns_the_nonce(serve_ap
 
 
 async def test_undelegated_pen_is_refused_even_with_valid_challenge(serve_app):
-    srv, _gate = _server_with_gate()
-    _user_repo(srv)  # no delegation for this pen
+    srv, _gate = await _server_with_gate()
+    await _user_repo(srv)  # no delegation for this pen
     pen_key, pen_did = _pen()
 
     async with serve_app(srv.app) as port:
@@ -182,9 +182,9 @@ async def test_undelegated_pen_is_refused_even_with_valid_challenge(serve_app):
 async def test_documentless_pen_speaks_for_itself(serve_app):
     """With ``iss`` omitted the pen IS the caller: a did:key holding its own
     capability needs no delegation chain (by-key grants compose)."""
-    srv, _gate = _server_with_gate()
+    srv, _gate = await _server_with_gate()
     pen_key, pen_did = _pen()
-    _user_repo(srv, subject=pen_did)  # capability granted directly to the pen
+    await _user_repo(srv, subject=pen_did)  # capability granted directly to the pen
 
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
@@ -196,7 +196,7 @@ async def test_challenge_route_is_opt_in(serve_app):
     """A PeerServer without an installed gate serves no challenge route and
     keeps refusing browser-shaped presentations (nothing resolves them)."""
     key = crypto.generate_keypair("k256")
-    srv = PeerServer(Peer(did="did:web:builder.example", signing_key=key))
+    srv = await PeerServer.create(Peer(did="did:web:builder.example", signing_key=key))
 
     async with serve_app(srv.app) as port, httpx.AsyncClient() as client:
         assert (await client.get(f"http://127.0.0.1:{port}{CHALLENGE_PATH}")).status_code == 404
@@ -205,10 +205,10 @@ async def test_challenge_route_is_opt_in(serve_app):
 async def test_signature_is_bound_to_the_requested_repo(serve_app):
     """A knock names the repo it wants. The bare nonce (the 0.2 message) and a
     signature made for another repo's DID both fail against this repo."""
-    srv, _gate = _server_with_gate()
-    handle = _user_repo(srv)
+    srv, _gate = await _server_with_gate()
+    handle = await _user_repo(srv)
     pen_key, pen_did = _pen()
-    _delegate(handle, pen_did)
+    await _delegate(handle, pen_did)
 
     async with serve_app(srv.app) as port:
         nonce = await _nonce(port)
@@ -226,10 +226,10 @@ async def test_a_knock_for_an_unhosted_did_still_burns_its_nonce(serve_app):
     """The caller is resolved BEFORE the host is looked up, so a stranger
     probing DIDs runs the same checks whether or not the repo exists: the
     nonce is spent either way, and the answer is RepoNotFound either way."""
-    srv, _gate = _server_with_gate()
-    handle = _user_repo(srv)
+    srv, _gate = await _server_with_gate()
+    handle = await _user_repo(srv)
     pen_key, pen_did = _pen()
-    _delegate(handle, pen_did)
+    await _delegate(handle, pen_did)
     absent = "did:web:nobody.example"
 
     async with serve_app(srv.app) as port:
@@ -252,15 +252,19 @@ async def test_list_repos_resolves_a_knock_once_and_lists_what_the_pen_holds(ser
     identity is admitted to, naming its own root as ``did``."""
     from fastatp.server.peer_server import LIST_REPOS_PATH
 
-    srv, _gate = _server_with_gate()
-    handle = _user_repo(srv)
-    other = srv.register(Repo("did:web:other.example:x", crypto.generate_keypair("k256")))
-    other.put_record(
+    srv, _gate = await _server_with_gate()
+    handle = await _user_repo(srv)
+    other = srv.register(
+        await Repo.create("did:web:other.example:x", crypto.generate_keypair("k256"))
+    )
+    await other.put_record(
         Capability.nsid, generate_tid(), Capability(subject=ROOT, actions=["subscribe"])
     )
-    hidden = srv.register(Repo("did:web:hidden.example:x", crypto.generate_keypair("k256")))
+    hidden = srv.register(
+        await Repo.create("did:web:hidden.example:x", crypto.generate_keypair("k256"))
+    )
     pen_key, pen_did = _pen()
-    _delegate(handle, pen_did)
+    await _delegate(handle, pen_did)
 
     async with serve_app(srv.app) as port, httpx.AsyncClient() as client:
         anonymous = await client.get(f"http://127.0.0.1:{port}{LIST_REPOS_PATH}")
@@ -340,9 +344,9 @@ def test_consume_is_single_use():
     assert gate._consume(nonce) is False
 
 
-def test_install_is_once_per_gate():
+async def test_install_is_once_per_gate():
     key = crypto.generate_keypair("k256")
-    srv = PeerServer(Peer(did="did:web:builder.example", signing_key=key))
+    srv = await PeerServer.create(Peer(did="did:web:builder.example", signing_key=key))
     gate = BrowserGate()
     gate.install(srv)
     with pytest.raises(ValueError, match="already installed"):
@@ -350,7 +354,7 @@ def test_install_is_once_per_gate():
 
 
 async def test_challenge_route_is_get_only(serve_app):
-    srv, _gate = _server_with_gate()
+    srv, _gate = await _server_with_gate()
     async with serve_app(srv.app) as port, httpx.AsyncClient() as client:
         assert (await client.post(f"http://127.0.0.1:{port}{CHALLENGE_PATH}")).status_code == 405
 

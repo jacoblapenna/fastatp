@@ -53,11 +53,11 @@ class RepoWriter(Protocol):
     broadcasts on the firehose — the audit trail replays to every subscriber.
     """
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent: ...
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent: ...
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent: ...
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent: ...
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent: ...
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent: ...
 
 
 def _repo_of(writer: RepoWriter) -> object:
@@ -205,7 +205,7 @@ class WireGuardReconciler:
                 )
             )
         writes.append(WriteOp("create", Capability.nsid, rkey, capability))
-        self.writer.apply_writes(writes)  # record first: the source of truth
+        await self.writer.apply_writes(writes)  # record first: the source of truth
 
         self.interface.add_peer(info.public_key, info.allowed_ips)  # then the teeth
         if existing is not None:
@@ -247,7 +247,7 @@ class WireGuardReconciler:
             revoked_at=now_iso(),
             reason=reason,
         )
-        self.writer.apply_writes(
+        await self.writer.apply_writes(
             [
                 WriteOp("delete", Capability.nsid, rkey),
                 WriteOp("create", Revocation.nsid, generate_tid(), revocation),
@@ -323,7 +323,7 @@ class WireGuardReconciler:
             # BEFORE the desired-set diff, so still-present expired records
             # can never be re-opened as tunnels. report.expired reflects only
             # a committed sweep.
-            self.writer.apply_writes(expired_writes)
+            await self.writer.apply_writes(expired_writes)
             report.expired.extend(expired_subjects)
 
     async def _apply_desired(self, report: ReconcileReport, now: datetime | None = None) -> None:

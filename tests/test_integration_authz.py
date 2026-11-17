@@ -151,8 +151,8 @@ async def env():
 
     e = _Env()
     e.did1, e.did2 = did1, did2
-    e.peer1 = PeerServer(Peer(did=did1, signing_key=sk1))  # granting host + firehose
-    e.peer2_repo = Repo(did2, sk2)  # grantee, signs the echo-back
+    e.peer1 = await PeerServer.create(Peer(did=did1, signing_key=sk1))  # granting host + firehose
+    e.peer2_repo = await Repo.create(did2, sk2)  # grantee, signs the echo-back
     e.iface1 = MemoryWireGuardInterface()
     e.recon1 = WireGuardReconciler(e.peer1, e.iface1, resolver)
     e.tunnel1 = SimTunnel(wg1_priv, e.iface1)  # peer1 sends; gate = iface1
@@ -175,7 +175,7 @@ async def test_baseline_bidirectional_without_wireguard(env):
     real did:web resolution over HTTP. No enforcement in the path."""
     # peer1 -> peer2
     mirror_of_1 = RepoMirror(env.did1, resolver=env.resolver)
-    ev1 = env.peer1.put_record(Ping.nsid, "a", _ping(1))
+    ev1 = await env.peer1.put_record(Ping.nsid, "a", _ping(1))
     records = await mirror_of_1.apply_commit(commit_frame_body(env.did1, 1, ev1))
     assert records[0]["record"]["seq"] == 1
     rec_a = mirror_of_1.get_record(Ping.nsid, "a")
@@ -184,7 +184,7 @@ async def test_baseline_bidirectional_without_wireguard(env):
 
     # peer2 -> peer1 (echo back)
     mirror_of_2 = RepoMirror(env.did2, resolver=env.resolver)
-    ev2 = env.peer2_repo.put_record(Ping.nsid, "b", _ping(2))
+    ev2 = await env.peer2_repo.put_record(Ping.nsid, "b", _ping(2))
     records = await mirror_of_2.apply_commit(commit_frame_body(env.did2, 1, ev2))
     assert records[0]["record"]["seq"] == 2
 
@@ -200,7 +200,7 @@ async def test_grant_revoke_toggles_reachability(env):
 
     # 1. BEFORE grant: peer2 is not on peer1's interface -> unreachable
     assert env.wg2_pub not in env.iface1.peers()
-    ev = env.peer1.put_record(Ping.nsid, "pre", _ping(1))
+    ev = await env.peer1.put_record(Ping.nsid, "pre", _ping(1))
     frame = encode_frame("#commit", commit_frame_body(env.did1, env.peer1.seq, ev))
     assert env.tunnel1.send(env.wg2_pub, frame) is None  # dropped: silence
 
@@ -208,7 +208,7 @@ async def test_grant_revoke_toggles_reachability(env):
     # pulls a current-state checkpoint (the real "subscribe after grant" flow).
     await env.recon1.grant(env.did2)
     assert env.wg2_pub in env.iface1.peers()
-    env.peer1.put_record(Ping.nsid, "live", _ping(2))
+    await env.peer1.put_record(Ping.nsid, "live", _ping(2))
     checkpoint = encode_frame(
         "#sync",
         sync_frame_body(
@@ -239,7 +239,7 @@ async def test_grant_revoke_toggles_reachability(env):
     # 3. REVOKE: sign a revocation + close the tunnel
     await env.recon1.revoke(env.did2, reason="offboarded")
     assert env.wg2_pub not in env.iface1.peers()
-    ev = env.peer1.put_record(Ping.nsid, "post", _ping(3))
+    ev = await env.peer1.put_record(Ping.nsid, "post", _ping(3))
     frame = encode_frame("#commit", commit_frame_body(env.did1, env.peer1.seq, ev))
     assert env.tunnel1.send(env.wg2_pub, frame) is None  # dropped again: silence
 

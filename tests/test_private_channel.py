@@ -35,9 +35,11 @@ def _as_resolver(conn):
     return conn.query_params.get("as")
 
 
-def _tool_app():
+async def _tool_app():
     key = crypto.generate_keypair("k256")
-    server = PeerServer(Peer(did=TOOL_DID, signing_key=key), identity_resolver=_as_resolver)
+    server = await PeerServer.create(
+        Peer(did=TOOL_DID, signing_key=key), identity_resolver=_as_resolver
+    )
     return PeerApp(server), server, key
 
 
@@ -58,7 +60,7 @@ async def _open(app, issuer_did, issuer_wg, *, ttl=60):
 
 
 async def test_channel_admits_only_its_issuer(serve_app):
-    app, server, _key = _tool_app()
+    app, server, _key = await _tool_app()
     issuer_did, issuer_wg = _issuer()
     channel = await _open(app, issuer_did, issuer_wg)
 
@@ -68,7 +70,7 @@ async def test_channel_admits_only_its_issuer(serve_app):
     assert ACTION_SUBSCRIBE in caps[issuer_did][1].actions
     assert channel.did in server.hosts()  # gated repo is hosted
 
-    channel.put_record("com.x.reply", "r", {"$type": "com.x.reply", "text": "secret"})
+    await channel.put_record("com.x.reply", "r", {"$type": "com.x.reply", "text": "secret"})
 
     async with serve_app(server.app) as port:
         base = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}?did={channel.did}&cursor=0"
@@ -91,7 +93,7 @@ async def test_channel_admits_only_its_issuer(serve_app):
 
 
 async def test_channel_repr_never_leaks_wg_private_key():
-    app, _server, _key = _tool_app()
+    app, _server, _key = await _tool_app()
     issuer_did, issuer_wg = _issuer()
     channel = await _open(app, issuer_did, issuer_wg)
     text = repr(channel)
@@ -100,7 +102,7 @@ async def test_channel_repr_never_leaks_wg_private_key():
 
 
 async def test_did_key_issuer_requires_coordinates():
-    app, _server, _key = _tool_app()
+    app, _server, _key = await _tool_app()
     issuer_did, _wg = _issuer()
     with pytest.raises(ValueError, match="admitted by public key"):
         await app.open_private_channel(issuer_did, ttl=60)
@@ -109,7 +111,7 @@ async def test_did_key_issuer_requires_coordinates():
 async def test_attest_posts_signed_attestation_under_stable_did():
     from fastatp import build_did_document
 
-    app, server, key = _tool_app()
+    app, server, key = await _tool_app()
     issuer_did, issuer_wg = _issuer()
     channel = await _open(app, issuer_did, issuer_wg)
 
@@ -138,7 +140,7 @@ async def test_attest_posts_signed_attestation_under_stable_did():
 async def test_channel_expires_and_becomes_unroutable():
     from datetime import datetime, timedelta
 
-    app, server, _key = _tool_app()
+    app, server, _key = await _tool_app()
     issuer_did, issuer_wg = _issuer()
     channel = await _open(app, issuer_did, issuer_wg, ttl=3600)
     assert channel.did in server.hosts()

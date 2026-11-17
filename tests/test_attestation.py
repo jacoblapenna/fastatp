@@ -106,9 +106,9 @@ async def test_attestation_signed_and_verified_via_commit():
     key = crypto.generate_keypair("k256")
     did = crypto.encode_did_key(key.public_key())
     poster = Peer(did=did, signing_key=key)
-    repo = poster.create_repo()
+    repo = await poster.create_repo()
     att = _att()
-    repo.put_record(Attestation.nsid, "self", att)
+    await repo.put_record(Attestation.nsid, "self", att)
     proof = repo.prove(Attestation.nsid, "self")
 
     verifier = Peer()

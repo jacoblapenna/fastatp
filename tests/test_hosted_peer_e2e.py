@@ -47,7 +47,7 @@ _spec.loader.exec_module(hosted_peer_builder)
 
 
 async def test_hosted_peer_end_to_end(serve_app, tmp_path):
-    builder = hosted_peer_builder.make_builder(DOMAIN)
+    builder = await hosted_peer_builder.make_builder(DOMAIN)
 
     async with (
         serve_app(builder.shelf.app) as shelf_port,
@@ -85,6 +85,8 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     # record, no delegation, no iss — owner pull, not a subscription
     assert phases["owner-pull-device1"] == 200
     hosted = builder.handles[twin].repo
+    # the first push was announced like every later one: #identity, #account, #sync
+    assert builder.handles[twin].seq >= 3
     assert live_capabilities(hosted) == {}  # nobody is admitted by record, ever
 
     # each device writes its own repo: device 2's is hosted on first push,
@@ -101,7 +103,7 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     # device 2, delegated by a record PRESENT in the hosted repo, knocks as the
     # identity and syncs the full repo (multi-device sync)
     assert phases["sync-device2"] == 200
-    synced = Repo(twin, crypto.generate_keypair("k256"))
+    synced = await Repo.create(twin, crypto.generate_keypair("k256"))
     synced.import_car(
         Path(report["files"]["device2-sync"]).read_bytes(),
         verify_key=crypto.decode_did_key(report["pen_did"]),  # the pen of that moment

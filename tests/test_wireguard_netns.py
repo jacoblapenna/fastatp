@@ -225,7 +225,7 @@ async def test_reconciler_grant_revoke_gates_real_tunnel(netns):
     repo_a = generate_keypair("k256")
     from fastatp.repo.repo import Repo
 
-    reconciler = WireGuardReconciler(Repo(DID_A, repo_a), interface, resolver)
+    reconciler = WireGuardReconciler(await Repo.create(DID_A, repo_a), interface, resolver)
 
     # 1. BEFORE grant: ns_b is not a peer on wgA -> handshake refused -> no tunnel
     assert not _ping_within(NS_B, addr_a, 3), "tunnel reachable before grant"

@@ -105,8 +105,8 @@ async def test_rotation_key_cannot_sign_records():
     async def resolver(d):
         return misconfigured if d == did else None
 
-    repo = Repo(did, rotation)
-    repo.put_record(Note.nsid, "evil", Note(text="evil"))
+    repo = await Repo.create(did, rotation)
+    await repo.put_record(Note.nsid, "evil", Note(text="evil"))
     proof = repo.prove(Note.nsid, "evil")
     with pytest.raises(SignatureInvalid, match="rotation"):
         await Peer(resolver=resolver).verify(proof)

@@ -65,7 +65,7 @@ to hand-roll it on `Peer.verify()` + `RepoMirror`:
 Collections organize records *within* one identity; they are NOT a
 listener-isolation or security boundary.** Forced by the shipped code:
 
-1. `Repo(did, signing_key)` and `PeerServer(peer)` bind **1 DID = 1 repo =
+1. `await Repo.create(did, signing_key)` and `await PeerServer.create(peer)` bind **1 DID = 1 repo =
    1 firehose** (`fastatp/server/peer_server.py`, `fastatp/repo/repo.py`).
 2. The firehose is **whole-repo broadcast**: `PeerServer._emit()` pushes every
    `#commit` to every subscriber; `_subscribe()` neither authenticates the
@@ -131,7 +131,7 @@ async def price_it(req: QuoteRequest, ctx: Envelope) -> None:
     # ctx: issuer_did, record_cid, received_at — the record is already
     # verified (commit signature, MST membership, rotation-key ban, authorize
     # hook) and parsed. The handler just does work.
-    app.emit(
+    await app.emit(
         "com.acme.fx.quote", generate_tid(), Quote(context_id=req.context_id, price=quote(req))
     )
 ```
@@ -144,7 +144,7 @@ Required surface — all generic, nothing domain-specific:
 - `Envelope` — verified context handed to every handler: `issuer_did`,
   `record_cid`, `context_id` (if present on the record — read generically, not
   assumed), `received_at`, and the raw record.
-- `app.emit(collection, rkey, record)` — write a record into this app's repo
+- `await app.emit(collection, rkey, record)` — write a record into this app's repo
   and broadcast it. This is the *only* "response" primitive; the developer
   builds request/reply, status updates, fan-out, or anything else out of it.
   **Do NOT ship opinionated `status()`/`result()` helpers** — those presuppose

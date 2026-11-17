@@ -1,5 +1,29 @@
 """Present-state repository: current MST + signed commit, nothing else.
 
+A fresh repo is ``await Repo.create(did, signing_key)``: the genesis commit
+is signed through the signer seam (``fastatp.crypto.Signer``), so a key the
+process cannot hold works the same as one in memory. ``Repo(did, signing_key,
+head_cid=...)`` reopens a stored head without signing anything. Every write
+is awaited for the same reason: a hardware signer takes tens of
+milliseconds, and the peer keeps serving meanwhile.
+
+A repo reopened with no pen (``Repo(did, None, store=..., head_cid=...)``) is
+**frozen**: it serves ``getRepo`` and the firehose exactly as before, to the
+public or to whoever holds a live capability record in it, and refuses every
+commit. Pushes still land through ``import_car``, which signs nothing. This is
+the shape of a host serving a repo whose pen lives elsewhere (a browser, a
+device): requiring the pen to *serve* would protect nothing, since records
+are never encrypted in process and anyone who can start a peer over the store
+can read it; requiring the pen to *write* is the whole point, and that stays.
+
+Frozen is not what keeps a repo honest; signatures are. Anyone with write
+access to the storage (a privileged user on the disk, a PDS operator) can
+write bytes into any repo, on any atproto host, and it has always been the
+consumer's job to verify that a commit was signed by the identity's pen.
+That is atproto's design, not FastATP's. Frozen adds that the same rule
+holds in this host's own code: without the pen there is no path here that
+makes a commit, so the host cannot produce one the owner did not sign.
+
 One DID = one repo holding many collections (NSIDs). A delete restructures
 the tree and orphans blocks; every commit ends with a garbage collection that
 deletes blocks unreachable from the new commit, so store size tracks current
@@ -10,6 +34,7 @@ walkable history chain. Retention is a per-collection application policy
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -17,7 +42,7 @@ from typing import Any, Union
 
 from fastatp import dagcbor, datamodel
 from fastatp.cid import CID
-from fastatp.crypto import PrivateKey, PublicKey
+from fastatp.crypto import PrivateKey, PublicKey, Signer, as_signer
 from fastatp.exceptions import DataModelError, FastATPError, RepoError, StaleCheckpoint
 from fastatp.lex.types import Blob, CidLink, validate_nsid
 from fastatp.lexicon import Lexicon
@@ -81,7 +106,7 @@ class Repo:
     def __init__(
         self,
         did: str,
-        signing_key: PrivateKey,
+        signing_key: PrivateKey | Signer | None,
         store: BlockStore | None = None,
         clock: TidClock | None = None,
         *,
@@ -89,8 +114,13 @@ class Repo:
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
     ) -> None:
+        """Reopen a repo from ``head_cid`` in ``store``, or set one up for
+        :meth:`create` to sign its genesis. ``signing_key`` is a private key or
+        any :class:`~fastatp.crypto.Signer`, held as ``self.signer``; ``None``
+        makes the repo :attr:`frozen` (it serves, and never commits). Without
+        ``head_cid`` the repo has no commit until its first write or import."""
         self.did = did
-        self.signing_key = signing_key
+        self.signer: Signer | None = as_signer(signing_key) if signing_key is not None else None
         self.store: BlockStore = store if store is not None else MemoryBlockStore()
         # the media capability is optional wiring: media-free
         # peers carry no blob store and pay nothing
@@ -103,10 +133,33 @@ class Repo:
         self._root: CID | None = None
         self._mst_nodes: set[CID] = set()
         self._on_commit = on_commit
+        # one head, one writer at a time: a commit awaits its signer, and two
+        # coroutines on this object must not build on the same snapshot
+        self._write_lock = asyncio.Lock()
         if head_cid is not None:
             self._load_head(head_cid)  # load-forever: reconstruct from a durable store
-        else:
-            self._commit_now([])  # genesis: signed empty tree
+
+    @classmethod
+    async def create(
+        cls,
+        did: str,
+        signing_key: PrivateKey | Signer,
+        store: BlockStore | None = None,
+        clock: TidClock | None = None,
+        *,
+        on_commit: Callable[[CommitEvent], None] | None = None,
+        blobs: BlobStore | None = None,
+    ) -> Repo:
+        """A new repo with its genesis commit (a signed empty tree)."""
+        if signing_key is None:
+            raise RepoError(
+                "a fresh repo needs a pen to sign its genesis commit; a frozen repo "
+                "reopens a stored head: Repo(did, None, store=..., head_cid=...)"
+            )
+        repo = cls(did, signing_key, store, clock, on_commit=on_commit, blobs=blobs)
+        async with repo._write_lock:
+            await repo._commit_now([])
+        return repo
 
     def _load_head(self, head_cid: CID) -> None:
         """Reconstruct state from a persisted head commit already in the store
@@ -138,14 +191,32 @@ class Repo:
 
     # --- state --------------------------------------------------------------
 
+    _FROZEN = (
+        "this repo is frozen: it has no pen on this host, so it serves and never "
+        "commits; a push still lands through import_car"
+    )
+    _NO_COMMIT = (
+        "this repo has no commit yet: a fresh repo is made with "
+        "`await Repo.create(did, signing_key)`; `Repo(did, signing_key, head_cid=...)` "
+        "reopens a stored head"
+    )
+
+    @property
+    def frozen(self) -> bool:
+        """True when this host holds no pen for the repo: reads and imports
+        work, every commit is refused."""
+        return self.signer is None
+
     @property
     def commit(self) -> Commit:
-        assert self._commit is not None
+        if self._commit is None:
+            raise RepoError(self._NO_COMMIT)
         return self._commit
 
     @property
     def commit_cid(self) -> CID:
-        assert self._commit_cid is not None
+        if self._commit_cid is None:
+            raise RepoError(self._NO_COMMIT)
         return self._commit_cid
 
     @property
@@ -154,7 +225,8 @@ class Repo:
 
     @property
     def root(self) -> CID:
-        assert self._root is not None
+        if self._root is None:
+            raise RepoError(self._NO_COMMIT)
         return self._root
 
     def record_count(self, collection: str | None = None) -> int:
@@ -182,22 +254,37 @@ class Repo:
 
     # --- writes -------------------------------------------------------------
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
         action = "update" if f"{collection}/{rkey}" in self._entries else "create"
-        return self.apply_writes([WriteOp(action, collection, rkey, record)])
+        return await self.apply_writes([WriteOp(action, collection, rkey, record)])
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self.apply_writes([WriteOp("delete", collection, rkey)])
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+        return await self.apply_writes([WriteOp("delete", collection, rkey)])
 
-    def recommit(self) -> CommitEvent:
-        """Re-sign the current state under the current ``signing_key`` (no data
+    async def recommit(self) -> CommitEvent:
+        """Re-sign the current state under the current ``signer`` (no data
         change). Used after a key rotation so the persisted head verifies under
         the new key on the next load."""
-        return self._commit_now([])
+        async with self._write_lock:
+            return await self._commit_now([])
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+        """Commit ``writes`` as one signed change.
+
+        Writers sharing this object take turns: validation, signing, the head
+        update and garbage collection happen under one lock, so concurrent
+        writes land in sequence and each builds on the previous. A sync
+        ``import_car`` that lands while a commit is being signed is caught
+        after the signature and refused (``RepoError``), with nothing staged
+        left behind. That after-signing check is the compare-and-swap a
+        shared head store generalizes across processes.
+        """
         if not writes:
             raise RepoError("apply_writes requires at least one write")
+        async with self._write_lock:
+            return await self._apply_writes_locked(writes)
+
+    async def _apply_writes_locked(self, writes: list[WriteOp]) -> CommitEvent:
         # validate against the ACCUMULATED batch state, not just the committed
         # state — two creates for one path in a batch is a protocol error
         pending = set(self._entries)
@@ -219,9 +306,11 @@ class Repo:
                 pending.discard(write.path)
             else:
                 raise RepoError(f"unknown write action {write.action!r}")
-        return self._commit_now(writes)
+        return await self._commit_now(writes)
 
-    def _commit_now(self, writes: list[WriteOp]) -> CommitEvent:
+    async def _commit_now(self, writes: list[WriteOp]) -> CommitEvent:
+        if self.signer is None:
+            raise RepoError(self._FROZEN)
         old_entries = dict(self._entries)
         old_mst_nodes = set(self._mst_nodes)
         since = self._commit.rev if self._commit else None
@@ -247,12 +336,24 @@ class Repo:
             ops.append(op)
 
         root = self.mst.build(new_entries)
-        commit = Commit.create(self.did, root, self.clock.now(), self.signing_key)
+        staged_nodes = self.mst.node_cids(root)  # before yielding: an import may GC them
+        try:
+            commit = await Commit.create(self.did, root, self.clock.now(), self.signer)
+            # the signer yielded; a sync import_car may have moved the head
+            # under this commit, and landing it would discard that state
+            if self._root != prev_data or (self._commit.rev if self._commit else None) != since:
+                raise RepoError(
+                    "the head moved while this commit was being signed (a checkpoint "
+                    "landed); nothing was committed, retry on the new head"
+                )
+        except BaseException:
+            self._drop_staged(staged_nodes, new_record_blocks)
+            raise
         commit_bytes = commit.to_dag_cbor()
         commit_cid = commit.cid()
         self.store.put(commit_cid, commit_bytes)
 
-        new_mst_nodes = self.mst.node_cids(root)
+        new_mst_nodes = staged_nodes
         self._entries = new_entries
         self._commit = commit
         self._commit_cid = commit_cid
@@ -292,6 +393,15 @@ class Repo:
             self._on_commit(event)  # durable head tracking (fires on genesis too)
         self._collect_garbage()
         return event
+
+    def _drop_staged(self, staged_nodes: set[CID], record_blocks: dict[CID, bytes]) -> None:
+        """A commit that will not land leaves no blocks behind: its new MST
+        nodes and record blocks go, except any the current head reaches."""
+        keep: set[CID] = set(self._mst_nodes) | set(self._entries.values())
+        if self._commit_cid is not None:
+            keep.add(self._commit_cid)
+        for cid in (staged_nodes | set(record_blocks)) - keep:
+            self.store.delete(cid)
 
     def _collect_garbage(self) -> None:
         reachable = {self.commit_cid} | self._mst_nodes | set(self._entries.values())
@@ -431,6 +541,12 @@ class Repo:
         ``_commit_now`` enforces, so a crash mid-import never leaves the
         pointer naming a deleted block (see ``Identity.import_repo_car``).
         """
+        if self.frozen and verify_key is None:
+            raise RepoError(
+                "a frozen repo takes only verified pushes: pass verify_key= (the owner's "
+                "public key). With no pen of its own, this host has no other way to know "
+                "the bytes are the owner's"
+            )
         commit, entries, blocks = self.read_car(data, verify_key)
         if commit.did != self.did:
             raise RepoError(f"CAR is for {commit.did}, not {self.did}")

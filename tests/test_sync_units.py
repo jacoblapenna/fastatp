@@ -33,8 +33,8 @@ async def _resolver(did):
     return DOC if did == DID else None
 
 
-def _server() -> PeerServer:
-    return PeerServer(Peer(did=DID, signing_key=KEY))
+async def _server() -> PeerServer:
+    return await PeerServer.create(Peer(did=DID, signing_key=KEY))
 
 
 def test_frame_round_trip_and_errors():
@@ -51,9 +51,9 @@ def test_frame_round_trip_and_errors():
 
 
 async def test_handle_frame_dispatch():
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
-    event = srv.put_record(Note.nsid, "one", Note(text="hello"))
+    event = await srv.put_record(Note.nsid, "one", Note(text="hello"))
     # checkpoint first, then a commit, then an ignorable info frame
     sync = encode_frame(
         "#sync", sync_frame_body(DID, srv.seq, srv.repo.rev, srv.repo.export_car(), event.time)
@@ -61,7 +61,7 @@ async def test_handle_frame_dispatch():
     assert await mirror.handle_frame(sync) == []
     assert mirror.rev == srv.repo.rev
 
-    event2 = srv.put_record(Note.nsid, "two", Note(text="again"))
+    event2 = await srv.put_record(Note.nsid, "two", Note(text="again"))
     commit_frame = encode_frame("#commit", commit_frame_body(DID, srv.seq, event2))
     records = await mirror.handle_frame(commit_frame)
     assert records[0]["record"]["text"] == "again"
@@ -73,12 +73,12 @@ async def test_handle_frame_dispatch():
 
 
 async def test_mirror_gap_and_did_checks():
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
-    e1 = srv.put_record(Note.nsid, "a", Note(text="1"))
+    e1 = await srv.put_record(Note.nsid, "a", Note(text="1"))
     await mirror.apply_commit(commit_frame_body(DID, 1, e1))
-    _e2 = srv.put_record(Note.nsid, "b", Note(text="2"))
-    e3 = srv.put_record(Note.nsid, "c", Note(text="3"))
+    _e2 = await srv.put_record(Note.nsid, "b", Note(text="2"))
+    e3 = await srv.put_record(Note.nsid, "c", Note(text="3"))
     # skipping e2 is a gap: since doesn't match local rev
     with pytest.raises(RepoError, match="gap"):
         await mirror.apply_commit(commit_frame_body(DID, 3, e3))
@@ -103,17 +103,17 @@ async def test_mirror_gap_and_did_checks():
 async def test_mirror_did_key_producer():
     key = crypto.generate_keypair("p256")
     did = crypto.encode_did_key(key.public_key())
-    srv = PeerServer(Peer(did=did, signing_key=key))
+    srv = await PeerServer.create(Peer(did=did, signing_key=key))
     mirror = RepoMirror(did)  # did:key needs no resolver
-    event = srv.put_record(Note.nsid, "k", Note(text="selfcert"))
+    event = await srv.put_record(Note.nsid, "k", Note(text="selfcert"))
     records = await mirror.apply_commit(commit_frame_body(did, 1, event))
     assert records[0]["record"]["text"] == "selfcert"
 
 
 async def test_mirror_rev_mismatch_rejected():
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
-    event = srv.put_record(Note.nsid, "a", Note(text="1"))
+    event = await srv.put_record(Note.nsid, "a", Note(text="1"))
     body = commit_frame_body(DID, 1, event)
     body["rev"] = "3jzfcijpj2z2a"
     with pytest.raises(RepoError, match="rev"):
@@ -156,17 +156,17 @@ async def test_mirror_multi_method_and_rotation_semantics():
     async def resolver(d):
         return docs["current"] if d == did else None
 
-    srv = PeerServer(Peer(did=did, signing_key=signing))
+    srv = await PeerServer.create(Peer(did=did, signing_key=signing))
     mirror = RepoMirror(did, resolver=resolver)
-    e1 = srv.put_record(Note.nsid, "a", Note(text="1"))
+    e1 = await srv.put_record(Note.nsid, "a", Note(text="1"))
     assert await mirror.apply_commit(commit_frame_body(did, 1, e1))
 
     # rotation: the document now lists a NEW signing key; commits from the
     # new key verify without any mirror state reset (no pinned cache)
     new_key = crypto.generate_keypair("k256")
     docs["current"] = build_did_document(did=did, signing_key=new_key.public_key())
-    srv2 = PeerServer(Peer(did=did, signing_key=new_key))
-    e2 = srv2.put_record(Note.nsid, "a", Note(text="rotated"))
+    srv2 = await PeerServer.create(Peer(did=did, signing_key=new_key))
+    e2 = await srv2.put_record(Note.nsid, "a", Note(text="rotated"))
     fresh = RepoMirror(did, resolver=resolver)
     assert await fresh.apply_commit(commit_frame_body(did, 1, e2))
 
@@ -177,21 +177,21 @@ async def test_mirror_multi_method_and_rotation_semantics():
         signing_key=rot.public_key(),
         rotation_keys=[crypto.encode_did_key(rot.public_key())],
     )
-    srv3 = PeerServer(Peer(did=did, signing_key=rot))
-    e3 = srv3.put_record(Note.nsid, "a", Note(text="evil"))
+    srv3 = await PeerServer.create(Peer(did=did, signing_key=rot))
+    e3 = await srv3.put_record(Note.nsid, "a", Note(text="evil"))
     with pytest.raises(RepoError, match="rotation"):
         await RepoMirror(did, resolver=resolver).apply_commit(commit_frame_body(did, 1, e3))
 
 
 async def test_malformed_frame_bodies_raise_repo_error():
     """Missing frame/op fields surface as RepoError, never bare KeyError."""
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
     with pytest.raises(RepoError, match="blocks"):
         await mirror.apply_sync({"seq": 1})
     with pytest.raises(RepoError, match="blocks"):
         await mirror.apply_commit({"seq": 1})
-    event = srv.put_record(Note.nsid, "kf", Note(text="x"))
+    event = await srv.put_record(Note.nsid, "kf", Note(text="x"))
     body = commit_frame_body(DID, 1, event)
     del body["commit"]
     with pytest.raises(RepoError, match="commit"):
@@ -205,13 +205,13 @@ async def test_malformed_frame_bodies_raise_repo_error():
 async def test_failed_commit_leaves_store_untouched():
     """A commit whose ops don't reproduce the signed root must not grow the
     mirror's block store (no junk from repeated bad events)."""
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
-    e1 = srv.put_record(Note.nsid, "a", Note(text="1"))
+    e1 = await srv.put_record(Note.nsid, "a", Note(text="1"))
     await mirror.apply_commit(commit_frame_body(DID, 1, e1))
     size_before = len(mirror.store)
 
-    e2 = srv.put_record(Note.nsid, "b", Note(text="2"))
+    e2 = await srv.put_record(Note.nsid, "b", Note(text="2"))
     body = commit_frame_body(DID, 2, e2)
     # lie about the op path: entries map diverges from the signed root
     body["ops"][0]["path"] = f"{Note.nsid}/liar"
@@ -228,9 +228,9 @@ async def test_invalid_op_path_and_bad_block_raise_repo_error():
     from fastatp.cid import CID
     from fastatp.repo.car import encode_car
 
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
-    event = srv.put_record(Note.nsid, "p", Note(text="x"))
+    event = await srv.put_record(Note.nsid, "p", Note(text="x"))
 
     body = commit_frame_body(DID, 1, event)
     body["ops"] = [dict(body["ops"][0], path="not-a-valid-mst-key")]
@@ -253,11 +253,11 @@ async def test_invalid_op_path_and_bad_block_raise_repo_error():
 
 async def test_mirror_store_prunes_superseded_blocks():
     """Sustained update churn must not grow the mirror's block store."""
-    srv = _server()
+    srv = await _server()
     mirror = RepoMirror(DID, resolver=_resolver)
     sizes = []
     for i, seq in zip(range(30), range(1, 31), strict=True):
-        event = srv.put_record(Note.nsid, "hot", Note(text=f"v{i}"))
+        event = await srv.put_record(Note.nsid, "hot", Note(text=f"v{i}"))
         await mirror.apply_commit(commit_frame_body(DID, seq, event))
         sizes.append(len(mirror.store))
     assert max(sizes) <= sizes[0] + 1  # steady, not linear in updates
@@ -293,12 +293,12 @@ async def test_slow_consumer_evicted_with_bounded_queue():
     growing server memory without bound."""
     import asyncio
 
-    srv = _server()
+    srv = await _server()
     q: asyncio.Queue = asyncio.Queue(maxsize=2)
     q.put_nowait((1, b"x"))
     q.put_nowait((2, b"y"))
     srv._queues.add(q)
-    srv.put_record(Note.nsid, "overflow", Note(text="z"))
+    await srv.put_record(Note.nsid, "overflow", Note(text="z"))
     assert q not in srv._queues  # evicted
     items = []
     while not q.empty():
@@ -309,9 +309,9 @@ async def test_slow_consumer_evicted_with_bounded_queue():
 async def test_checkpoint_seq_captured_before_send():
     """A commit emitted concurrently with the checkpoint send must still be
     delivered: _catch_up returns the seq the frame was built at."""
-    srv = _server()
+    srv = await _server()
     for i in range(4):
-        srv.put_record(Note.nsid, f"r{i}", Note(text=str(i)))
+        await srv.put_record(Note.nsid, f"r{i}", Note(text=str(i)))
 
     sent = []
 
@@ -319,7 +319,7 @@ async def test_checkpoint_seq_captured_before_send():
         async def send_bytes(self, data):
             sent.append(data)
             if len(sent) == 2:  # during the #sync frame send, a commit lands
-                srv.put_record(Note.nsid, "concurrent", Note(text="raced"))
+                await srv.put_record(Note.nsid, "concurrent", Note(text="raced"))
 
         async def close(self):
             pass

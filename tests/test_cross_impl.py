@@ -82,11 +82,11 @@ async def test_tampered_rust_proof_is_refused_by_python(cross_bin, tmp_path):
         await Peer().verify(bytes(proof), expected_signer=manifest["did"])
 
 
-def test_rust_repo_car_imports_into_python(cross_bin, tmp_path):
+async def test_rust_repo_car_imports_into_python(cross_bin, tmp_path):
     manifest = _rust_artifacts(cross_bin, tmp_path)
     verify_key = crypto.decode_multikey(manifest["multikey"])
 
-    target = Repo(manifest["did"], crypto.generate_keypair("k256"))
+    target = await Repo.create(manifest["did"], crypto.generate_keypair("k256"))
     target.import_car((tmp_path / "repo.car").read_bytes(), verify_key=verify_key)
     record = target.get_record(CrossNote.nsid, "note-1")
     assert record is not None and record["text"] == "from rust"
@@ -96,19 +96,21 @@ def test_rust_repo_car_imports_into_python(cross_bin, tmp_path):
 # --- direction 2: Python bytes verified by Rust ---------------------------------
 
 
-def _python_repo(curve: str = "k256") -> tuple[Repo, str, str]:
+async def _python_repo(curve: str = "k256") -> tuple[Repo, str, str]:
     key = crypto.generate_keypair(curve)
     did = crypto.encode_did_key(key.public_key())
-    repo = Repo(did, key)
+    repo = await Repo.create(did, key)
     for i in range(4):
-        repo.put_record("com.example.filler", f"fill-{i}", {"$type": "com.example.filler", "n": i})
-    repo.put_record(CrossNote.nsid, "note-1", CrossNote(text="from python", n=11))
+        await repo.put_record(
+            "com.example.filler", f"fill-{i}", {"$type": "com.example.filler", "n": i}
+        )
+    await repo.put_record(CrossNote.nsid, "note-1", CrossNote(text="from python", n=11))
     return repo, did, crypto.encode_multikey(key.public_key())
 
 
 @pytest.mark.parametrize("curve", ["k256", "p256"])
-def test_python_proof_verifies_under_rust(cross_bin, tmp_path, curve):
-    repo, did, _multikey = _python_repo(curve)
+async def test_python_proof_verifies_under_rust(cross_bin, tmp_path, curve):
+    repo, did, _multikey = await _python_repo(curve)
     proof_path = tmp_path / "py-proof.car"
     proof_path.write_bytes(repo.prove(CrossNote.nsid, "note-1"))
 
@@ -120,8 +122,8 @@ def test_python_proof_verifies_under_rust(cross_bin, tmp_path, curve):
     assert report["record"]["text"] == "from python" and report["record"]["n"] == 11
 
 
-def test_tampered_python_proof_is_refused_by_rust(cross_bin, tmp_path):
-    repo, did, _multikey = _python_repo()
+async def test_tampered_python_proof_is_refused_by_rust(cross_bin, tmp_path):
+    repo, did, _multikey = await _python_repo()
     proof = bytearray(repo.prove(CrossNote.nsid, "note-1"))
     proof[-1] ^= 0x01
     proof_path = tmp_path / "tampered.car"
@@ -132,8 +134,8 @@ def test_tampered_python_proof_is_refused_by_rust(cross_bin, tmp_path):
     assert "refused" in result.stderr or "fastatp-cross" in result.stderr
 
 
-def test_wrong_key_is_refused_by_rust(cross_bin, tmp_path):
-    repo, _did, _multikey = _python_repo()
+async def test_wrong_key_is_refused_by_rust(cross_bin, tmp_path):
+    repo, _did, _multikey = await _python_repo()
     proof_path = tmp_path / "py-proof.car"
     proof_path.write_bytes(repo.prove(CrossNote.nsid, "note-1"))
     stranger = crypto.encode_did_key(crypto.generate_keypair("k256").public_key())
@@ -142,8 +144,8 @@ def test_wrong_key_is_refused_by_rust(cross_bin, tmp_path):
     assert result.returncode != 0
 
 
-def test_python_repo_car_imports_into_rust(cross_bin, tmp_path):
-    repo, did, _multikey = _python_repo()
+async def test_python_repo_car_imports_into_rust(cross_bin, tmp_path):
+    repo, did, _multikey = await _python_repo()
     car_path = tmp_path / "py-repo.car"
     car_path.write_bytes(repo.export_car())
 

@@ -141,13 +141,13 @@ async def main() -> None:
     uv_t, tt = await _serve(doc_t, port_t, sock_t)
     resolver = WebResolver()
 
-    agent_srv = PeerServer(Peer(did=did_agent, signing_key=sk_a))
+    agent_srv = await PeerServer.create(Peer(did=did_agent, signing_key=sk_a))
     agent_if = MemoryWireGuardInterface()
     agent = PeerApp(
         agent_srv, WireGuardReconciler(agent_srv, agent_if, resolver), resolver=resolver
     )
 
-    tool_srv = PeerServer(Peer(did=did_tool, signing_key=sk_t))
+    tool_srv = await PeerServer.create(Peer(did=did_tool, signing_key=sk_t))
     tool_if = MemoryWireGuardInterface()
     tool = PeerApp(tool_srv, WireGuardReconciler(tool_srv, tool_if, resolver), resolver=resolver)
 
@@ -155,9 +155,9 @@ async def main() -> None:
     @tool.on(InspectionRequest)
     async def inspect(req: InspectionRequest, ctx) -> None:
         ack = InspectionAck(context_id=req.context_id, at=now())
-        tool.emit(InspectionAck.nsid, generate_tid(), ack)
+        await tool.emit(InspectionAck.nsid, generate_tid(), ack)
         await asyncio.sleep(0.05)  # "the work"
-        tool.emit(
+        await tool.emit(
             InspectionResult.nsid,
             generate_tid(),
             InspectionResult(context_id=req.context_id, finding=f"{req.asset}: nominal"),

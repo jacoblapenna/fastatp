@@ -179,14 +179,14 @@ async def two_apps():
 
     agent = _Peer()
     agent.did, agent.wg = did_a, wg_a
-    agent.server = PeerServer(Peer(did=did_a, signing_key=sk_a))
+    agent.server = await PeerServer.create(Peer(did=did_a, signing_key=sk_a))
     agent.iface = MemoryWireGuardInterface()
     agent.recon = WireGuardReconciler(agent.server, agent.iface, resolver)
     agent.app = PeerApp(agent.server, agent.recon, resolver=resolver)
 
     tool = _Peer()
     tool.did, tool.wg = did_b, wg_b
-    tool.server = PeerServer(Peer(did=did_b, signing_key=sk_b))
+    tool.server = await PeerServer.create(Peer(did=did_b, signing_key=sk_b))
     tool.iface = MemoryWireGuardInterface()
     tool.recon = WireGuardReconciler(tool.server, tool.iface, resolver)
     tool.app = PeerApp(tool.server, tool.recon, resolver=resolver)
@@ -205,10 +205,10 @@ def _src(producer_peer, follower_peer) -> GatedInProcessSource:
     return GatedInProcessSource(producer_peer.server, producer_peer.iface, follower_peer.wg)
 
 
-def _solo_app() -> PeerApp:
+async def _solo_app() -> PeerApp:
     """A standalone app with no reconciler, for error-branch unit tests."""
     peer = Peer(did="did:web:solo.example", signing_key=crypto.generate_keypair("k256"))
-    return PeerApp(PeerServer(peer))
+    return PeerApp(await PeerServer.create(peer))
 
 
 # --- tests --------------------------------------------------------------------
@@ -227,9 +227,11 @@ async def test_dispatch_by_type_and_unknown_ignored(two_apps):
     await asyncio.sleep(0.02)
 
     cid = generate_tid()
-    agent.app.emit(QuoteRequest.nsid, "r1", QuoteRequest(context_id=cid, pair="EURUSD"))
+    await agent.app.emit(QuoteRequest.nsid, "r1", QuoteRequest(context_id=cid, pair="EURUSD"))
     # an unregistered $type on the same firehose must be ignored, not error
-    agent.app.emit(Noise.nsid, "n1", Noise(context_id=generate_tid(), at="2026-07-02T12:00:00Z"))
+    await agent.app.emit(
+        Noise.nsid, "n1", Noise(context_id=generate_tid(), at="2026-07-02T12:00:00Z")
+    )
     await asyncio.sleep(0.1)
 
     assert seen == [("EURUSD", agent.did, cid)]
@@ -240,7 +242,9 @@ async def test_call_correlates_reply(two_apps):
 
     @tool.app.on(QuoteRequest, admit_issuer=True)
     async def price(req: QuoteRequest, ctx: Envelope) -> None:
-        tool.app.emit(Quote.nsid, generate_tid(), Quote(context_id=req.context_id, price="1.09"))
+        await tool.app.emit(
+            Quote.nsid, generate_tid(), Quote(context_id=req.context_id, price="1.09")
+        )
 
     # mutual admission + the tool follows the agent to receive requests
     await agent.app.admit(tool.did)
@@ -287,7 +291,7 @@ async def test_admit_evict_toggles_delivery(two_apps):
     await agent.app.admit(tool.did)
     await tool.app.follow(agent.did, source=_src(agent, tool))
     await asyncio.sleep(0.02)
-    agent.app.emit(
+    await agent.app.emit(
         QuoteRequest.nsid, "live", QuoteRequest(context_id=generate_tid(), pair="DURING")
     )
     await asyncio.sleep(0.1)
@@ -295,7 +299,9 @@ async def test_admit_evict_toggles_delivery(two_apps):
 
     # evict -> gate closes -> new records never arrive
     await agent.app.evict(tool.did)
-    agent.app.emit(QuoteRequest.nsid, "post", QuoteRequest(context_id=generate_tid(), pair="AFTER"))
+    await agent.app.emit(
+        QuoteRequest.nsid, "post", QuoteRequest(context_id=generate_tid(), pair="AFTER")
+    )
     await asyncio.sleep(0.1)
     assert seen == ["DURING"]
 
@@ -312,7 +318,9 @@ async def test_idempotent_redelivery(two_apps):
     await tool.app.follow(agent.did, source=_src(agent, tool))
     await asyncio.sleep(0.02)
 
-    agent.app.emit(QuoteRequest.nsid, "once", QuoteRequest(context_id=generate_tid(), pair="X"))
+    await agent.app.emit(
+        QuoteRequest.nsid, "once", QuoteRequest(context_id=generate_tid(), pair="X")
+    )
     await asyncio.sleep(0.1)
     assert len(fired) == 1
 
@@ -343,7 +351,9 @@ async def test_multi_app_per_process_isolation(two_apps):
     await tool.app.follow(agent.did, source=_src(agent, tool))
     await asyncio.sleep(0.02)
 
-    agent.app.emit(QuoteRequest.nsid, "r", QuoteRequest(context_id=generate_tid(), pair="ONLY_B"))
+    await agent.app.emit(
+        QuoteRequest.nsid, "r", QuoteRequest(context_id=generate_tid(), pair="ONLY_B")
+    )
     await asyncio.sleep(0.1)
     assert b_seen == ["ONLY_B"]
     assert a_seen == []  # agent.app never followed itself
@@ -366,8 +376,12 @@ async def test_slow_handler_does_not_stall_ingestion(two_apps):
     await tool.app.follow(agent.did, source=_src(agent, tool))
     await asyncio.sleep(0.02)
 
-    agent.app.emit(QuoteRequest.nsid, "s", QuoteRequest(context_id=generate_tid(), pair="SLOW"))
-    agent.app.emit(QuoteRequest.nsid, "f", QuoteRequest(context_id=generate_tid(), pair="FAST"))
+    await agent.app.emit(
+        QuoteRequest.nsid, "s", QuoteRequest(context_id=generate_tid(), pair="SLOW")
+    )
+    await agent.app.emit(
+        QuoteRequest.nsid, "f", QuoteRequest(context_id=generate_tid(), pair="FAST")
+    )
     await asyncio.sleep(0.1)
     # FAST ran even though SLOW is still blocked -> ingestion wasn't stalled
     assert "SLOW" in started and "FAST" in started
@@ -383,7 +397,7 @@ async def test_publish_schemas_only_advertised(two_apps):
     @tool.app.on(Noise)  # advertise defaults False
     async def private(req: Noise, ctx: Envelope) -> None: ...
 
-    published = tool.app.publish_schemas()
+    published = await tool.app.publish_schemas()
     ids = {doc["id"] for doc in published}
     assert ids == {QuoteRequest.nsid}  # only the advertised lexicon
     assert tool.server.repo.record_count("com.atproto.lexicon.schema") == 1
@@ -392,11 +406,13 @@ async def test_publish_schemas_only_advertised(two_apps):
 # --- focused unit coverage: error branches, ordering, transport helper --------
 
 
-def test_on_requires_nsid():
+async def test_on_requires_nsid():
     from fastatp import Peer, PeerApp, PeerServer, crypto
 
     app = PeerApp(
-        PeerServer(Peer(did="did:web:x.example", signing_key=crypto.generate_keypair("k256")))
+        await PeerServer.create(
+            Peer(did="did:web:x.example", signing_key=crypto.generate_keypair("k256"))
+        )
     )
 
     class NoNsid(Lexicon):
@@ -412,7 +428,9 @@ async def test_admit_evict_and_follow_require_config():
     from fastatp import Peer, PeerApp, PeerServer, crypto
 
     app = PeerApp(
-        PeerServer(Peer(did="did:web:x.example", signing_key=crypto.generate_keypair("k256")))
+        await PeerServer.create(
+            Peer(did="did:web:x.example", signing_key=crypto.generate_keypair("k256"))
+        )
     )
     with pytest.raises(ValueError, match="reconciler"):
         await app.admit("did:web:y.example")
@@ -458,8 +476,12 @@ async def test_ordered_handler_preserves_commit_order(two_apps):
     await agent.app.admit(tool.did)
     await tool.app.follow(agent.did, source=_src(agent, tool))
     await asyncio.sleep(0.02)
-    agent.app.emit(QuoteRequest.nsid, "a", QuoteRequest(context_id=generate_tid(), pair="FIRST"))
-    agent.app.emit(QuoteRequest.nsid, "b", QuoteRequest(context_id=generate_tid(), pair="SECOND"))
+    await agent.app.emit(
+        QuoteRequest.nsid, "a", QuoteRequest(context_id=generate_tid(), pair="FIRST")
+    )
+    await agent.app.emit(
+        QuoteRequest.nsid, "b", QuoteRequest(context_id=generate_tid(), pair="SECOND")
+    )
     await asyncio.sleep(0.2)
     assert order == ["FIRST", "SECOND"]  # ordered: slow FIRST still lands before SECOND
 
@@ -469,17 +491,19 @@ async def test_unfollow_unknown_is_noop(two_apps):
     await tool.app.unfollow("did:web:never-followed.example")  # no raise
 
 
-def test_publish_schemas_empty_when_none_advertised():
+async def test_publish_schemas_empty_when_none_advertised():
     from fastatp import Peer, PeerApp, PeerServer, crypto
 
     app = PeerApp(
-        PeerServer(Peer(did="did:web:x.example", signing_key=crypto.generate_keypair("k256")))
+        await PeerServer.create(
+            Peer(did="did:web:x.example", signing_key=crypto.generate_keypair("k256"))
+        )
     )
 
     @app.on(Quote)
     async def h(r, c): ...
 
-    assert app.publish_schemas() == []
+    assert await app.publish_schemas() == []
 
 
 # --- push intake (documentless requester posts to a board) -----------
@@ -511,9 +535,9 @@ async def test_push_intake_documentless_requester(two_apps):
     # a fully ephemeral requester: keypair + in-memory repo, no hosted infra
     req_key = crypto.generate_keypair("k256")
     req_did = crypto.encode_did_key(req_key.public_key())
-    repo = Repo(req_did, req_key)
+    repo = await Repo.create(req_did, req_key)
     ctx = generate_tid()
-    repo.put_record(WantAd.nsid, "ad", WantAd(context_id=ctx, seeking="fx quotes"))
+    await repo.put_record(WantAd.nsid, "ad", WantAd(context_id=ctx, seeking="fx quotes"))
     proof = repo.prove(WantAd.nsid, "ad")
 
     transport = httpx.ASGITransport(app=board.server.app)
@@ -547,8 +571,8 @@ async def test_push_intake_rejects_bad_proof_and_policy(two_apps):
         # a valid proof that the policy rejects -> 403
         req_key = crypto.generate_keypair("k256")
         req_did = crypto.encode_did_key(req_key.public_key())
-        repo = Repo(req_did, req_key)
-        repo.put_record(WantAd.nsid, "ad", WantAd(context_id=generate_tid(), seeking="x"))
+        repo = await Repo.create(req_did, req_key)
+        await repo.put_record(WantAd.nsid, "ad", WantAd(context_id=generate_tid(), seeking="x"))
         proof = repo.prove(WantAd.nsid, "ad")
         rejected = await client.post(PUSH_INTAKE_PATH, content=proof)
         assert rejected.status_code == 403

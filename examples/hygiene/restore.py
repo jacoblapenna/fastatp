@@ -1,6 +1,6 @@
 """Restore a ``backup.py`` snapshot into a state dir — refusing the footgun.
 
-The footgun: ``Identity.bootstrap()`` decides "does this identity exist?" by
+The footgun: ``await Identity.bootstrap()`` decides "does this identity exist?" by
 the presence of ``identity.json``. Point a peer at an incompletely restored
 state dir and bootstrap does not error — it silently mints a brand-new
 identity (new keys, new genesis, new twin) under your durable domain, which
@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import shutil
 import sys
@@ -39,7 +40,7 @@ def copy_secret(src: Path, dst: Path) -> None:
         os.close(fd)
 
 
-def main() -> None:
+async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--backup", required=True, help="snapshot dir produced by backup.py")
     ap.add_argument("--state", required=True, help="state dir to restore into")
@@ -86,9 +87,9 @@ def main() -> None:
 
     # the real test: load it. _load fail-closes on a head that doesn't hash
     # or a tampered chain, so surviving this means the restore is coherent.
-    identity = Identity.bootstrap(state_dir=state)
+    identity = await Identity.bootstrap(state_dir=state)
     print(f"verified: {identity.did} loads from {state}")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

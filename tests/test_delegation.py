@@ -25,13 +25,15 @@ def _did_key() -> str:
     return crypto.encode_did_key(crypto.generate_keypair("p256").public_key())
 
 
-def _repo(did: str) -> Repo:
-    return Repo(did, crypto.generate_keypair("k256"))
+async def _repo(did: str) -> Repo:
+    return await Repo.create(did, crypto.generate_keypair("k256"))
 
 
-def _delegate(repo: Repo, issuer: str, subject: str, **kwargs) -> str:
+async def _delegate(repo: Repo, issuer: str, subject: str, **kwargs) -> str:
     rkey = generate_tid()
-    repo.put_record(Delegation.nsid, rkey, Delegation(issuer=issuer, subject=subject, **kwargs))
+    await repo.put_record(
+        Delegation.nsid, rkey, Delegation(issuer=issuer, subject=subject, **kwargs)
+    )
     return rkey
 
 
@@ -53,8 +55,8 @@ def test_delegation_exports_a_valid_lexicon_doc():
 
 async def test_direct_delegation_verifies():
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, pen)
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, pen)
     chain = await walk_delegation_chain(pen, ROOT, {ROOT: root_repo}.get)
     assert chain is not None
     assert [link.issuer for link in chain] == [ROOT]
@@ -63,9 +65,9 @@ async def test_direct_delegation_verifies():
 
 async def test_deep_chain_through_sub_did():
     pen1, pen2 = _did_key(), _did_key()
-    root_repo, pen1_repo = _repo(ROOT), _repo(pen1)
-    _delegate(root_repo, ROOT, pen1)
-    _delegate(pen1_repo, pen1, pen2)  # lateral: an already-delegated pen vouches
+    root_repo, pen1_repo = await _repo(ROOT), await _repo(pen1)
+    await _delegate(root_repo, ROOT, pen1)
+    await _delegate(pen1_repo, pen1, pen2)  # lateral: an already-delegated pen vouches
     source = {ROOT: root_repo, pen1: pen1_repo}.get
     chain = await walk_delegation_chain(pen2, ROOT, source)
     assert chain is not None
@@ -77,7 +79,7 @@ async def test_pen_that_is_the_root_needs_no_chain():
 
 
 async def test_absent_delegation_is_refused():
-    root_repo = _repo(ROOT)
+    root_repo = await _repo(ROOT)
     assert await walk_delegation_chain(_did_key(), ROOT, {ROOT: root_repo}.get) is None
 
 
@@ -88,21 +90,21 @@ async def test_deleting_a_link_severs_the_subtree():
     """Severing pen1 at the root refuses pen1 AND pen2 (delegated by pen1),
     with pen2's own record untouched — the 'log out everywhere else' shape."""
     pen1, pen2 = _did_key(), _did_key()
-    root_repo, pen1_repo = _repo(ROOT), _repo(pen1)
-    rkey = _delegate(root_repo, ROOT, pen1)
-    _delegate(pen1_repo, pen1, pen2)
+    root_repo, pen1_repo = await _repo(ROOT), await _repo(pen1)
+    rkey = await _delegate(root_repo, ROOT, pen1)
+    await _delegate(pen1_repo, pen1, pen2)
     source = {ROOT: root_repo, pen1: pen1_repo}.get
     assert await walk_delegation_chain(pen2, ROOT, source) is not None
 
-    root_repo.delete_record(Delegation.nsid, rkey)  # the revocation act
+    await root_repo.delete_record(Delegation.nsid, rkey)  # the revocation act
     assert await walk_delegation_chain(pen1, ROOT, source) is None
     assert await walk_delegation_chain(pen2, ROOT, source) is None
 
 
 async def test_expired_but_present_is_absent():
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(
+    root_repo = await _repo(ROOT)
+    await _delegate(
         root_repo,
         ROOT,
         pen,
@@ -114,9 +116,9 @@ async def test_expired_but_present_is_absent():
 
 async def test_supersession_newest_rkey_wins():
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, pen, note="old")
-    _delegate(root_repo, ROOT, pen, note="new")
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, pen, note="old")
+    await _delegate(root_repo, ROOT, pen, note="new")
     (_rkey, live) = live_delegations(root_repo)[pen]
     assert live.note == "new"
 
@@ -128,8 +130,8 @@ async def test_unresolvable_delegator_fails_closed():
     """pen1's repo is unreachable: pen2's chain cannot be walked — comms
     failure is authn failure."""
     pen1, pen2 = _did_key(), _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, pen1)
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, pen1)
     assert await walk_delegation_chain(pen2, ROOT, {ROOT: root_repo}.get) is None
 
 
@@ -137,8 +139,8 @@ async def test_a_repo_cannot_vouch_in_anothers_name():
     """A delegation whose issuer disagrees with the repo it lives in is
     ignored (confused-deputy guard)."""
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, "did:web:someone.else.example", pen)
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, "did:web:someone.else.example", pen)
     assert await walk_delegation_chain(pen, ROOT, {ROOT: root_repo}.get) is None
 
 
@@ -147,27 +149,27 @@ async def test_wrong_issuer_record_cannot_shadow_a_valid_delegation():
     valid delegation for the same pen: the issuer filter runs BEFORE
     supersession."""
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, pen)
-    _delegate(root_repo, "did:web:someone.else.example", pen)  # newer, foreign
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, pen)
+    await _delegate(root_repo, "did:web:someone.else.example", pen)  # newer, foreign
     assert await walk_delegation_chain(pen, ROOT, {ROOT: root_repo}.get) is not None
 
 
 async def test_cyclic_delegation_terminates_and_refuses():
     a, b = _did_key(), _did_key()
-    a_repo, b_repo = _repo(a), _repo(b)
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, a)
-    _delegate(a_repo, a, b)
-    _delegate(b_repo, b, a)  # cycle
+    a_repo, b_repo = await _repo(a), await _repo(b)
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, a)
+    await _delegate(a_repo, a, b)
+    await _delegate(b_repo, b, a)  # cycle
     source = {ROOT: root_repo, a: a_repo, b: b_repo}.get
     assert await walk_delegation_chain(_did_key(), ROOT, source) is None
 
 
 async def test_async_repo_source_is_supported():
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, pen)
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, pen)
 
     async def source(did):
         return root_repo if did == ROOT else None
@@ -183,8 +185,8 @@ async def test_counterparty_with_repo_access_verifies_and_stranger_is_refused():
     repo (public repo / admitted party) walks the chain; one whose access is
     refused fails closed. No freshness machinery exists to soften either."""
     pen = _did_key()
-    root_repo = _repo(ROOT)
-    _delegate(root_repo, ROOT, pen)
+    root_repo = await _repo(ROOT)
+    await _delegate(root_repo, ROOT, pen)
 
     def admitted_source(did):
         return root_repo if did == ROOT else None

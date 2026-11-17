@@ -132,8 +132,8 @@ async def test_live_prove_verify_over_web_resolver(live_server):
         msg: str
 
     host_did, _port = live_server
-    repo = Repo(f"{host_did}:dev", slug_key)
-    repo.put_record(Hello.nsid, "greeting", Hello(msg="hi"))
+    repo = await Repo.create(f"{host_did}:dev", slug_key)
+    await repo.put_record(Hello.nsid, "greeting", Hello(msg="hi"))
     proof = repo.prove(Hello.nsid, "greeting")
 
     resolver = WebResolver()

@@ -297,13 +297,13 @@ async def test_peer_error_paths():
         text: str
 
     with pytest.raises(ValueError):
-        Peer().create_repo()
+        await Peer().create_repo()
 
     key = crypto.generate_keypair("k256")
     did = "did:web:example.com"
     doc = build_did_document(did=did, signing_key=key.public_key())
-    repo = Repo(did, key)
-    repo.put_record(Note.nsid, "n1", Note(text="hello"))
+    repo = await Repo.create(did, key)
+    await repo.put_record(Note.nsid, "n1", Note(text="hello"))
     proof = repo.prove(Note.nsid, "n1")
 
     # resolver returns a raw dict -> coerced to DIDDocument
@@ -324,8 +324,8 @@ async def test_peer_error_paths():
     # unknown $type: record not in the registry
     from fastatp.exceptions import UnknownLexicon
 
-    raw = Repo(did, key)
-    raw.put_record(
+    raw = await Repo.create(did, key)
+    await raw.put_record(
         "com.example.test.unregisteredType",
         "x",
         {"$type": "com.example.test.unregisteredType", "v": 1},

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastatp.cid import CID
-from fastatp.crypto import PrivateKey, decode_did_key
+from fastatp.crypto import PrivateKey, Signer, as_signer, decode_did_key
 from fastatp.did.document import DIDDocument
 from fastatp.did.resolver import DIDResolver, chain, web_resolver
 from fastatp.exceptions import (
@@ -71,25 +71,27 @@ class Peer:
     def __init__(
         self,
         did: str | None = None,
-        signing_key: PrivateKey | None = None,
+        signing_key: PrivateKey | Signer | None = None,
         *,
         resolver: DIDResolver | None = None,
         authorize: AuthorizeHook | None = None,
     ) -> None:
         self.did = did
-        self.signing_key = signing_key
+        # a private key or any Signer (a TPM, an HSM, a secure element): the
+        # pen is a handle, and where it lives is a deployment property
+        self.signer: Signer | None = as_signer(signing_key) if signing_key is not None else None
         self.resolver: DIDResolver = resolver if resolver is not None else web_resolver
         self.authorize = authorize
 
     # --- producing ------------------------------------------------------------
 
-    def create_repo(self, store: Any = None) -> Any:
+    async def create_repo(self, store: Any = None) -> Any:
         """A signed present-state repo for this peer's DID."""
         from fastatp.repo.repo import Repo
 
-        if self.did is None or self.signing_key is None:
+        if self.did is None or self.signer is None:
             raise ValueError("a repo requires this Peer to have a did and a signing_key")
-        return Repo(self.did, self.signing_key, store=store)
+        return await Repo.create(self.did, self.signer, store=store)
 
     # --- verification ---------------------------------------------------------
 

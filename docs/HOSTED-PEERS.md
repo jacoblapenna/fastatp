@@ -55,7 +55,10 @@ arrives through the browser knock anyway, which needs no global map.
 A "login system" fuses three things FastATP keeps apart:
 
 1. **The pen** — the private signing key. The only true secret. Never leaves
-   the device it was minted on, in any form.
+   the device it was minted on, in any form. The strongest form of that is a
+   pen that cannot leave even if asked: a key minted inside a TPM, a secure
+   element or a YubiKey, which signs on request and never shows its bytes
+   (see [Hardware-held pens](#hardware-held-pens)).
 2. **The phone book entry** — the DID document. Public. Hosting it grants no
    power: under the twin/chain, a host cannot forge a rotation; it
    can only go stale or dark (availability, not impersonation).
@@ -264,21 +267,125 @@ sovereign admission policy — edge business logic, never substrate.
   The host answers "which pen writes this repo" either from the head commit
   (`True`) or from its own knowledge of the identity's chain head (a rule),
   which is what admits a freshly rotated pen before it has pushed.
-- Hosted repos whose pen lives on another peer are **read-only on the
-  host**. Today the host's `Repo` object still carries whatever key it was
-  built with, and nothing in the process stops a write; what stops the host
-  forging is that readers that verify against the identity's real pen
-  reject it (`restore` with a verify key, a mirror, the next push's
-  `verify_key`), and a reader that skips verification has trusted the host
-  by choice. The planned external-signer work
-  makes this mechanical: a repo can be opened **frozen** (no pen on this
-  host, every write raises), and an `owner_pull` registration will require
-  it, so a host serving a repo to its pen can never hold a pen for it.
+- Hosted repos whose pen lives on another peer are **frozen on the host**:
+  opened with no pen (`Repo(did, None, ...)`), every commit raises, and the
+  only way state changes is a push the host verifies against the owner's
+  key and re-hosts (`import_car`, then `handle.emit_sync()` so subscribers
+  see the new head). An `owner_pull` registration requires a frozen repo,
+  so a host serving a repo to its pen can never hold a pen for it.
+
+  Be clear about what that does and does not protect. Anyone with write
+  access to a repo's storage can write to it: a privileged user on the
+  host's disk, the operator of a PDS at Bluesky, a cloud database admin.
+  That has always been true, and atproto's answer has always been that
+  **authenticity is the consumer's to verify**: every commit is signed by
+  the identity's pen, so bytes nobody's pen signed fail at every reader
+  that checks (`restore` with a verify key, a mirror, the next push's
+  `verify_key`), and a reader that skips the check has trusted the host by
+  choice. That is atproto, not FastATP. What FastATP adds is that the same
+  rule is enforced *in the host's own code*: a peer without the repo's pen
+  cannot commit to it, so there is no code path on the host that produces
+  a commit the owner did not sign, and the frozen rule is checked at
+  registration rather than left to discipline.
 - Multi-device sync: a device reads the user's other repos the same way
   any peer does, admitted by capability record, with the firehose as the
   sync protocol. Its *own* repo it pulls as the owner.
 - Pairwise privacy = the isolation pattern: a conversation is
   a dedicated repo whose firehose admits exactly the counterpart.
+
+## Hardware-held pens
+
+The Python side has the same seam the browser does: the pen is a handle,
+and where it lives is a deployment property, not an architecture fork.
+`fastatp.Signer` is the protocol: a `public_key` and `async def sign(message)
+-> bytes`. `fastatp.SoftwareSigner` is the one implementation the package
+ships, holding a `cryptography` private key in memory, and it is what every
+`signing_key=` argument wraps a bare key in. `Peer(did, signing_key=...)`,
+`Repo.create(did, ...)` and `Commit.create(...)` take either, so the same
+code runs with a key in RAM or in a chip. The Rust core's `Signer` trait is
+the same shape, and the browser's WebCrypto signer is one of its
+implementations.
+
+What the package does for every signer, so adapters cannot get it wrong:
+
+- **Normalizes the wire form.** A device hands back whatever it has: DER
+  (PKCS#11, most HSMs, `cryptography` itself) or raw `r||s` (a TPM), low-S
+  or not. `normalize_signature` turns any of them into atproto's compact
+  64-byte low-S form in one place. Devices don't normalize, and every
+  atproto verifier rejects high-S, so leaving this to adapters would
+  guarantee interop bugs.
+- **Verifies before committing.** `sign_with` checks the normalized
+  signature against the signer's own public key, so a misbehaving device, a
+  wrong key handle or a wrong PIN fails at the write, with the repo
+  unchanged, not at a mirror hours later.
+- **Never blocks the peer.** `sign` is awaited. A TPM takes tens of
+  milliseconds per signature, and a peer that is also serving its firehose
+  keeps serving meanwhile. Awaiting is only half of that: a device library
+  with a blocking API (`tpm2-pytss`, PKCS#11) stalls the loop for as long as
+  it runs, so an adapter over one must offload the call, as the sketch below
+  does with `asyncio.to_thread`.
+
+Curves are k256 and p256. TPM 2.0 parts, YubiKey PIV and most secure
+elements offer only P-256, so a hardware pen is usually a p256 `did:key`.
+
+The package ships no adapter: a TPM, PKCS#11 or HSM library is the app's
+dependency, never fastatp's (`AGENTS.md`: no new primitive dependency).
+An adapter is a few lines. For a TPM 2.0 through `tpm2-pytss`, the shape
+is:
+
+```python
+import asyncio
+import hashlib
+
+
+class TpmSigner:  # satisfies fastatp.Signer
+    def __init__(self, esys, handle, public_key):
+        self._esys, self._handle = esys, handle  # the key never leaves the TPM
+        self._public_key = public_key  # cryptography EllipticCurvePublicKey
+
+    @property
+    def public_key(self):
+        return self._public_key
+
+    async def sign(self, message: bytes) -> bytes:
+        # the TPM call blocks for ~20-50 ms; run it off the event loop and
+        # hand back exactly what the device returned (raw r||s, any S)
+        return await asyncio.to_thread(self._sign_blocking, message)
+
+    def _sign_blocking(self, message: bytes) -> bytes:
+        digest = hashlib.sha256(message).digest()
+        sig = self._esys.sign(self._handle, digest, ...)  # ESYS_TR + TPMT_SIG_SCHEME
+        return sig.signature.ecdsa.signatureR.buffer + sig.signature.ecdsa.signatureS.buffer
+
+
+peer = Peer(did, signing_key=TpmSigner(esys, handle, public_key))
+repo = await Repo.create(did, peer.signer)
+```
+
+A YubiKey or an HSM is the same class with a PKCS#11 `C_Sign` in
+`_sign_blocking` (it returns DER; the package normalizes). A pen that wants a
+touch or a PIN per signature is a human-in-the-loop pen: right for an
+operator's identity, wrong for a device that commits unattended, and the
+adapter, not the package, decides how to prompt.
+
+What a hardware pen pairs with: a **frozen** copy of its repo on any host
+(see the runtime shape above). The device signs; hosts serve what it signed
+and can never commit. A device that boots fresh and starts a new repo each
+time, keeping the old one served until the backend has acknowledged it, is
+exactly this shape.
+
+A long-lived `did:web` on a hardware pen goes through `Identity` like any
+other: `await Identity.bootstrap(domain=..., state_dir=..., signer=pen)`
+on every boot. The first call mints the chain and the repo and records the
+pen as external with its public key; nothing secret is written. Every later
+call needs the signer again (the app re-opens its TPM handle, which it had
+to do anyway) and refuses a signer whose public key is not the recorded
+one. `await Identity.adopt_web(domain, pen, state_dir)` brings a `did:web`
+whose key is already in hardware, and `await identity.rotate(new_pen,
+rotation_key)` moves an identity onto a hardware pen or off one (the new
+pen is proven with a signature before anything is persisted). A device
+repo is simpler still: a
+`did:key` is its pen, so `Peer` plus `Repo` is the whole story.
 
 ## Two confidentiality tiers — apps must declare which
 

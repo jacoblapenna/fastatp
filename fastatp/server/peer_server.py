@@ -196,6 +196,15 @@ class _HostedRepo:
             )
         )
 
+    def emit_sync(self) -> None:
+        """Announce the current head as a ``#sync`` event: what a host does
+        after a push lands in a frozen repo through ``import_car``, which
+        commits nothing and so emits nothing by itself."""
+        rev, car = self.repo.rev, self.repo.commit_car()
+        self._emit_frame(
+            lambda seq: encode_frame("#sync", sync_frame_body(self.did, seq, rev, car, _now_iso()))
+        )
+
     def emit_identity(self, *, handle: str | None = None) -> None:
         self._emit_frame(
             lambda seq: encode_frame(
@@ -338,14 +347,14 @@ class RepoHandle:
     def expires_at(self) -> datetime | None:
         return self._host.expires_at
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._host.emit(self._host.repo.put_record(collection, rkey, record))
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+        return self._host.emit(await self._host.repo.put_record(collection, rkey, record))
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._host.emit(self._host.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+        return self._host.emit(await self._host.repo.delete_record(collection, rkey))
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._host.emit(self._host.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+        return self._host.emit(await self._host.repo.apply_writes(writes))
 
     def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
         """Re-announce this repo's hosting status (#account)."""
@@ -354,6 +363,11 @@ class RepoHandle:
     def emit_identity(self, *, handle: str | None = None) -> None:
         """Prod subscribers to refresh this DID's identity (#identity)."""
         self._host.emit_identity(handle=handle)
+
+    def emit_sync(self) -> None:
+        """Announce the head to subscribers after a push landed through
+        ``repo.import_car`` (which emits nothing by itself)."""
+        self._host.emit_sync()
 
     def expire(self) -> None:
         """Retire this repo now — the channel-owner's "TTL reached / done with
@@ -373,20 +387,23 @@ class PeerServer:
     def __init__(
         self,
         peer: Peer,
-        repo: Repo | None = None,
-        repo_store: BlockStore | None = None,
+        repo: Repo,
         backfill_window: int = 512,
         *,
         identity_resolver: CallerResolver | None = None,
         warn_on_proxy: bool = True,
         proxy_warn_threshold: int = 8,
     ) -> None:
-        if peer.did is None or peer.signing_key is None:
-            raise ValueError("PeerServer requires a Peer with a did and signing_key")
+        """Host ``repo`` as ``peer``'s public firehose. For a fresh repo use
+        ``await PeerServer.create(peer)``, which signs the genesis commit."""
+        if peer.did is None:
+            raise ValueError("PeerServer requires a Peer with a did")
+        if repo.did != peer.did:
+            raise ValueError(f"the primary repo is for {repo.did}, not this peer's {peer.did}")
         self.peer = peer
         self.backfill_window = backfill_window
         primary = _HostedRepo(
-            repo or Repo(peer.did, peer.signing_key, store=repo_store),
+            repo,
             backfill_window,
             public=True,  # the peer's own repo is its public firehose
         )
@@ -413,6 +430,18 @@ class PeerServer:
         )
 
     # --- multi-repo registry ---------------------------------------------------
+
+    @classmethod
+    async def create(
+        cls,
+        peer: Peer,
+        repo_store: BlockStore | None = None,
+        backfill_window: int = 512,
+        **kwargs: Any,
+    ) -> PeerServer:
+        """A server for ``peer`` over a fresh repo, its genesis signed by the
+        peer's signer. ``repo_store`` is where the repo's blocks go."""
+        return cls(peer, await peer.create_repo(store=repo_store), backfill_window, **kwargs)
 
     def register(
         self,
@@ -443,13 +472,21 @@ class PeerServer:
         the browser gate's signed knock); the capability rule applies to
         everyone else exactly as before.
 
-        Owner pull decides who *reads*. It does not stop this host writing:
-        the hosted ``repo`` still carries whatever key it was built with, and
-        what stops a host forging is that every reader verifies against the
-        identity's real pen, so a host-signed commit fails everywhere. The
-        planned frozen repo (no pen on this host, every write raises) makes
-        that mechanical, and an ``owner_pull`` registration will then require
-        a frozen repo: a host serving a repo to its pen never holds one.
+        Owner pull decides who *reads*; frozen decides that this host cannot
+        write. An ``owner_pull`` registration requires a frozen repo
+        (``Repo(did, None, ...)``, see :attr:`Repo.frozen`): a repo served to
+        its own pen is one whose pen lives elsewhere, and a host holding a
+        pen for it is the custody shape the philosophy forbids, so the
+        package says so at registration. The rule is one-way: a frozen repo
+        may be registered without owner pull (a public mirror), and a penned
+        repo without owner pull is this peer's own. Pushes land through
+        ``repo.import_car`` with the owner's key, and :meth:`RepoHandle.emit_sync`
+        announces the new head to subscribers.
+
+        What keeps a hosted repo honest is the owner's signature, verified
+        by every consumer, as on any atproto host; that is not FastATP's
+        rule but atproto's. Frozen makes the same rule hold inside this
+        host's code: with no pen there is no path here that makes a commit.
 
         A whole-repo TTL retires the repo automatically: pass ``ttl`` (seconds
         from now) or ``expires_at`` (an aware datetime). Past its expiry the
@@ -460,6 +497,11 @@ class PeerServer:
         """
         if repo.did in self._hosts:
             raise ValueError(f"already hosting a repo for {repo.did!r}")
+        if owner_pull and not repo.frozen:
+            raise ValueError(
+                f"owner_pull for {repo.did!r} needs a frozen repo (Repo(did, None, ...)): a "
+                "host serving a repo to its own pen never holds that pen"
+            )
         if ttl is not None and expires_at is not None:
             raise ValueError("pass ttl or expires_at, not both")
         if ttl is not None:
@@ -569,14 +611,14 @@ class PeerServer:
 
     # --- writes (broadcast on commit) ------------------------------------------
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._emit(self.repo.put_record(collection, rkey, record))
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+        return self._emit(await self.repo.put_record(collection, rkey, record))
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._emit(self.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+        return self._emit(await self.repo.delete_record(collection, rkey))
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._emit(self.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+        return self._emit(await self.repo.apply_writes(writes))
 
     def _emit(self, event: CommitEvent) -> CommitEvent:
         return self._primary.emit(event)
@@ -989,3 +1031,13 @@ class PeerServer:
         import uvicorn
 
         uvicorn.run(self.app, host=host, port=port, **kwargs)
+
+    async def serve(self, host: str = "127.0.0.1", port: int = 8001, **kwargs: Any) -> None:
+        """Serve on the running event loop; :meth:`run` starts its own.
+
+        The write path is async, so a program whose ``main`` awaits
+        ``Repo.create`` or ``Identity.bootstrap`` serves with this.
+        """
+        import uvicorn
+
+        await uvicorn.Server(uvicorn.Config(self.app, host=host, port=port, **kwargs)).serve()

@@ -23,14 +23,15 @@ ships primitives; builders compose them). It wires together:
     does not have.
 
 At no point does the builder hold a user secret or sign user content: hosted
-repos carry a throwaway local key that never signs (imports replace state
-wholesale), and reads are checkpoint CARs. A production router would also
-emit sync frames per import so firehose subscribers see updates live; this
-example keeps to checkpoint reads for clarity.
+repos are frozen (``Repo(did, None)``: no pen on this host, every write
+raises, imports replace state wholesale), and ``register(owner_pull=...)``
+refuses anything else. Reads are checkpoint CARs; each landed push is
+announced with ``handle.emit_sync()`` so firehose subscribers see it live.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from starlette.requests import Request
@@ -82,7 +83,7 @@ class ExampleBuilder:
             return None
 
 
-def make_builder(domain: str) -> ExampleBuilder:
+async def make_builder(domain: str) -> ExampleBuilder:
     chain_store: dict[str, dict] = {}
 
     async def resolver(slug: str) -> DIDDocument | None:
@@ -99,7 +100,9 @@ def make_builder(domain: str) -> ExampleBuilder:
 
     shelf = DIDServer(domain, resolver, chain_resolver=chain_resolver, shelf_store=shelf_store)
 
-    peers = PeerServer(Peer(did=f"did:web:{domain}", signing_key=crypto.generate_keypair("k256")))
+    peers = await PeerServer.create(
+        Peer(did=f"did:web:{domain}", signing_key=crypto.generate_keypair("k256"))
+    )
     gate = BrowserGate()
     gate.install(peers)
 
@@ -119,8 +122,7 @@ def make_builder(domain: str) -> ExampleBuilder:
         except KeyError:
             return JSONResponse({"error": "NotShelved"}, status_code=404)
         car = await request.body()
-        # throwaway local key: it never signs — imports replace state wholesale
-        repo = Repo(twin_did, crypto.generate_keypair("k256"))
+        repo = Repo(twin_did, None)  # frozen: this host never holds the pen
         try:
             repo.import_car(car, verify_key=key)
         except FastATPError as exc:
@@ -135,6 +137,7 @@ def make_builder(domain: str) -> ExampleBuilder:
             builder.handles[twin_did] = peers.register(repo, owner_pull=builder.owner_pen)
         except ValueError:
             return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
+        builder.handles[twin_did].emit_sync()  # the first state, announced like every later one
         return JSONResponse({"hosting": twin_did}, status_code=201)
 
     async def push_car(request: Request) -> Response:
@@ -156,7 +159,7 @@ def make_builder(domain: str) -> ExampleBuilder:
                 return JSONResponse({"error": "BadDid"}, status_code=400)
             handle = builder.handles.get(did)
             if handle is None:
-                repo = Repo(did, crypto.generate_keypair("k256"))  # throwaway, never signs
+                repo = Repo(did, None)  # frozen: the device keeps its pen
                 try:
                     repo.import_car(car, verify_key=key)
                 except FastATPError as exc:
@@ -165,6 +168,7 @@ def make_builder(domain: str) -> ExampleBuilder:
                     builder.handles[did] = peers.register(repo, owner_pull=True)
                 except ValueError:
                     return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
+                builder.handles[did].emit_sync()  # announce the first state too
                 return JSONResponse({"hosting": did}, status_code=201)
         else:
             handle = builder.handles.get(did)
@@ -183,6 +187,7 @@ def make_builder(domain: str) -> ExampleBuilder:
             return JSONResponse({"error": "Stale", "message": str(exc)}, status_code=409)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
+        handle.emit_sync()  # subscribers learn the new head
         return JSONResponse({"accepted": handle.repo.rev})
 
     peers.app.router.routes.append(Route("/signup", signup, methods=["POST"]))
@@ -190,12 +195,12 @@ def make_builder(domain: str) -> ExampleBuilder:
     return builder
 
 
-def main() -> None:  # pragma: no cover - runnable demo
+async def main() -> None:  # pragma: no cover - runnable demo
     import asyncio
 
     import uvicorn
 
-    builder = make_builder("shelf.example")
+    builder = await make_builder("shelf.example")
 
     async def serve() -> None:
         shelf = uvicorn.Server(uvicorn.Config(builder.shelf.app, port=8100, log_level="info"))
@@ -204,8 +209,8 @@ def main() -> None:  # pragma: no cover - runnable demo
         print("peers:  http://127.0.0.1:8101   (gated repos, browser gate, signup)")
         await asyncio.gather(shelf.serve(), peers.serve())
 
-    asyncio.run(serve())
+    await serve()
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    asyncio.run(main())

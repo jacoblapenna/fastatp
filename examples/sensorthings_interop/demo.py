@@ -23,6 +23,7 @@ the market above it defines the records.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ def _uri(did: str, collection: str, rkey: str) -> str:
     return f"at://{did}/{collection}/{rkey}"
 
 
-def build_station_repo(domain: str = "sensors.example.com") -> Repo:
+async def build_station_repo(domain: str = "sensors.example.com") -> Repo:
     """A FastATP repo holding one river-gauge station's SensorThings records."""
     pen = crypto.generate_keypair("k256")
     rotation = crypto.generate_keypair("k256")
@@ -48,7 +49,7 @@ def build_station_repo(domain: str = "sensors.example.com") -> Repo:
         [encode_did_key(rotation.public_key())],
         bind_pretty=False,  # a twin-only slug DID: the on-device sensor identity
     )
-    repo = Repo(did, pen)
+    repo = await Repo.create(did, pen)
 
     thing: dict[str, Any] = {
         "$type": f"{NS}.thing",
@@ -58,7 +59,7 @@ def build_station_repo(domain: str = "sensors.example.com") -> Repo:
         # #geoPoint: integer degrees*1e7 and millimetres (Dublin-ish)
         "location": {"latE7": 533_498_070, "lonE7": -62_603_100, "altMm": 12_000},
     }
-    repo.put_record(f"{NS}.thing", "station-1", thing)
+    await repo.put_record(f"{NS}.thing", "station-1", thing)
     thing_uri = _uri(did, f"{NS}.thing", "station-1")
 
     prop = {
@@ -66,10 +67,10 @@ def build_station_repo(domain: str = "sensors.example.com") -> Repo:
         "name": "Water Level",
         "definition": "http://vocab.example.org/waterLevel",
     }
-    repo.put_record(f"{NS}.observedProperty", "water-level", prop)
+    await repo.put_record(f"{NS}.observedProperty", "water-level", prop)
 
     sensor = {"$type": f"{NS}.sensor", "name": "Pressure transducer"}
-    repo.put_record(f"{NS}.sensor", "transducer-1", sensor)
+    await repo.put_record(f"{NS}.sensor", "transducer-1", sensor)
 
     datastream = {
         "$type": f"{NS}.datastream",
@@ -81,7 +82,7 @@ def build_station_repo(domain: str = "sensors.example.com") -> Repo:
         # scaled integers: real value = value * 10**-resultScaleFactor
         "resultScaleFactor": 3,
     }
-    repo.put_record(f"{NS}.datastream", "water-level-ds", datastream)
+    await repo.put_record(f"{NS}.datastream", "water-level-ds", datastream)
     ds_uri = _uri(did, f"{NS}.datastream", "water-level-ds")
 
     batch = {
@@ -94,7 +95,7 @@ def build_station_repo(domain: str = "sensors.example.com") -> Repo:
             {"t": "2026-07-15T10:30:00Z", "result": _numeric(1198)},
         ],
     }
-    repo.put_record(f"{NS}.observationBatch", "batch-1", batch)
+    await repo.put_record(f"{NS}.observationBatch", "batch-1", batch)
     return repo
 
 
@@ -102,10 +103,10 @@ def _numeric(value: int) -> dict[str, Any]:
     return {"$type": f"{NS}.result#numericResult", "value": value}
 
 
-def main(out_dir: str | Path = ".") -> dict[str, Any]:
+async def main(out_dir: str | Path = ".") -> dict[str, Any]:
     """Build, export, and flatten with the unmodified atproto-sensorthings."""
     out = Path(out_dir)
-    repo = build_station_repo()
+    repo = await build_station_repo()
     car_path = out / "station.car"
     car_path.write_bytes(repo.export_car())
 
@@ -130,4 +131,4 @@ def main(out_dir: str | Path = ".") -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
