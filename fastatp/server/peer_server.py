@@ -161,6 +161,7 @@ class _HostedRepo:
         self._backfill: list[tuple[int, bytes]] = []
         self._queues: set[asyncio.Queue[tuple[int, bytes]]] = set()
         self._announced = False
+        self._announce_lock = asyncio.Lock()
 
     @property
     def did(self) -> str:
@@ -173,12 +174,17 @@ class _HostedRepo:
     async def announce(self) -> None:
         """A host announces the account before its commits: relays ignore
         #commit/#sync events for accounts not known to be active (sync spec).
-        Once per hosting; every emit makes sure it happened."""
+        Once per hosting; every emit and every write makes sure it happened
+        first. Concurrent callers wait for the one announcement in flight,
+        and it counts as done only once both frames have landed."""
         if self._announced:
             return
-        self._announced = True
-        await self.emit_identity()
-        await self.emit_account(active=True)
+        async with self._announce_lock:
+            if self._announced:
+                return
+            await self._identity_frame(handle=None)
+            await self._account_frame(active=True, status=None)
+            self._announced = True
 
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
@@ -216,6 +222,9 @@ class _HostedRepo:
 
     async def emit_account(self, *, active: bool, status: str | None = None) -> None:
         await self.announce()
+        await self._account_frame(active=active, status=status)
+
+    async def _account_frame(self, *, active: bool, status: str | None) -> None:
         seq = await self.repo.advance_seq()
         body = account_frame_body(self.did, seq, _now_iso(), active=active, status=status)
         self._emit_frame(seq, encode_frame("#account", body))
@@ -233,6 +242,9 @@ class _HostedRepo:
 
     async def emit_identity(self, *, handle: str | None = None) -> None:
         await self.announce()
+        await self._identity_frame(handle=handle)
+
+    async def _identity_frame(self, *, handle: str | None) -> None:
         seq = await self.repo.advance_seq()
         body = identity_frame_body(self.did, seq, _now_iso(), handle=handle)
         self._emit_frame(seq, encode_frame("#identity", body))
@@ -407,12 +419,15 @@ class RepoHandle:
     async def put_record(
         self, collection: str, rkey: str, record: RecordLike
     ) -> CommitEvent | None:
+        await self._host.announce()  # before the commit takes its seq
         return await self._host.emit_if(await self._host.repo.put_record(collection, rkey, record))
 
     async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
+        await self._host.announce()
         return await self._host.emit_if(await self._host.repo.delete_record(collection, rkey))
 
     async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
+        await self._host.announce()
         return await self._host.emit_if(await self._host.repo.apply_writes(writes))
 
     async def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
@@ -627,9 +642,12 @@ class PeerServer:
 
     async def _retire(self, host: _HostedRepo) -> None:
         # tell still-connected subscribers the account is no longer hosted
-        # here before poisoning them (sync spec #account semantics)
-        await host.emit_account(active=False, status="deactivated")
-        host.close_subscribers()
+        # here before poisoning them (sync spec #account semantics); the repo
+        # is already unrouted, so they are poisoned whatever the frame does
+        try:
+            await host.emit_account(active=False, status="deactivated")
+        finally:
+            host.close_subscribers()
 
     def _resolve_host(self, did: str | None) -> _HostedRepo | None:
         """Route to a live host, reaping it lazily if its TTL has passed."""
@@ -698,12 +716,15 @@ class PeerServer:
     async def put_record(
         self, collection: str, rkey: str, record: RecordLike
     ) -> CommitEvent | None:
+        await self._primary.announce()  # before the commit takes its seq
         return await self._emit_if(await self.repo.put_record(collection, rkey, record))
 
     async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
+        await self._primary.announce()
         return await self._emit_if(await self.repo.delete_record(collection, rkey))
 
     async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
+        await self._primary.announce()
         return await self._emit_if(await self.repo.apply_writes(writes))
 
     async def _emit(self, event: CommitEvent) -> CommitEvent:

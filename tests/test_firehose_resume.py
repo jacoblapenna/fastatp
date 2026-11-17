@@ -11,6 +11,7 @@ from collections.abc import Awaitable
 from typing import cast
 from urllib.parse import urlencode
 
+import pytest
 import websockets
 
 from fastatp import Identity, Peer, PeerServer, Repo, crypto
@@ -134,3 +135,58 @@ async def test_a_state_dir_from_before_the_head_store_is_folded_in(tmp_path):
     event = await loaded.repo.put_record(NOTE, "m", {"$type": NOTE, "text": "more"})
     assert event is not None and event.seq == 1
     assert json.loads((sdir / "identity.json").read_text())["did"] == loaded.did
+
+
+# --- the announcement comes first, whatever else is happening -------------------
+
+
+def _kinds(srv: PeerServer) -> list[tuple[int, str]]:
+    return [(seq, decode_frame(frame)[0]["t"]) for seq, frame in srv._primary._backfill]
+
+
+async def test_the_sync_constructor_announces_before_its_first_write():
+    """``PeerServer(peer, repo)`` announces lazily; the first write must not
+    take its seq before the announcement does, or the commit sorts ahead of
+    #account and a relay drops it."""
+    key = crypto.generate_keypair("k256")
+    srv = PeerServer(Peer(did=DID, signing_key=key), await Repo.create(DID, key))
+    event = await srv.put_record(NOTE, "first", {"$type": NOTE, "text": "1"})
+    assert event is not None and event.seq == 3
+    assert _kinds(srv) == [(1, "#identity"), (2, "#account"), (3, "#commit")]
+
+
+async def test_concurrent_first_emits_wait_for_one_announcement():
+    """Two writes race on an unannounced host: one announcement, both commits
+    after it, nothing twice."""
+    key = crypto.generate_keypair("k256")
+    srv = PeerServer(Peer(did=DID, signing_key=key), await Repo.create(DID, key))
+    await asyncio.gather(
+        srv.put_record(NOTE, "a", {"$type": NOTE, "text": "a"}),
+        srv.put_record(NOTE, "b", {"$type": NOTE, "text": "b"}),
+        srv.emit_identity(handle="alice.example"),
+    )
+    kinds = _kinds(srv)
+    assert kinds[:2] == [(1, "#identity"), (2, "#account")]
+    assert sorted(kind for _seq, kind in kinds[2:]) == ["#commit", "#commit", "#identity"]
+    assert [kind for _seq, kind in kinds].count("#account") == 1
+
+
+async def test_retiring_a_repo_poisons_its_subscribers_even_if_the_frame_fails():
+    from fastatp.server.peer_server import _EVICTED
+
+    key = crypto.generate_keypair("k256")
+    srv = await PeerServer.create(Peer(did=DID, signing_key=key))
+    channel_key = crypto.generate_keypair("k256")
+    channel_did = crypto.encode_did_key(channel_key.public_key())
+    handle = await srv.register(await Repo.create(channel_did, channel_key))
+    queue: asyncio.Queue = asyncio.Queue()
+    srv._hosts[channel_did]._queues.add(queue)  # a live subscriber
+
+    async def no_seq():
+        raise OSError("the head store is gone")
+
+    handle.repo.advance_seq = no_seq  # type: ignore[method-assign]
+    with pytest.raises(OSError):
+        await srv.unregister(channel_did)
+    assert channel_did not in srv.hosts()
+    assert queue.get_nowait()[0] == _EVICTED  # not left hanging
