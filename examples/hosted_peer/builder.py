@@ -134,10 +134,12 @@ async def make_builder(domain: str) -> ExampleBuilder:
             # only one can register)
             # gated (the default) with owner pull: the chain head's pen, and
             # the identity through its delegations, read it back; nobody else
-            builder.handles[twin_did] = peers.register(repo, owner_pull=builder.owner_pen)
+            builder.handles[twin_did] = await peers.register(repo, owner_pull=builder.owner_pen)
         except ValueError:
             return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
-        builder.handles[twin_did].emit_sync()  # the first state, announced like every later one
+        await builder.handles[
+            twin_did
+        ].emit_sync()  # the first state, announced like every later one
         return JSONResponse({"hosting": twin_did}, status_code=201)
 
     async def push_car(request: Request) -> Response:
@@ -165,10 +167,10 @@ async def make_builder(domain: str) -> ExampleBuilder:
                 except FastATPError as exc:
                     return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
                 try:
-                    builder.handles[did] = peers.register(repo, owner_pull=True)
+                    builder.handles[did] = await peers.register(repo, owner_pull=True)
                 except ValueError:
                     return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
-                builder.handles[did].emit_sync()  # announce the first state too
+                await builder.handles[did].emit_sync()  # announce the first state too
                 return JSONResponse({"hosting": did}, status_code=201)
         else:
             handle = builder.handles.get(did)
@@ -187,7 +189,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
             return JSONResponse({"error": "Stale", "message": str(exc)}, status_code=409)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
-        handle.emit_sync()  # subscribers learn the new head
+        await handle.emit_sync()  # subscribers learn the new head
         return JSONResponse({"accepted": handle.repo.rev})
 
     peers.app.router.routes.append(Route("/signup", signup, methods=["POST"]))

@@ -109,7 +109,7 @@ async def _first_frame(port: int, did: str, kind: str):
 async def test_a_frozen_repo_is_served_public_and_refuses_writes_at_the_handle(serve_app):
     _key, penned = await _penned_repo(MemoryBlockStore())
     srv = await _host()
-    handle = srv.register(_frozen_copy(penned), public=True)
+    handle = await srv.register(_frozen_copy(penned), public=True)
 
     async with serve_app(srv.app) as port:
         got = await _get_repo(port, DID)
@@ -140,7 +140,7 @@ async def test_a_gated_frozen_repo_admits_only_live_capability_holders(serve_app
     refused = await _host(stranger)
     nobody = await _host(None)
     for srv in (admitted, refused, nobody):
-        srv.register(frozen, public=False)
+        await srv.register(frozen, public=False)
 
     async with serve_app(admitted.app) as port:
         assert (await _get_repo(port, DID)).status_code == 200

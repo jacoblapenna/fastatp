@@ -270,7 +270,7 @@ sovereign admission policy — edge business logic, never substrate.
 - Hosted repos whose pen lives on another peer are **frozen on the host**:
   opened with no pen (`Repo(did, None, ...)`), every commit raises, and the
   only way state changes is a push the host verifies against the owner's
-  key and re-hosts (`import_car`, then `handle.emit_sync()` so subscribers
+  key and re-hosts (`import_car`, then `await handle.emit_sync()` so subscribers
   see the new head). An `owner_pull` registration requires a frozen repo,
   so a host serving a repo to its pen can never hold a pen for it.
 

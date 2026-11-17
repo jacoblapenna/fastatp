@@ -36,13 +36,13 @@ async def _channel_repo() -> Repo:
 async def test_ttl_and_expires_at_are_mutually_exclusive():
     srv = await PeerServer.create(_peer())
     with pytest.raises(ValueError, match="not both"):
-        srv.register(await _channel_repo(), ttl=60, expires_at=datetime.now(UTC))
+        await srv.register(await _channel_repo(), ttl=60, expires_at=datetime.now(UTC))
 
 
 async def test_expired_repo_is_unroutable_and_reaped_lazily():
     srv = await PeerServer.create(_peer())
     past = datetime.now(UTC) - timedelta(seconds=1)
-    handle = srv.register(await _channel_repo(), public=True, expires_at=past)
+    handle = await srv.register(await _channel_repo(), public=True, expires_at=past)
     did = handle.did
     assert did in srv.hosts()
     # first access past expiry reaps it and routes as RepoNotFound
@@ -52,10 +52,10 @@ async def test_expired_repo_is_unroutable_and_reaped_lazily():
 
 async def test_reap_expired_returns_and_drops_due_repos():
     srv = await PeerServer.create(_peer())
-    live = srv.register(await _channel_repo(), ttl=3600)
+    live = await srv.register(await _channel_repo(), ttl=3600)
     past = datetime.now(UTC) - timedelta(seconds=1)
-    dead = srv.register(await _channel_repo(), expires_at=past)
-    reaped = srv.reap_expired()
+    dead = await srv.register(await _channel_repo(), expires_at=past)
+    reaped = await srv.reap_expired()
     assert reaped == [dead.did]
     assert set(srv.hosts()) == {srv.repo.did, live.did}
 
@@ -63,10 +63,10 @@ async def test_reap_expired_returns_and_drops_due_repos():
 async def test_dropped_repo_store_is_released():
     """Retiring an ephemeral repo releases its host, repo, and block store."""
     srv = await PeerServer.create(_peer())
-    handle = srv.register(await _channel_repo())
+    handle = await srv.register(await _channel_repo())
     ref = weakref.ref(handle._host)
     did = handle.did
-    srv.unregister(did)
+    await srv.unregister(did)
     del handle
     gc.collect()
     assert ref() is None  # the host (and its repo/store) was reclaimed
@@ -74,7 +74,7 @@ async def test_dropped_repo_store_is_released():
 
 async def test_expired_repo_cuts_live_subscriber(serve_app):
     srv = await PeerServer.create(_peer())
-    handle = srv.register(await _channel_repo(), public=True, ttl=3600)
+    handle = await srv.register(await _channel_repo(), public=True, ttl=3600)
     async with serve_app(srv.app) as port:
         url = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}?did={handle.did}"
         async with websockets.connect(url) as ws:
@@ -87,7 +87,7 @@ async def test_expired_repo_cuts_live_subscriber(serve_app):
             # force expiry and reap: a hosting farewell, then the live
             # subscriber is poisoned
             handle._host.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-            assert srv.reap_expired() == [handle.did]
+            assert await srv.reap_expired() == [handle.did]
             header, body = decode_frame(
                 await asyncio.wait_for(cast("Awaitable[bytes]", ws.recv()), 5.0)
             )

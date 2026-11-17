@@ -146,5 +146,5 @@ async def test_channel_expires_and_becomes_unroutable():
     assert channel.did in server.hosts()
 
     channel.handle._host.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    assert server.reap_expired() == [channel.did]
+    assert await server.reap_expired() == [channel.did]
     assert server._resolve_host(channel.did) is None

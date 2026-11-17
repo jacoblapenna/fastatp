@@ -34,7 +34,6 @@ from __future__ import annotations
 import json
 import os
 import warnings
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -54,7 +53,8 @@ from fastatp.crypto import (
 from fastatp.did.continuity import ContinuityChain, build_did_document, build_pretty
 from fastatp.did.document import DIDDocument
 from fastatp.exceptions import IdentityError
-from fastatp.repo.repo import CommitEvent, Repo
+from fastatp.repo.head import Head, SqliteHeadStore
+from fastatp.repo.repo import Repo
 from fastatp.repo.store import BlockStore, MemoryBlockStore, SqliteBlockStore
 
 if TYPE_CHECKING:
@@ -105,11 +105,16 @@ def _write_secret(path: Path, raw: bytes) -> None:
     os.chmod(path, 0o600)  # tighten again in case the file pre-existed looser
 
 
-def _head_writer(state_dir: Path) -> Callable[[CommitEvent], None]:
-    def _persist(event: CommitEvent) -> None:
-        (state_dir / _HEAD).write_text(event.commit_cid.encode())
-
-    return _persist
+async def _heads_for(sdir: Path, did: str) -> SqliteHeadStore:
+    """The identity's head store: the same sqlite file as its blocks, so the
+    head, the seq and the blocks are one durable thing. A ``repo_head`` file
+    from an earlier version is read once and folded in (its seq starts at 0:
+    followers of that stream resync once, never again)."""
+    heads = SqliteHeadStore(sdir / _BLOCKS)
+    legacy = sdir / _HEAD
+    if legacy.exists() and await heads.load(did) is None:
+        await heads.swap(did, None, Head(CID.decode(legacy.read_text().strip()), 0))
+    return heads
 
 
 @dataclass
@@ -212,19 +217,9 @@ class Identity:
         same key, so the existing commit chain is already valid and nothing
         needs re-signing. Persists the new head so a reload resumes from it.
         """
-        # gc=False: the durable head pointer must be persisted while BOTH the
-        # old and imported states are still in the store — a crash anywhere in
-        # this sequence leaves repo_head naming a block that exists (old head
-        # pre-write, new head post-write). GC only after the pointer is durable.
-        await self.repo.import_car(
-            data, verify_key=self.signer.public_key if verify else None, gc=False
-        )
-        if self.state_dir is not None:
-            # import_car is a checkpoint load, not a commit — it deliberately
-            # fires no on_commit (nothing to announce on a firehose), so the
-            # durable head pointer is written here instead
-            (self.state_dir / _HEAD).write_text(self.repo.commit_cid.encode())
-        self.repo.collect_garbage()
+        # the import writes its blocks, then swaps the head in the head store
+        # (durable before anything is collected), then garbage-collects
+        await self.repo.import_car(data, verify_key=self.signer.public_key if verify else None)
 
     # --- bootstrap ------------------------------------------------------------
 
@@ -310,7 +305,7 @@ class Identity:
             )
 
         if (sdir / _META).exists():
-            return cls._load(sdir, signer)
+            return await cls._load(sdir, signer)
         sdir.mkdir(parents=True, exist_ok=True)
         return await cls._mint_did_web(
             domain, sdir, rotation_public_keys, persist_rotation_key, curve, signing_key=signer
@@ -323,7 +318,7 @@ class Identity:
         cls, sdir: Path | None, curve: str, signer: Signer | None
     ) -> Identity:
         if sdir is not None and (sdir / _META).exists():
-            return cls._load(sdir, signer)
+            return await cls._load(sdir, signer)
         pen: PrivateKey | Signer = signer if signer is not None else generate_keypair(curve)
         signing = as_signer(pen)
         curve = curve_name(signing.public_key.curve)
@@ -341,7 +336,7 @@ class Identity:
             )
         sdir.mkdir(parents=True, exist_ok=True)
         store = SqliteBlockStore(sdir / _BLOCKS)
-        repo = await Repo.create(did, signing, store=store, on_commit=_head_writer(sdir))
+        repo = await Repo.create(did, signing, store=store, head_store=await _heads_for(sdir, did))
         _write_pen(sdir, pen, {"kind": "did:key", "did": did, "domain": None, "curve": curve})
         return cls(
             did=did,
@@ -395,7 +390,7 @@ class Identity:
             )
 
         store = SqliteBlockStore(sdir / _BLOCKS)
-        repo = await Repo.create(did, signing, store=store, on_commit=_head_writer(sdir))
+        repo = await Repo.create(did, signing, store=store, head_store=await _heads_for(sdir, did))
         (sdir / _CHAIN).write_text(json.dumps(chain.to_json()))
         if persist_rotation_key and rotation_private is not None:
             warnings.warn(
@@ -423,7 +418,7 @@ class Identity:
         )
 
     @classmethod
-    def _load(cls, sdir: Path, signer: Signer | None = None) -> Identity:
+    async def _load(cls, sdir: Path, signer: Signer | None = None) -> Identity:
         meta = json.loads((sdir / _META).read_text())
         curve = meta.get("curve", "k256")
         did = meta["did"]
@@ -501,9 +496,7 @@ class Identity:
             )
 
         store = SqliteBlockStore(sdir / _BLOCKS)
-        head_text = (sdir / _HEAD).read_text().strip()
-        head_cid = CID.decode(head_text)
-        repo = Repo(did, signing, store=store, head_cid=head_cid, on_commit=_head_writer(sdir))
+        repo = await Repo.open(did, signing, store, await _heads_for(sdir, did))
         return cls(
             did=did,
             signer=signing,

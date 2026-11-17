@@ -54,7 +54,7 @@ def _pen() -> tuple[object, str]:
 async def _user_repo(srv: PeerServer, *, subject: str = ROOT):
     """Host ROOT's gated repo, holding its own subscribe capability."""
     repo = await Repo.create(ROOT, crypto.generate_keypair("k256"))
-    handle = srv.register(repo)  # gated by default
+    handle = await srv.register(repo)  # gated by default
     await handle.put_record(
         Capability.nsid, generate_tid(), Capability(subject=subject, actions=["subscribe"])
     )
@@ -254,13 +254,13 @@ async def test_list_repos_resolves_a_knock_once_and_lists_what_the_pen_holds(ser
 
     srv, _gate = await _server_with_gate()
     handle = await _user_repo(srv)
-    other = srv.register(
+    other = await srv.register(
         await Repo.create("did:web:other.example:x", crypto.generate_keypair("k256"))
     )
     await other.put_record(
         Capability.nsid, generate_tid(), Capability(subject=ROOT, actions=["subscribe"])
     )
-    hidden = srv.register(
+    hidden = await srv.register(
         await Repo.create("did:web:hidden.example:x", crypto.generate_keypair("k256"))
     )
     pen_key, pen_did = _pen()

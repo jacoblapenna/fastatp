@@ -29,7 +29,7 @@ from pathlib import Path
 from fastatp.identity import Identity
 
 SECRET_FILES = ("signing.key", "rotation.key")
-PLAIN_FILES = ("identity.json", "chain.json", "repo_head", "blocks.sqlite", "blobs.sqlite")
+PLAIN_FILES = ("identity.json", "chain.json", "blocks.sqlite", "blobs.sqlite")
 
 
 def copy_secret(src: Path, dst: Path) -> None:

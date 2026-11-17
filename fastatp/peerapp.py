@@ -124,9 +124,9 @@ class PrivateChannel:
     ) -> CommitEvent | None:
         return await self.handle.put_record(collection, rkey, record)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Retire the channel now (before its TTL)."""
-        self.handle.unregister()
+        await self.handle.unregister()
 
 
 @dataclass
@@ -455,7 +455,7 @@ class PeerApp:
         signing_key = generate_keypair("k256")
         ephemeral_did = encode_did_key(signing_key.public_key())
         repo = await Repo.create(ephemeral_did, signing_key)
-        handle = self.server.register(repo, public=False, ttl=ttl)
+        handle = await self.server.register(repo, public=False, ttl=ttl)
 
         recon = WireGuardReconciler(handle, self._wg_interface, self._channel_resolver())
         if issuer_did.startswith("did:key:"):

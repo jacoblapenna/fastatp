@@ -326,7 +326,8 @@ async def test_checkpoint_seq_captured_before_send():
 
     # cursor=1 with backfill_window default 512 holds all events; force the
     # outdated path by shrinking the window view
-    srv._primary._backfill = type(srv._backfill)(list(srv._backfill)[-1:], maxlen=1)
+    srv._primary._backfill = list(srv._backfill)[-1:]
+    srv._primary.backfill_window = 1
     # FakeWS is a minimal test double satisfying the send_bytes/close surface
     last_sent = await srv._catch_up(cast("WebSocket", FakeWS()), cursor=1)
     # the concurrent commit has seq > last_sent, so the main loop won't skip it

@@ -16,6 +16,16 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- Firehose bookkeeping is awaited: `PeerServer.register`, `unregister` and
+  `reap_expired`, `RepoHandle.emit_account`/`emit_identity`/`emit_sync`,
+  `expire` and `unregister`, and `PrivateChannel.close`. Each frame's seq
+  now comes from the repo's head store before the frame goes out, and a
+  dropped repo announces its deactivation before its subscribers are cut.
+  `PeerServer.create(peer, repo)` takes an existing repo as its second
+  argument (`repo_store=` is keyword-only); `PeerServer(peer, repo)` still
+  builds one, announced on its first emit or subscriber. An `Identity`
+  keeps its head in `blocks.sqlite` instead of a `repo_head` file (an old
+  file is folded in on first load).
 - `Repo.import_car` is awaited (it advances the head through the head
   store), and `put_record`, `delete_record` and `apply_writes` may return
   `None`: a concurrent writer on a shared head store already made exactly
@@ -66,6 +76,15 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- Bring your own database, part two: the firehose seq lives in the head
+  store. A commit's seq is the one its swap assigned (`CommitEvent.seq`);
+  every other frame takes the next through the same swap
+  (`Repo.advance_seq`), so with a durable store a restarted peer resumes
+  where its last delivered frame left off and followers' cursors keep
+  working instead of hitting `FutureCursor`. The genesis commit is seq 0,
+  the start of the stream, so a cursor of 0 misses nothing. An `Identity`
+  on a `state_dir` gets this with no new argument: its head and seq are in
+  the same sqlite file as its blocks.
 - Bring your own database, part one: `fastatp.repo.head.HeadStore`, the
   per-repo write lock as a compare-and-swap. `Repo.create(...,
   head_store=)` puts a repo's head and firehose seq in the app's store,

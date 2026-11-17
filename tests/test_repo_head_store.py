@@ -55,15 +55,15 @@ async def test_create_open_and_commit_through_the_store(shared):
     blocks, heads = shared
     key = crypto.generate_keypair("k256")
     repo = await Repo.create(DID, key, store=blocks, head_store=heads)
-    assert await heads.load(DID) == Head(repo.commit_cid, 1)
-    assert repo.seq == 1
+    assert await heads.load(DID) == Head(repo.commit_cid, 0)  # the genesis starts the stream
+    assert repo.seq == 0
 
     event = await repo.put_record(NOTE, "one", _note("first"))
-    assert event is not None and event.seq == 2
-    assert await heads.load(DID) == Head(repo.commit_cid, 2)
+    assert event is not None and event.seq == 1
+    assert await heads.load(DID) == Head(repo.commit_cid, 1)
 
     again = await Repo.open(DID, key, blocks, heads)  # a second process, or a restart
-    assert again.commit_cid == repo.commit_cid and again.seq == 2
+    assert again.commit_cid == repo.commit_cid and again.seq == 1
     assert again.get_record(NOTE, "one") == _note("first")
     frozen = await Repo.open(DID, None, blocks, heads)
     assert frozen.frozen and frozen.rev == repo.rev
@@ -89,9 +89,9 @@ async def test_two_processes_race_and_the_loser_retries_on_the_winners_head(shar
         a.put_record(NOTE, "from-a", _note("a")), b.put_record(NOTE, "from-b", _note("b"))
     )
     assert ea is not None and eb is not None
-    assert {ea.seq, eb.seq} == {2, 3}  # one landed first, the other on top of it
+    assert {ea.seq, eb.seq} == {1, 2}  # one landed first, the other on top of it
     head = await heads.load(DID)
-    assert head.seq == 3
+    assert head.seq == 2
     final = await Repo.open(DID, None, blocks, heads)
     assert final.get_record(NOTE, "from-a") == _note("a")
     assert final.get_record(NOTE, "from-b") == _note("b")
@@ -119,7 +119,7 @@ async def test_the_same_record_written_by_both_lands_once(shared):
         a.put_record(NOTE, "same", _note("bytes")), b.put_record(NOTE, "same", _note("bytes"))
     )
     assert sorted(r is None for r in results) == [False, True]  # one commit, one no-op
-    assert (await heads.load(DID)).seq == 2
+    assert (await heads.load(DID)).seq == 1
     assert (await Repo.open(DID, None, blocks, heads)).get_record(NOTE, "same") == _note("bytes")
 
 
@@ -140,7 +140,7 @@ async def test_different_bytes_at_the_same_path_fail_the_loser(shared):
     losers = [r for r in results if isinstance(r, Exception)]
     assert len(winners) == 1 and len(losers) == 1
     assert isinstance(losers[0], RepoError) and "already exists" in str(losers[0])
-    assert (await heads.load(DID)).seq == 2
+    assert (await heads.load(DID)).seq == 1
 
 
 async def test_contention_beyond_the_retries_surfaces_as_head_moved():
@@ -155,7 +155,7 @@ async def test_contention_beyond_the_retries_surfaces_as_head_moved():
     genesis = repo.commit_cid
     with pytest.raises(HeadMoved) as caught:
         await repo.put_record(NOTE, "n", _note("never"))
-    assert caught.value.head == Head(genesis, 1)
+    assert caught.value.head == Head(genesis, 0)
     assert repo.commit_cid == genesis and repo.get_record(NOTE, "n") is None
     reachable = {repo.commit_cid} | repo._mst_nodes | set(repo._entries.values())
     assert set(repo.store.cids()) == reachable  # nothing staged survived
@@ -199,7 +199,7 @@ async def test_an_import_on_a_stale_head_is_refused_and_lands_after_reload(share
         await b.import_car(owner.export_car(), verify_key=key.public_key())
     assert b.get_record(NOTE, "meanwhile") is not None  # b reloaded to the current head
     await b.import_car(owner.export_car(), verify_key=key.public_key(), newer_than=b.rev)
-    assert (await heads.load(DID)) == Head(b.commit_cid, 3)  # the refused import took no seq
+    assert (await heads.load(DID)) == Head(b.commit_cid, 2)  # the refused import took no seq
     assert b.get_record(NOTE, "more") is not None
 
 

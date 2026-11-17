@@ -193,7 +193,7 @@ class Repo:
         )
         async with repo._write_lock:
             try:
-                await repo._commit_now([])
+                await repo._commit_now([], genesis=True)
             except HeadMoved as e:
                 raise RepoError(
                     f"the head store already holds a head for {did} ({e.head}); open it "
@@ -237,6 +237,20 @@ class Repo:
     def seq(self) -> int:
         """The last firehose seq used on this repo (0 before any)."""
         return self._head.seq if self._head is not None else 0
+
+    async def advance_seq(self) -> int:
+        """Take the next firehose seq for a frame that is not a commit (an
+        account, identity or sync announcement): the head stays, the seq
+        moves, through the same swap, so the number is durable before the
+        frame it stamps is delivered. Returns the seq taken."""
+        async with self._write_lock:
+            for _attempt in range(self._RETRIES + 1):
+                new_head = Head(self.commit_cid, self.seq + 1)
+                if await self.head_store.swap(self.did, self._head, new_head):
+                    self._head = new_head
+                    return new_head.seq
+                await self._reload()
+            raise HeadMoved(await self.head_store.load(self.did))
 
     def _load_head(self, head_cid: CID) -> None:
         """Reconstruct state from a persisted head commit already in the store
@@ -428,7 +442,7 @@ class Repo:
                 raise RepoError(f"unknown write action {write.action!r}")
         return await self._commit_now(writes)
 
-    async def _commit_now(self, writes: list[WriteOp]) -> CommitEvent:
+    async def _commit_now(self, writes: list[WriteOp], *, genesis: bool = False) -> CommitEvent:
         if self.signer is None:
             raise RepoError(self._FROZEN)
         old_entries = dict(self._entries)
@@ -473,7 +487,9 @@ class Repo:
         commit_cid = commit.cid()
         self.store.put(commit_cid, commit_bytes)  # blocks before head, always
 
-        new_head = Head(commit_cid, self.seq + 1)
+        # the genesis is the start of the stream, not an event on it: seq 0,
+        # so the first announced frame is 1 and a cursor of 0 misses nothing
+        new_head = Head(commit_cid, 0 if genesis else self.seq + 1)
         if not await self.head_store.swap(self.did, self._head, new_head):
             # another process extended this head first: take its head, then
             # drop what this commit staged, except what the new head reaches
