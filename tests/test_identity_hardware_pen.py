@@ -225,3 +225,18 @@ async def test_an_inconsistent_state_dir_fails_closed(tmp_path):
     with pytest.raises(IdentityError, match="inconsistent"):
         await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
     assert other.did  # (the other identity is only a source of a foreign chain)
+
+
+async def test_a_stale_software_key_is_removed_on_a_hardware_load(tmp_path):
+    """The marker is written before the old key is unlinked; a crash between
+    the two leaves the key behind, and the next load with the pen removes it."""
+    sdir = tmp_path / "id"
+    ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    old_key = (sdir / "signing.key").read_bytes()
+    pen = _HardwareSigner()
+    await ident.rotate(pen, ident.rotation_private_key)
+    (sdir / "signing.key").write_bytes(old_key)  # the crash state: marker external, key left
+
+    loaded = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir, signer=pen)
+    assert loaded.signer is pen
+    assert not (sdir / "signing.key").exists()

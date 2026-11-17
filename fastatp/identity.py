@@ -449,6 +449,9 @@ class Identity:
                     f"the signer passed for {did} is not its pen: it holds "
                     f"{encode_multikey(signer.public_key)}, the identity recorded {recorded}"
                 )
+            # a rotation onto hardware writes the marker before unlinking the
+            # old software key; a crash between the two leaves that key here
+            (sdir / _SIGNING_KEY).unlink(missing_ok=True)
             signing, signing_key = signer, None
         elif (
             signer is not None
