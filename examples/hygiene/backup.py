@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 SECRET_FILES = ("signing.key", "rotation.key")
-PLAIN_FILES = ("identity.json", "chain.json")
+PLAIN_FILES = ("identity.json", "chain.json", "repo_head")  # repo_head: pre-0.3 dirs only
 SQLITE_FILES = ("blocks.sqlite", "blobs.sqlite")
 
 

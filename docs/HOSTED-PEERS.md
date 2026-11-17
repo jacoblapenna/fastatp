@@ -420,8 +420,12 @@ the new head and retries on it, a write the winner already made byte for
 byte is a no-op, and contention beyond a few retries surfaces as
 `HeadMoved`. No row is ever held: a crash leaves unreachable blocks for
 garbage collection, never a lock to time out. The firehose seq rides on the
-same row, so a restarted peer resumes where its last delivered frame left
-off and followers' cursors keep working.
+same row: a number is durable before its frame goes out, and a restarted
+peer continues from the last number it allocated. That is a monotonic
+cursor, not replay: a frame whose number was allocated but which never
+left the process is a gap, which the protocol allows, and the backfill
+itself is per process. Followers' cursors stay valid across the restart;
+what they missed in the gap they recover the usual way, by checkpoint.
 
 ### The Postgres sketch
 
@@ -434,7 +438,7 @@ cache beside them:
 CREATE TABLE repo_blocks (did TEXT, cid BYTEA, data BYTEA NOT NULL, PRIMARY KEY (did, cid));
 CREATE TABLE repo_heads  (did TEXT PRIMARY KEY, cid BYTEA NOT NULL, seq BIGINT NOT NULL);
 CREATE TABLE repo_blobs  (did TEXT, cid BYTEA, data BYTEA NOT NULL, mime TEXT NOT NULL,
-                          PRIMARY KEY (did, cid));
+                          rev TEXT, PRIMARY KEY (did, cid));  -- rev: for listBlobs?since=
 -- the doorman's cache: overlay address -> (DID, the repo whose capability granted it)
 CREATE TABLE tunnel_addresses (address TEXT PRIMARY KEY, did TEXT NOT NULL, repo_did TEXT NOT NULL);
 ```
@@ -475,14 +479,18 @@ class PostgresHeadStore:  # satisfies fastatp.repo.head.HeadStore
 
 
 class PostgresStorage:  # satisfies fastatp.Storage; one per repo
-    def __init__(self, pool, did):
-        self.blocks = PostgresBlockStore(pool, did)  # rows WHERE did = $1
-        self.heads = PostgresHeadStore(pool)  # keyed by DID already
-        self.blobs = PostgresBlobStore(pool, did)  # or None
+    def __init__(self, sync_conn, async_pool, did):
+        # blocks and blobs are synchronous protocols: a psycopg connection;
+        # heads is async: an asyncpg pool. Two handles to one database.
+        self.blocks = PostgresBlockStore(sync_conn, did)  # rows WHERE did = %s
+        self.heads = PostgresHeadStore(async_pool)  # keyed by DID already
+        self.blobs = PostgresBlobStore(sync_conn, did)  # or None
 
 
 identity = await Identity.bootstrap(
-    domain="alice.example", state_dir=..., storage=PostgresStorage(pool, "did:web:alice.example")
+    domain="alice.example",
+    state_dir=...,
+    storage=PostgresStorage(sync_conn, async_pool, "did:web:alice.example"),
 )
 ```
 
@@ -497,9 +505,11 @@ the next pull or push repairs it, and an adapter that defers deletes by a few
 seconds removes it.
 
 Two honest limits. `BlockStore` and `BlobStore` are synchronous protocols
-(the MST walks them many times per commit), so a Postgres block adapter uses
-a synchronous driver and each call blocks the loop for one round-trip; keep
-the database close, or front it with a local cache. And live fan-out across
+(the MST walks them many times per commit) while `HeadStore` is async, so a
+Postgres storage holds two handles to one database, a synchronous
+connection for blocks and blobs and an async pool for heads, and each
+synchronous call blocks the loop for one round-trip; keep the database
+close, or front it with a local cache. And live fan-out across
 processes (a commit made by process A reaching subscribers connected to
 process B) is the app's to build on the head store, with `LISTEN/NOTIFY` or
 by polling the head; the package does not do it.

@@ -88,8 +88,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
   `MemoryStorage` ship. `Repo.create`/`Repo.open`, `Peer.create_repo`,
   `PeerServer.create` and `Identity.bootstrap`/`adopt_web` take `storage=`;
   an `Identity` given one keeps its repo, head and seq there and creates no
-  sqlite in its `state_dir`, which then holds only the chain, the marker
-  and a software pen. `Identity.storage` is the bundle; `Identity.store`
+  sqlite in its `state_dir`, which then holds only the identity's small
+  files: `identity.json`, the chain for a `did:web`, `signing.key` when the
+  pen is a software key, and `rotation.key` only with
+  `persist_rotation_key=True`. `Identity.storage` is the bundle; `Identity.store`
   is its block store, as before. `docs/HOSTED-PEERS.md` "Bring your own
   database" sketches the Postgres adapters and the doorman's cache table.
 - `TunnelIdentityResolver(lookup=...)`: a builder's cache in front of the
@@ -114,9 +116,11 @@ To upgrade safely within one minor line, pin with `~=`, for example
   head_store=)` puts a repo's head and firehose seq in the app's store,
   `await Repo.open(did, signing_key, store, head_store)` loads it, and
   every commit and import writes its blocks first, then advances the head
-  only if it is still the one it was built on. A lost swap reloads the new
-  head and retries the write on it (bounded); contention beyond that is
-  `HeadMoved`, carrying the current head. `MemoryHeadStore` (the default,
+  only if it is still the one it was built on. A commit that loses the swap
+  reloads the new head and retries the write on it (bounded); contention
+  beyond that is `HeadMoved`, carrying the current head. An import that
+  loses it reloads and raises `HeadMoved` at once, since whether an older
+  checkpoint still applies is the caller's call. `MemoryHeadStore` (the default,
   today's behaviour) and `SqliteHeadStore` ship; `CommitEvent.seq` is the
   seq the swap assigned.
 - The signer seam: `fastatp.Signer` (a `public_key` and `async sign`) is

@@ -87,10 +87,13 @@ class RepoError(FastATPError):
 class HeadMoved(RepoError):
     """The repo's head in its :class:`~fastatp.repo.head.HeadStore` is no
     longer the one this commit or import was built on: another process got
-    there first. Nothing became visible. ``head`` is the current head (or
-    ``None`` if the store has none); the repo has already reloaded to it,
-    so the caller re-reads and retries. ``Repo.apply_writes`` retries a few
-    times by itself before letting this out."""
+    there first. Nothing became visible. ``head`` is the current head, and
+    the repo has already reloaded to it, so the caller re-reads and retries
+    on the same object; ``Repo.apply_writes`` retries a few times by itself
+    before letting this out. ``head`` is ``None`` when the store no longer
+    holds a head for this DID at all (it was deleted): then there is nothing
+    to reload, the repo object is stale, and the caller reopens or recreates
+    the repo instead of retrying."""
 
     def __init__(self, head: object, message: str | None = None) -> None:
         super().__init__(message or f"the head moved under this write; it is now {head}")
