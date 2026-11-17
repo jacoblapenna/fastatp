@@ -297,6 +297,20 @@ def _source_ip(conn: HTTPConnection) -> str | None:
     return conn.client.host if conn.client is not None else None
 
 
+AddressBinding = tuple[str, str]
+"""What the doorman learns from an overlay address: ``(DID, the DID of the
+repo whose capability granted the key)``."""
+
+AddressLookup = Callable[[str], "AddressBinding | Awaitable[AddressBinding | None] | None"]
+"""A builder's cache for the doorman: overlay address -> ``(DID, granting repo
+DID)``, or ``None`` for a miss. Sync or async. It lives in the builder's own
+store and is kept current as repo owners write and delete capabilities in the
+repos this host serves (the commit path sees both). It is for speed, never
+authority: a hit is checked against the capability currently in the named
+repo before it names anyone, so a wrong or stale entry costs a lookup and can
+never admit."""
+
+
 class TunnelIdentityResolver:
     """Default doorman identity: source tunnel IP -> DID via signed capabilities.
 
@@ -311,6 +325,13 @@ class TunnelIdentityResolver:
     ``source_address`` is the seam for where the address comes from (the
     connection's client address by default); another enforcement plane, or a
     test presenting a derived address, supplies its own.
+
+    ``lookup`` is the seam for scale: without one, every resolution walks
+    every hosted repo's live capabilities (right for a peer with a few repos).
+    With one, a hit is used after the doorman confirms the named repo still
+    holds a live capability for that DID whose key derives this very address,
+    and a miss or a failed confirmation falls back to the walk. So the cache
+    decides nothing: it only says where to look first.
     """
 
     def __init__(
@@ -318,15 +339,25 @@ class TunnelIdentityResolver:
         server: PeerServer,
         *,
         source_address: Callable[[HTTPConnection], str | None] | None = None,
+        lookup: AddressLookup | None = None,
     ) -> None:
         self._server = server
         self._source = source_address or _source_ip
+        self._lookup = lookup
 
-    def __call__(self, conn: HTTPConnection) -> ResolvedCaller | None:
+    async def __call__(self, conn: HTTPConnection) -> ResolvedCaller | None:
         ip = self._source(conn)
         if ip is None:
             return None
-        bound = self._server._ip_to_did().get(ip)
+        bound: AddressBinding | None = None
+        if self._lookup is not None:
+            hit = self._lookup(ip)
+            if inspect.isawaitable(hit):
+                hit = await hit
+            if hit is not None and self._server._binding_is_live(ip, hit[0], hit[1]):
+                bound = hit
+        if bound is None:
+            bound = self._server._ip_to_did().get(ip)  # the walk: authoritative, slow
         if bound is None:
             return None
         did, repo_did = bound
@@ -706,11 +737,10 @@ class PeerServer:
         WireGuard interface, and keeps "this address is this DID, granted in
         this repo" as a cache in its own database, updated as repo owners
         write and delete capabilities in the repos it hosts (the host never
-        writes one) — the bring-your-own-database work makes that the
-        natural place. Like any cache it is for speed, not authority: it only
-        points the doorman at a repo, and the doorman still admits by the
-        capability currently in that repo. The map stays a per-lookup walk
-        until then.
+        writes one), and hands it to :class:`TunnelIdentityResolver` as
+        ``lookup``. The walk is then the fallback, and every hit is checked
+        against the capability currently in the named repo
+        (:meth:`_binding_is_live`) before it names anyone.
         """
         mapping: dict[str, tuple[str, str]] = {}
         for host in self._hosts.values():
@@ -722,6 +752,22 @@ class PeerServer:
                         continue  # a malformed key grants nobody
                     mapping[address] = (subject, host.did)
         return mapping
+
+    def _binding_is_live(self, address: str, did: str, repo_did: str) -> bool:
+        """Is "``address`` is ``did``, granted in ``repo_did``" what that repo
+        says right now? The capability currently in the repo must name the
+        DID and carry a key that derives exactly this address: a cache entry
+        that survived a revocation or a key rotation fails here."""
+        host = self._hosts.get(repo_did)
+        if host is None:
+            return False
+        entry = live_capabilities(host.repo).get(did)
+        if entry is None or not entry[1].wg_public_key:
+            return False
+        try:
+            return overlay_address(entry[1].wg_public_key) == address
+        except FastATPError:
+            return False
 
     async def _resolve_caller(self, conn: HTTPConnection) -> ResolvedCaller | None:
         result = self.identity_resolver(conn)

@@ -76,6 +76,14 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- `TunnelIdentityResolver(lookup=...)`: a builder's cache in front of the
+  doorman's walk. The lookup maps an overlay address to `(DID, granting
+  repo)` from the builder's own store, sync or async; a hit is used only
+  after the doorman confirms the named repo still holds a live capability
+  for that DID whose key derives that address, and a miss or a failed
+  confirmation falls back to the walk over every hosted repo, which stays
+  the behaviour with no lookup. The cache is for speed, never authority: a
+  stale or wrong entry costs a lookup and cannot admit.
 - Bring your own database, part two: the firehose seq lives in the head
   store. A commit's seq is the one its swap assigned (`CommitEvent.seq`);
   every other frame takes the next through the same swap
