@@ -92,7 +92,7 @@ async def test_goat_verifies_full_stream(serve_app):
                     events.append(json.loads(line))
                 return events
 
-            events = await asyncio.wait_for(await read_events(), timeout=30)
+            events = await asyncio.wait_for(read_events(), timeout=30)
         finally:
             proc.terminate()
             _out, err = await asyncio.wait_for(proc.communicate(), timeout=10)
@@ -153,7 +153,7 @@ async def test_goat_inverts_in_isolation_mid_stream(serve_app):
                     seen += chunk.decode(errors="replace")
                 return seen
 
-            stderr = await asyncio.wait_for(await wait_verified(), timeout=30)
+            stderr = await asyncio.wait_for(wait_verified(), timeout=30)
         finally:
             proc.terminate()
             _out, err = await asyncio.wait_for(proc.communicate(), timeout=10)
