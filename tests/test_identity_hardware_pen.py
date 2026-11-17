@@ -240,3 +240,16 @@ async def test_a_stale_software_key_is_removed_on_a_hardware_load(tmp_path):
     loaded = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir, signer=pen)
     assert loaded.signer is pen
     assert not (sdir / "signing.key").exists()
+
+
+async def test_a_did_key_on_a_storage_without_a_state_dir_reopens_its_repo():
+    """No marker file: the storage itself says the pen's repo exists."""
+    from fastatp import MemoryStorage
+
+    pen = _HardwareSigner()
+    theirs = MemoryStorage()
+    first = await Identity.bootstrap(signer=pen, storage=theirs)
+    await first.repo.put_record("com.example.note", "n", {"$type": "com.example.note", "t": 1})
+    again = await Identity.bootstrap(signer=pen, storage=theirs)  # every boot
+    assert again.did == first.did and again.repo.commit_cid == first.repo.commit_cid
+    assert again.repo.seq == 1

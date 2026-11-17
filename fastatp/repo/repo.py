@@ -438,20 +438,38 @@ class Repo:
         raise AssertionError("unreachable")
 
     def _still_needed(self, writes: list[WriteOp]) -> list[WriteOp]:
-        """On a retry, the writes the reloaded head does not already hold."""
-        needed = []
+        """On a retry, the writes the reloaded head does not already hold.
+
+        Decided per path from the batch's final intent, never op by op: a
+        ``delete`` then ``create`` of one path is a replacement, and dropping
+        only its create would delete the path. Per path: if the batch ends by
+        deleting it, nothing is needed once it is gone, else one delete; if it
+        ends by putting record X there, nothing is needed once X is there,
+        else one write. A bare ``create`` keeps its meaning (it fails if the
+        path now holds other bytes); a replacement becomes an update.
+        """
+        by_path: dict[str, list[WriteOp]] = {}
         for write in writes:
-            current = self._entries.get(write.path)
-            if write.action == "delete" and current is None:
+            by_path.setdefault(write.path, []).append(write)
+        needed: list[WriteOp] = []
+        for path, ops in by_path.items():
+            final = ops[-1]
+            current = self._entries.get(path)
+            if final.action == "delete":
+                if current is not None:
+                    needed.append(WriteOp("delete", final.collection, final.rkey))
                 continue
-            if (
-                write.action in ("create", "update")
-                and current is not None
-                and write.record is not None
-                and CID.for_dag_cbor(_record_bytes(write.record)) == current
-            ):
-                continue
-            needed.append(write)
+            assert final.record is not None  # validated on the first attempt
+            if current is not None and CID.for_dag_cbor(_record_bytes(final.record)) == current:
+                continue  # the other writer put exactly this here
+            replaces = len(ops) > 1 and any(op.action == "delete" for op in ops[:-1])
+            if current is None:
+                action = "create"
+            elif final.action == "update" or replaces:
+                action = "update"
+            else:
+                action = "create"  # a bare create on an occupied path: still refused
+            needed.append(WriteOp(action, final.collection, final.rkey, final.record))
         return needed
 
     async def _apply_writes_locked(self, writes: list[WriteOp]) -> CommitEvent:
@@ -527,6 +545,27 @@ class Repo:
         # the genesis is the start of the stream, not an event on it: seq 0,
         # so the first announced frame is 1 and a cursor of 0 misses nothing
         new_head = Head(commit_cid, 0 if genesis else self.seq + 1)
+        new_mst_nodes = staged_nodes
+
+        # the event is assembled BEFORE the head moves: once it has, another
+        # process may commit on top and collect the proof nodes this one
+        # reads back, and a commit must never be durable with no event to
+        # announce it. Event blocks: the commit, MST nodes new in this commit,
+        # new records, and — per the repository spec's diff rules — the
+        # covering proof for every written path, so consumers can verify by
+        # operation inversion
+        event_blocks: dict[CID, bytes] = {commit_cid: commit_bytes}
+        needed = new_mst_nodes - old_mst_nodes
+        for write in writes:
+            needed |= self.mst.covering_proof(root, write.path)
+        for cid in needed:
+            block = self.store.get(cid)
+            if block is None:  # a custom BlockStore violating its contract
+                self._drop_staged(staged_nodes | {commit_cid}, new_record_blocks)
+                raise RepoError(f"store lost freshly written MST block {cid}")
+            event_blocks[cid] = block
+        event_blocks.update(new_record_blocks)
+
         if not await self.head_store.swap(self.did, self._head, new_head):
             # another process extended this head first: take its head, then
             # drop what this commit staged, except what the new head reaches
@@ -537,27 +576,11 @@ class Repo:
             self._drop_staged(staged_nodes | {commit_cid}, new_record_blocks)
             raise HeadMoved(current)
         self._head = new_head
-
-        new_mst_nodes = staged_nodes
         self._entries = new_entries
         self._commit = commit
         self._commit_cid = commit_cid
         self._root = root
         self._mst_nodes = new_mst_nodes
-
-        # event blocks: the commit, MST nodes new in this commit, new records,
-        # and — per the repository spec's diff rules — the covering proof for
-        # every written path, so consumers can verify by operation inversion
-        event_blocks: dict[CID, bytes] = {commit_cid: commit_bytes}
-        needed = new_mst_nodes - old_mst_nodes
-        for write in writes:
-            needed |= self.mst.covering_proof(root, write.path)
-        for cid in needed:
-            block = self.store.get(cid)
-            if block is None:  # a custom BlockStore violating its contract
-                raise RepoError(f"store lost freshly written MST block {cid}")
-            event_blocks[cid] = block
-        event_blocks.update(new_record_blocks)
 
         event = CommitEvent(
             commit=commit,
@@ -755,6 +778,14 @@ class Repo:
         if newer_than is not None and commit.rev <= newer_than:
             raise StaleCheckpoint(f"checkpoint rev {commit.rev} is not newer than {newer_than}")
         async with self._write_lock:
+            # the head may have moved while this import waited for the lock: a
+            # checkpoint that was newer than the head the caller saw must still
+            # be newer than the head there is now, or it would roll it back
+            if newer_than is not None and self._commit is not None and commit.rev <= self.rev:
+                raise StaleCheckpoint(
+                    f"checkpoint rev {commit.rev} is not newer than the head's {self.rev}, "
+                    "which moved while the import waited"
+                )
             old_reachable = self._reachable()
             for cid, block in blocks.items():
                 self.store.put(cid, block)  # blocks before head

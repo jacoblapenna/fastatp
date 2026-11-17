@@ -361,7 +361,13 @@ class Identity:
         did = encode_did_key(signing.public_key)
         kept = _storage_for(sdir, storage)
         if sdir is None:
-            repo = await Repo.create(did, signing, storage=kept)
+            # no state_dir means no marker file: the storage itself says
+            # whether this pen's repo exists already (a hardware pen on a
+            # durable storage boots this way every time)
+            if await kept.heads.load(did) is not None:
+                repo = await Repo.open(did, signing, storage=kept)
+            else:
+                repo = await Repo.create(did, signing, storage=kept)
             return cls(
                 did=did,
                 signer=signing,

@@ -254,3 +254,51 @@ async def test_processes_on_one_repo_never_collect_the_newer_head(shared):
     final = await Repo.open(DID, None, blocks, heads)
     assert final.get_record(NOTE, "two") == _note("from b")
     final.export_car()
+
+
+async def test_a_retry_decides_per_path_from_the_batchs_final_intent():
+    """``delete p`` then ``create p X`` is one replacement: on a retry after the
+    other writer put X there, nothing is needed; after it put Y there, one
+    update; after it removed p, one create. A bare create keeps its meaning."""
+    from fastatp.repo.repo import WriteOp
+
+    key = crypto.generate_keypair("k256")
+    repo = await Repo.create(DID, key)
+    x, y = _note("x"), _note("y")
+    await repo.put_record(NOTE, "p", _note("original"))
+    replace = [WriteOp("delete", NOTE, "p"), WriteOp("create", NOTE, "p", x)]
+
+    await repo.put_record(NOTE, "p", x)  # "the other writer" put X
+    assert repo._still_needed(replace) == []
+    await repo.put_record(NOTE, "p", y)  # ...or Y
+    assert [(w.action, w.record) for w in repo._still_needed(replace)] == [("update", x)]
+    await repo.delete_record(NOTE, "p")  # ...or removed it
+    assert [(w.action, w.record) for w in repo._still_needed(replace)] == [("create", x)]
+    assert repo._still_needed([WriteOp("delete", NOTE, "p")]) == []  # a delete of a gone path
+    await repo.put_record(NOTE, "p", y)
+    bare = [WriteOp("create", NOTE, "p", x)]
+    assert [w.action for w in repo._still_needed(bare)] == ["create"]  # still refused later
+
+
+async def test_the_event_is_complete_even_if_the_proof_is_collected_right_after_the_swap():
+    """Another process can commit on top and collect this commit's proof
+    nodes the instant the head is durable; the event was assembled first."""
+    key = crypto.generate_keypair("k256")
+    repo = await Repo.create(DID, key)
+    await repo.put_record(NOTE, "one", _note("1"))
+
+    class _CollectsOnSwap(MemoryHeadStore):
+        async def swap(self, did, expected, new):
+            took = await super().swap(did, expected, new)
+            if took and expected is not None:
+                for cid in list(repo.store.cids()):  # the other process's GC, worst case
+                    if cid != new.cid:
+                        repo.store.delete(cid)
+            return took
+
+    repo.head_store = _CollectsOnSwap()
+    await repo.head_store.swap(DID, None, repo._head)  # seed it with the current head
+    event = await repo.put_record(NOTE, "two", _note("2"))
+    assert event is not None
+    assert event.commit_cid in event.blocks and event.ops[0]["cid"] in event.blocks
+    assert len(event.blocks) > 2  # the commit, the record, and the proof nodes
