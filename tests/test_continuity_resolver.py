@@ -66,7 +66,7 @@ def _resolvers(ident, *, pretty_override=None, serve_chain=True):
 async def test_vanilla_did_web_resolves_pretty_unchanged():
     sock, port = _bind()
     domain = f"127.0.0.1%3A{port}"
-    ident = Identity.bootstrap(domain=domain, ephemeral_ok=True)
+    ident = await Identity.bootstrap(domain=domain, ephemeral_ok=True)
     slug_resolver, chain_resolver = _resolvers(ident)
 
     async with _serve(sock, slug_resolver, chain_resolver):
@@ -83,7 +83,7 @@ async def test_vanilla_did_web_resolves_pretty_unchanged():
 async def test_continuity_resolver_verifies_a_valid_chain():
     sock, port = _bind()
     domain = f"127.0.0.1%3A{port}"
-    ident = Identity.bootstrap(domain=domain, ephemeral_ok=True)
+    ident = await Identity.bootstrap(domain=domain, ephemeral_ok=True)
     slug_resolver, chain_resolver = _resolvers(ident)
 
     async with _serve(sock, slug_resolver, chain_resolver):
@@ -97,7 +97,7 @@ async def test_theft_swapped_keys_fails_closed():
     victim's chain (no rotation key). The resolver refuses."""
     sock, port = _bind()
     domain = f"127.0.0.1%3A{port}"
-    ident = Identity.bootstrap(domain=domain, ephemeral_ok=True)
+    ident = await Identity.bootstrap(domain=domain, ephemeral_ok=True)
     thief_key = crypto.generate_keypair("k256")
     assert ident.chain is not None
     forged_pretty = build_pretty(domain, thief_key.public_key(), ident.chain.twin_did)
@@ -112,7 +112,7 @@ async def test_missing_chain_log_fails_closed():
     """A pretty doc that advertises a twin but serves no chain fails closed."""
     sock, port = _bind()
     domain = f"127.0.0.1%3A{port}"
-    ident = Identity.bootstrap(domain=domain, ephemeral_ok=True)
+    ident = await Identity.bootstrap(domain=domain, ephemeral_ok=True)
     slug_resolver, chain_resolver = _resolvers(ident, serve_chain=False)
 
     async with _serve(sock, slug_resolver, chain_resolver):
@@ -147,7 +147,7 @@ async def test_late_adoption_the_alias_appears_and_verifies():
     and the continuity resolver verifies it — no penalty for adopting late."""
     sock, port = _bind()
     domain = f"127.0.0.1%3A{port}"
-    ident = Identity.bootstrap(domain=domain, ephemeral_ok=True)  # chain minted "now"
+    ident = await Identity.bootstrap(domain=domain, ephemeral_ok=True)  # chain minted "now"
     slug_resolver, chain_resolver = _resolvers(ident)
 
     async with _serve(sock, slug_resolver, chain_resolver):

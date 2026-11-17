@@ -13,7 +13,7 @@ from typing import Any
 
 from fastatp import dagcbor
 from fastatp.cid import CID
-from fastatp.crypto import PrivateKey, PublicKey, sign_message, verify_signature
+from fastatp.crypto import PrivateKey, PublicKey, Signer, as_signer, sign_with, verify_signature
 from fastatp.exceptions import RepoError
 from fastatp.lex.types import validate_did, validate_tid
 
@@ -51,7 +51,15 @@ class Commit:
         return verify_signature(public_key, dagcbor.encode(self.unsigned_map()), self.sig)
 
     @classmethod
-    def create(cls, did: str, data: CID, rev: str, signing_key: PrivateKey) -> Commit:
+    async def create(
+        cls, did: str, data: CID, rev: str, signing_key: PrivateKey | Signer
+    ) -> Commit:
+        """Sign a commit through the signer seam.
+
+        ``signing_key`` is a private key or any :class:`Signer` (a TPM, an
+        HSM, a secure element); the signature is normalized to compact low-S
+        and verified against the signer's public key before the commit exists.
+        """
         validate_did(did)
         validate_tid(rev)
         unsigned = {
@@ -61,7 +69,7 @@ class Commit:
             "prev": None,
             "version": COMMIT_VERSION,
         }
-        sig = sign_message(signing_key, dagcbor.encode(unsigned))
+        sig = await sign_with(as_signer(signing_key), dagcbor.encode(unsigned))
         return cls(did=did, data=data, rev=rev, sig=sig)
 
     @classmethod

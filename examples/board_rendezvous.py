@@ -127,7 +127,7 @@ async def run_board_rendezvous() -> dict:
     # --- the private service: serves its channels, gates them by ?as= -------
     sock, port = _bind()
     host_port = f"127.0.0.1:{port}"
-    service_server = PeerServer(
+    service_server = await PeerServer.create(
         Peer(did=SERVICE_DID, signing_key=service_key, resolver=resolver),
         identity_resolver=_as_resolver,
     )
@@ -184,7 +184,7 @@ async def run_board_rendezvous() -> dict:
 
     # --- the requester posts its want ad + self-attestation -----------------
     ctx_id = "inspect-bridge-7"
-    req_repo = Peer(did=req_did, signing_key=req_key).create_repo()
+    req_repo = await Peer(did=req_did, signing_key=req_key).create_repo()
     self_att = build_attestation(
         context_id=ctx_id,
         ephemeral_did=req_did,
@@ -192,8 +192,10 @@ async def run_board_rendezvous() -> dict:
         expires_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
         host=None,
     )
-    req_repo.put_record(Attestation.nsid, "self", self_att)
-    req_repo.put_record(WantAd.nsid, "ad", WantAd(context_id=ctx_id, need="inspect the bridge"))
+    await req_repo.put_record(Attestation.nsid, "self", self_att)
+    await req_repo.put_record(
+        WantAd.nsid, "ad", WantAd(context_id=ctx_id, need="inspect the bridge")
+    )
     await board.post(req_repo.prove(Attestation.nsid, "self"))  # coordinates first
     await board.post(req_repo.prove(WantAd.nsid, "ad"))  # then the ask -> service engages
 
@@ -201,7 +203,9 @@ async def run_board_rendezvous() -> dict:
 
     # --- the requester follows the channel and reads the private reply ------
     got_reply: asyncio.Future = asyncio.get_running_loop().create_future()
-    requester = PeerApp(PeerServer(Peer(did=req_did, signing_key=req_key)), resolver=resolver)
+    requester = PeerApp(
+        await PeerServer.create(Peer(did=req_did, signing_key=req_key)), resolver=resolver
+    )
 
     @requester.on(Inspection)
     async def _capture(reply: Inspection, _ctx: Envelope) -> None:

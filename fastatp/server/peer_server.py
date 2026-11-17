@@ -338,14 +338,14 @@ class RepoHandle:
     def expires_at(self) -> datetime | None:
         return self._host.expires_at
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._host.emit(self._host.repo.put_record(collection, rkey, record))
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+        return self._host.emit(await self._host.repo.put_record(collection, rkey, record))
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._host.emit(self._host.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+        return self._host.emit(await self._host.repo.delete_record(collection, rkey))
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._host.emit(self._host.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+        return self._host.emit(await self._host.repo.apply_writes(writes))
 
     def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
         """Re-announce this repo's hosting status (#account)."""
@@ -373,20 +373,23 @@ class PeerServer:
     def __init__(
         self,
         peer: Peer,
-        repo: Repo | None = None,
-        repo_store: BlockStore | None = None,
+        repo: Repo,
         backfill_window: int = 512,
         *,
         identity_resolver: CallerResolver | None = None,
         warn_on_proxy: bool = True,
         proxy_warn_threshold: int = 8,
     ) -> None:
-        if peer.did is None or peer.signing_key is None:
+        """Host ``repo`` as ``peer``'s public firehose. For a fresh repo use
+        ``await PeerServer.create(peer)``, which signs the genesis commit."""
+        if peer.did is None or peer.signer is None:
             raise ValueError("PeerServer requires a Peer with a did and signing_key")
+        if repo.did != peer.did:
+            raise ValueError(f"the primary repo is for {repo.did}, not this peer's {peer.did}")
         self.peer = peer
         self.backfill_window = backfill_window
         primary = _HostedRepo(
-            repo or Repo(peer.did, peer.signing_key, store=repo_store),
+            repo,
             backfill_window,
             public=True,  # the peer's own repo is its public firehose
         )
@@ -413,6 +416,18 @@ class PeerServer:
         )
 
     # --- multi-repo registry ---------------------------------------------------
+
+    @classmethod
+    async def create(
+        cls,
+        peer: Peer,
+        repo_store: BlockStore | None = None,
+        backfill_window: int = 512,
+        **kwargs: Any,
+    ) -> PeerServer:
+        """A server for ``peer`` over a fresh repo, its genesis signed by the
+        peer's signer. ``repo_store`` is where the repo's blocks go."""
+        return cls(peer, await peer.create_repo(store=repo_store), backfill_window, **kwargs)
 
     def register(
         self,
@@ -569,14 +584,14 @@ class PeerServer:
 
     # --- writes (broadcast on commit) ------------------------------------------
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._emit(self.repo.put_record(collection, rkey, record))
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+        return self._emit(await self.repo.put_record(collection, rkey, record))
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._emit(self.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+        return self._emit(await self.repo.delete_record(collection, rkey))
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._emit(self.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+        return self._emit(await self.repo.apply_writes(writes))
 
     def _emit(self, event: CommitEvent) -> CommitEvent:
         return self._primary.emit(event)
@@ -989,3 +1004,13 @@ class PeerServer:
         import uvicorn
 
         uvicorn.run(self.app, host=host, port=port, **kwargs)
+
+    async def serve(self, host: str = "127.0.0.1", port: int = 8001, **kwargs: Any) -> None:
+        """Serve on the running event loop; :meth:`run` starts its own.
+
+        The write path is async, so a program whose ``main`` awaits
+        ``Repo.create`` or ``Identity.bootstrap`` serves with this.
+        """
+        import uvicorn
+
+        await uvicorn.Server(uvicorn.Config(self.app, host=host, port=port, **kwargs)).serve()

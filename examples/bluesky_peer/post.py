@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import mimetypes
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from fastatp.repo.blobs import SqliteBlobStore
 from fastatp.tid import TidClock
 
 
-def main() -> None:
+async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--domain", required=True)
     ap.add_argument("--state", required=True)
@@ -38,11 +39,11 @@ def main() -> None:
     args = ap.parse_args()
 
     state = Path(args.state)
-    identity = Identity.bootstrap(domain=args.domain, state_dir=state)
+    identity = await Identity.bootstrap(domain=args.domain, state_dir=state)
     identity.repo.blobs = SqliteBlobStore(state / "blobs.sqlite")
 
     if args.profile:
-        identity.repo.put_record(
+        await identity.repo.put_record(
             "app.bsky.actor.profile", "self", records.profile(args.profile, args.description)
         )
         print(f"profile  : displayName={args.profile!r}")
@@ -55,7 +56,7 @@ def main() -> None:
             image_blob = identity.repo.add_blob(data, mime).model_dump(by_alias=True)
             print(f"blob     : {image_blob['ref']['$link']} ({mime}, {len(data)} bytes)")
         rkey = TidClock().now()  # posts use TID record keys
-        event = identity.repo.put_record(
+        event = await identity.repo.put_record(
             "app.bsky.feed.post",
             rkey,
             records.post(args.text, image_blob=image_blob, image_alt=args.alt),
@@ -68,4 +69,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

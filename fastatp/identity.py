@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from fastatp.cid import CID
 from fastatp.crypto import (
     PrivateKey,
+    as_signer,
     curve_name,
     encode_did_key,
     generate_keypair,
@@ -124,7 +125,7 @@ class Identity:
 
     # --- rotation -------------------------------------------------------------
 
-    def rotate(self, new_signing_key: PrivateKey, rotation_private_key: PrivateKey) -> None:
+    async def rotate(self, new_signing_key: PrivateKey, rotation_private_key: PrivateKey) -> None:
         """Turn the page: sign a new document (with the new signing key) using
         the supplied rotation pen, append it to the chain, switch the serving
         key, and re-sign the repo head under the new key. The pen is checked
@@ -149,8 +150,8 @@ class Identity:
             _write_secret(self.state_dir / _SIGNING_KEY, _key_bytes(new_signing_key))
             (self.state_dir / _CHAIN).write_text(json.dumps(self.chain.to_json()))
         self.signing_key = new_signing_key
-        self.repo.signing_key = new_signing_key
-        self.repo.recommit()  # re-sign the head under the new key (persists new head)
+        self.repo.signer = as_signer(new_signing_key)
+        await self.repo.recommit()  # re-sign the head under the new key (persists new head)
 
     # --- repo migration ---------------------------------------------------------
 
@@ -179,7 +180,7 @@ class Identity:
     # --- bootstrap ------------------------------------------------------------
 
     @classmethod
-    def adopt_web(
+    async def adopt_web(
         cls,
         domain: str,
         signing_key: PrivateKey,
@@ -215,7 +216,7 @@ class Identity:
                 "Adoption is a one-time migration; use Identity.bootstrap() to load it."
             )
         sdir.mkdir(parents=True, exist_ok=True)
-        return cls._mint_did_web(
+        return await cls._mint_did_web(
             domain,
             sdir,
             rotation_public_keys,
@@ -225,7 +226,7 @@ class Identity:
         )
 
     @classmethod
-    def bootstrap(
+    async def bootstrap(
         cls,
         *,
         domain: str | None = None,
@@ -238,7 +239,7 @@ class Identity:
         sdir = Path(state_dir) if state_dir is not None else None
 
         if domain is None:
-            return cls._bootstrap_did_key(sdir, curve)
+            return await cls._bootstrap_did_key(sdir, curve)
 
         if sdir is None:
             if not ephemeral_ok:
@@ -249,30 +250,32 @@ class Identity:
                     "rotation' event this gate prevents. Pass a state_dir, or "
                     "ephemeral_ok=True for tests only."
                 )
-            return cls._mint_did_web(
+            return await cls._mint_did_web(
                 domain, None, rotation_public_keys, persist_rotation_key, curve
             )
 
         if (sdir / _META).exists():
             return cls._load(sdir)
         sdir.mkdir(parents=True, exist_ok=True)
-        return cls._mint_did_web(domain, sdir, rotation_public_keys, persist_rotation_key, curve)
+        return await cls._mint_did_web(
+            domain, sdir, rotation_public_keys, persist_rotation_key, curve
+        )
 
     # --- bootstrap internals --------------------------------------------------
 
     @classmethod
-    def _bootstrap_did_key(cls, sdir: Path | None, curve: str) -> Identity:
+    async def _bootstrap_did_key(cls, sdir: Path | None, curve: str) -> Identity:
         if sdir is not None and (sdir / _META).exists():
             return cls._load(sdir)
         signing_key = generate_keypair(curve)
         did = encode_did_key(signing_key.public_key())
         if sdir is None:
             store: BlockStore = MemoryBlockStore()
-            repo = Repo(did, signing_key, store=store)
+            repo = await Repo.create(did, signing_key, store=store)
             return cls(did=did, signing_key=signing_key, store=store, repo=repo, curve=curve)
         sdir.mkdir(parents=True, exist_ok=True)
         store = SqliteBlockStore(sdir / _BLOCKS)
-        repo = Repo(did, signing_key, store=store, on_commit=_head_writer(sdir))
+        repo = await Repo.create(did, signing_key, store=store, on_commit=_head_writer(sdir))
         _write_secret(sdir / _SIGNING_KEY, _key_bytes(signing_key))
         (sdir / _META).write_text(
             json.dumps({"kind": "did:key", "did": did, "domain": None, "curve": curve})
@@ -282,7 +285,7 @@ class Identity:
         )
 
     @classmethod
-    def _mint_did_web(
+    async def _mint_did_web(
         cls,
         domain: str,
         sdir: Path | None,
@@ -306,7 +309,7 @@ class Identity:
 
         if sdir is None:  # ephemeral_ok test mode: mint in memory, persist nothing
             store: BlockStore = MemoryBlockStore()
-            repo = Repo(did, signing_key, store=store)
+            repo = await Repo.create(did, signing_key, store=store)
             return cls(
                 did=did,
                 signing_key=signing_key,
@@ -319,7 +322,7 @@ class Identity:
             )
 
         store = SqliteBlockStore(sdir / _BLOCKS)
-        repo = Repo(did, signing_key, store=store, on_commit=_head_writer(sdir))
+        repo = await Repo.create(did, signing_key, store=store, on_commit=_head_writer(sdir))
         _write_secret(sdir / _SIGNING_KEY, _key_bytes(signing_key))
         (sdir / _CHAIN).write_text(json.dumps(chain.to_json()))
         (sdir / _META).write_text(

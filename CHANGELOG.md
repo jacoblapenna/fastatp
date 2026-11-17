@@ -16,6 +16,18 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- The repo write path is async, and a pen is a handle. `Repo.put_record`,
+  `delete_record`, `apply_writes` and `recommit`, `PeerServer`/`RepoHandle`
+  /`PrivateChannel` writes, `PeerApp.emit` and `publish_schemas`,
+  `Peer.create_repo`, `Commit.create`, `Identity.bootstrap`/`adopt_web`/
+  `rotate` are all awaited. A fresh repo is `await Repo.create(did,
+  signing_key)`; `Repo(did, signing_key, head_cid=...)` reopens a stored
+  head and signs nothing, and a `Repo(...)` with no head has no commit until
+  its first write. `PeerServer(peer, repo)` takes the repo; `await
+  PeerServer.create(peer)` makes a fresh one, and `await server.serve()`
+  serves on a running loop where `run()` cannot. Every `signing_key=`
+  argument also accepts a `Signer`, so the same code runs with a key in
+  memory or in a TPM; the repo and peer hold it as `.signer`.
 - The browser bundle's `BrowserPeer.sign_challenge(nonce)` is removed. The
   knock at a host is now one free function, `sign_challenge(key_pair, nonce,
   repo_did)`, which needs no repo loaded and names the repo the pen is

@@ -46,7 +46,7 @@ def test_unknown_op_frames_are_skippable_errors():
         decode_frame(frame)
 
 
-def test_commit_gap_is_typed():
+async def test_commit_gap_is_typed():
     """since/prevData mismatches raise CommitGap (recovery), not bare
     RepoError (skip) — skipping a gap warn-loops forever."""
 
@@ -59,15 +59,17 @@ def test_commit_gap_is_typed():
 
         from fastatp.repo.repo import Repo
 
-        repo = Repo(DID, key)
+        repo = await Repo.create(DID, key)
         mirror = RepoMirror(DID, resolver=resolver)
-        await mirror.apply_commit(commit_frame_body(DID, 1, repo.put_record(NSID, "a", _note(0))))
-        repo.put_record(NSID, "b", _note(1))  # the mirror never sees this one
-        stale = repo.put_record(NSID, "c", _note(2))
+        await mirror.apply_commit(
+            commit_frame_body(DID, 1, await repo.put_record(NSID, "a", _note(0)))
+        )
+        await repo.put_record(NSID, "b", _note(1))  # the mirror never sees this one
+        stale = await repo.put_record(NSID, "c", _note(2))
         with pytest.raises(CommitGap):
             await mirror.apply_commit(commit_frame_body(DID, 3, stale))
 
-    asyncio.run(run())
+    await run()
 
 
 # --- WebSocketFrameSource: cursor and reconnect ----------------------------------
@@ -98,7 +100,7 @@ def test_source_defaults_encode_operational_lessons():
     assert src.max_backoff <= 120  # capped, never unbounded
 
 
-def test_close_wins_over_reconnect_backoff():
+async def test_close_wins_over_reconnect_backoff():
     """close() must stop the reconnect loop even mid-backoff (the SDK needed
     two fixes for this exact bug class)."""
 
@@ -125,7 +127,7 @@ def test_close_wins_over_reconnect_backoff():
         await asyncio.wait_for(task, 5)  # terminates promptly, no frames
         assert frames == []
 
-    asyncio.run(run())
+    await run()
 
 
 # --- recovery routing in the dispatcher ------------------------------------------
@@ -156,7 +158,7 @@ class _ScriptedSource(FrameSource):
             yield frame
 
 
-def _pipeline(frames, checkpoint_car):
+async def _pipeline(frames, checkpoint_car):
     """Run one follow over scripted frames; returns (app, mirror-ish state)."""
     key = crypto.generate_keypair("k256")
     doc = build_did_document(did=DID, signing_key=key.public_key())
@@ -165,7 +167,7 @@ def _pipeline(frames, checkpoint_car):
         return doc if did == DID else None
 
     async def run():
-        server = PeerServer(
+        server = await PeerServer.create(
             Peer(did="did:web:consumer.example", signing_key=crypto.generate_keypair("k256"))
         )
         app = PeerApp(server, resolver=resolver)
@@ -176,10 +178,10 @@ def _pipeline(frames, checkpoint_car):
         await asyncio.wait_for(task, 5)
         return source
 
-    return asyncio.run(run())
+    return await run()
 
 
-def test_gap_triggers_checkpoint_recovery():
+async def test_gap_triggers_checkpoint_recovery():
     """A missed commit routes to the checkpoint seam instead of the
     warn-and-drop-forever loop (our verification strength deserves a
     recovery path)."""
@@ -187,15 +189,15 @@ def test_gap_triggers_checkpoint_recovery():
 
     key = crypto.generate_keypair("k256")
     global DID  # keep the resolver simple: one DID for producer identity
-    repo = Repo(DID, key)
+    repo = await Repo.create(DID, key)
     doc = build_did_document(did=DID, signing_key=key.public_key())
 
     async def resolver(did):
         return doc if did == DID else None
 
-    e1 = repo.put_record(NSID, "a", _note(0))
-    repo.put_record(NSID, "b", _note(1))  # never emitted: the gap
-    e3 = repo.put_record(NSID, "c", _note(2))
+    e1 = await repo.put_record(NSID, "a", _note(0))
+    await repo.put_record(NSID, "b", _note(1))  # never emitted: the gap
+    e3 = await repo.put_record(NSID, "c", _note(2))
     checkpoint = repo.export_car()
     frames = [
         encode_frame("#commit", commit_frame_body(DID, 1, e1)),
@@ -203,7 +205,7 @@ def test_gap_triggers_checkpoint_recovery():
     ]
 
     async def run():
-        server = PeerServer(
+        server = await PeerServer.create(
             Peer(did="did:web:consumer.example", signing_key=crypto.generate_keypair("k256"))
         )
         app = PeerApp(server, resolver=resolver)
@@ -213,19 +215,19 @@ def test_gap_triggers_checkpoint_recovery():
         await asyncio.wait_for(task, 5)
         return source
 
-    source = asyncio.run(run())
+    source = await run()
     assert source.checkpoint_calls == 1  # the gap fetched a checkpoint
     assert source.advanced  # and the cursor advanced past the applied frame
 
 
-def test_error_frame_triggers_checkpoint_recovery():
+async def test_error_frame_triggers_checkpoint_recovery():
     """A protocol error frame (ConsumerTooSlow) recovers explicitly instead
     of being dropped as a bad frame."""
     from fastatp.repo.repo import Repo
 
     key = crypto.generate_keypair("k256")
-    repo = Repo(DID, key)
-    repo.put_record(NSID, "x", _note(0))
+    repo = await Repo.create(DID, key)
+    await repo.put_record(NSID, "x", _note(0))
     checkpoint = repo.export_car()
     error_frame = dagcbor.encode({"op": -1}) + dagcbor.encode(
         {"error": "ConsumerTooSlow", "message": "evicted"}
@@ -236,7 +238,7 @@ def test_error_frame_triggers_checkpoint_recovery():
         return doc if did == DID else None
 
     async def run():
-        server = PeerServer(
+        server = await PeerServer.create(
             Peer(did="did:web:consumer.example", signing_key=crypto.generate_keypair("k256"))
         )
         app = PeerApp(server, resolver=resolver)
@@ -246,14 +248,14 @@ def test_error_frame_triggers_checkpoint_recovery():
         await asyncio.wait_for(task, 5)
         return source
 
-    source = asyncio.run(run())
+    source = await run()
     assert source.checkpoint_calls == 1
 
 
 # --- WebResolver.invalidate ------------------------------------------------------
 
 
-def test_web_resolver_invalidate():
+async def test_web_resolver_invalidate():
     """#identity's purpose: drop the cached document so the next verification
     re-resolves instead of trusting a rotated-away key until TTL expiry
     (invalidation-API pattern from MarshalX/atproto's identity cache)."""
@@ -282,25 +284,25 @@ def test_web_resolver_invalidate():
         await resolver("did:web:inv.example")  # refetches
         assert fetches == 2
 
-    asyncio.run(run())
+    await run()
 
 
-def test_checkpoint_failure_does_not_kill_ingest():
+async def test_checkpoint_failure_does_not_kill_ingest():
     """A 503 from getRepo during recovery must degrade to out-of-sync, never
     terminate the follow."""
     from fastatp.repo.repo import Repo
 
     key = crypto.generate_keypair("k256")
-    repo = Repo(DID, key)
+    repo = await Repo.create(DID, key)
     doc = build_did_document(did=DID, signing_key=key.public_key())
 
     async def resolver(did):
         return doc if did == DID else None
 
-    e1 = repo.put_record(NSID, "a", _note(0))
-    repo.put_record(NSID, "b", _note(1))  # the gap
-    e3 = repo.put_record(NSID, "c", _note(2))
-    e4 = repo.put_record(NSID, "d", _note(3))
+    e1 = await repo.put_record(NSID, "a", _note(0))
+    await repo.put_record(NSID, "b", _note(1))  # the gap
+    e3 = await repo.put_record(NSID, "c", _note(2))
+    e4 = await repo.put_record(NSID, "d", _note(3))
 
     class _FailingCheckpoint(_ScriptedSource):
         async def checkpoint(self, did: str) -> bytes | None:
@@ -314,7 +316,7 @@ def test_checkpoint_failure_does_not_kill_ingest():
     ]
 
     async def run():
-        server = PeerServer(
+        server = await PeerServer.create(
             Peer(did="did:web:consumer.example", signing_key=crypto.generate_keypair("k256"))
         )
         app = PeerApp(server, resolver=resolver)
@@ -324,7 +326,7 @@ def test_checkpoint_failure_does_not_kill_ingest():
         await asyncio.wait_for(task, 5)  # the loop ran to completion, not died
         return source
 
-    source = asyncio.run(run())
+    source = await run()
     assert source.checkpoint_calls >= 2  # recovery retried on each gap signal
 
 

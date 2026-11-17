@@ -31,6 +31,7 @@ example keeps to checkpoint reads for clarity.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from starlette.requests import Request
@@ -82,7 +83,7 @@ class ExampleBuilder:
             return None
 
 
-def make_builder(domain: str) -> ExampleBuilder:
+async def make_builder(domain: str) -> ExampleBuilder:
     chain_store: dict[str, dict] = {}
 
     async def resolver(slug: str) -> DIDDocument | None:
@@ -99,7 +100,9 @@ def make_builder(domain: str) -> ExampleBuilder:
 
     shelf = DIDServer(domain, resolver, chain_resolver=chain_resolver, shelf_store=shelf_store)
 
-    peers = PeerServer(Peer(did=f"did:web:{domain}", signing_key=crypto.generate_keypair("k256")))
+    peers = await PeerServer.create(
+        Peer(did=f"did:web:{domain}", signing_key=crypto.generate_keypair("k256"))
+    )
     gate = BrowserGate()
     gate.install(peers)
 
@@ -120,7 +123,7 @@ def make_builder(domain: str) -> ExampleBuilder:
             return JSONResponse({"error": "NotShelved"}, status_code=404)
         car = await request.body()
         # throwaway local key: it never signs — imports replace state wholesale
-        repo = Repo(twin_did, crypto.generate_keypair("k256"))
+        repo = await Repo.create(twin_did, crypto.generate_keypair("k256"))
         try:
             repo.import_car(car, verify_key=key)
         except FastATPError as exc:
@@ -156,7 +159,9 @@ def make_builder(domain: str) -> ExampleBuilder:
                 return JSONResponse({"error": "BadDid"}, status_code=400)
             handle = builder.handles.get(did)
             if handle is None:
-                repo = Repo(did, crypto.generate_keypair("k256"))  # throwaway, never signs
+                repo = await Repo.create(
+                    did, crypto.generate_keypair("k256")
+                )  # throwaway, never signs
                 try:
                     repo.import_car(car, verify_key=key)
                 except FastATPError as exc:
@@ -190,12 +195,12 @@ def make_builder(domain: str) -> ExampleBuilder:
     return builder
 
 
-def main() -> None:  # pragma: no cover - runnable demo
+async def main() -> None:  # pragma: no cover - runnable demo
     import asyncio
 
     import uvicorn
 
-    builder = make_builder("shelf.example")
+    builder = await make_builder("shelf.example")
 
     async def serve() -> None:
         shelf = uvicorn.Server(uvicorn.Config(builder.shelf.app, port=8100, log_level="info"))
@@ -204,8 +209,8 @@ def main() -> None:  # pragma: no cover - runnable demo
         print("peers:  http://127.0.0.1:8101   (gated repos, browser gate, signup)")
         await asyncio.gather(shelf.serve(), peers.serve())
 
-    asyncio.run(serve())
+    await serve()
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    asyncio.run(main())

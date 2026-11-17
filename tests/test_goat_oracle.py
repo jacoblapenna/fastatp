@@ -46,7 +46,7 @@ def _goat_stderr_problems(stderr: str) -> list[str]:
 
 
 async def test_goat_verifies_full_stream(serve_app):
-    srv = PeerServer(
+    srv = await PeerServer.create(
         Peer(did=DID, signing_key=crypto.generate_keypair("k256")), backfill_window=4096
     )
     async with serve_app(srv.app) as port:
@@ -67,12 +67,12 @@ async def test_goat_verifies_full_stream(serve_app):
             # a workload with every op shape, deep enough that deletes/updates
             # have MST neighbors in untouched nodes
             for i in range(60):
-                srv.put_record(NSID, f"k{i:03d}", _note(i))
+                await srv.put_record(NSID, f"k{i:03d}", _note(i))
             for i in (0, 13, 27, 41, 59):
-                srv.delete_record(NSID, f"k{i:03d}")
+                await srv.delete_record(NSID, f"k{i:03d}")
             for i in (1, 30, 58):
-                srv.put_record(NSID, f"k{i:03d}", _note(1000 + i))
-            srv.apply_writes(
+                await srv.put_record(NSID, f"k{i:03d}", _note(1000 + i))
+            await srv.apply_writes(
                 [
                     WriteOp("create", NSID, "zz-batch", _note(-1)),
                     WriteOp("update", NSID, "k002", _note(-2)),
@@ -92,7 +92,7 @@ async def test_goat_verifies_full_stream(serve_app):
                     events.append(json.loads(line))
                 return events
 
-            events = await asyncio.wait_for(read_events(), timeout=30)
+            events = await asyncio.wait_for(await read_events(), timeout=30)
         finally:
             proc.terminate()
             _out, err = await asyncio.wait_for(proc.communicate(), timeout=10)
@@ -114,11 +114,11 @@ async def test_goat_inverts_in_isolation_mid_stream(serve_app):
     the event's own blocks — the exact path the covering proofs exist for.
     (Without covering proofs goat logs "failed to invert commit MST ...
     partial MST" here.)"""
-    srv = PeerServer(
+    srv = await PeerServer.create(
         Peer(did=DID, signing_key=crypto.generate_keypair("k256")), backfill_window=4096
     )
     for i in range(60):
-        srv.put_record(NSID, f"k{i:03d}", _note(i))
+        await srv.put_record(NSID, f"k{i:03d}", _note(i))
     cursor = srv.seq  # goat starts here: sees only the deletes/updates below
     async with serve_app(srv.app) as port:
         proc = await asyncio.create_subprocess_exec(
@@ -139,9 +139,9 @@ async def test_goat_inverts_in_isolation_mid_stream(serve_app):
         try:
             await asyncio.sleep(1.0)
             for i in (0, 13, 27, 41, 59):
-                srv.delete_record(NSID, f"k{i:03d}")
+                await srv.delete_record(NSID, f"k{i:03d}")
             for i in (1, 30):
-                srv.put_record(NSID, f"k{i:03d}", _note(1000 + i))
+                await srv.put_record(NSID, f"k{i:03d}", _note(1000 + i))
 
             async def wait_verified() -> str:
                 assert proc.stderr is not None
@@ -153,7 +153,7 @@ async def test_goat_inverts_in_isolation_mid_stream(serve_app):
                     seen += chunk.decode(errors="replace")
                 return seen
 
-            stderr = await asyncio.wait_for(wait_verified(), timeout=30)
+            stderr = await asyncio.wait_for(await wait_verified(), timeout=30)
         finally:
             proc.terminate()
             _out, err = await asyncio.wait_for(proc.communicate(), timeout=10)

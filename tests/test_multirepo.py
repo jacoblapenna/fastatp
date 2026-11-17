@@ -30,10 +30,10 @@ def _note(t):
     return Note(text=t, at="2026-07-06T12:00:00Z")
 
 
-def _did_key_repo() -> Repo:
+async def _did_key_repo() -> Repo:
     key = crypto.generate_keypair("k256")
     did = crypto.encode_did_key(key.public_key())
-    return Repo(did, key)
+    return await Repo.create(did, key)
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ async def running(serve_app):
     """A PeerServer hosting a primary (did:web) repo, served under uvicorn."""
     key = crypto.generate_keypair("k256")
     peer = Peer(did=PRIMARY_DID, signing_key=key)
-    srv = PeerServer(peer, backfill_window=16)
+    srv = await PeerServer.create(peer, backfill_window=16)
     doc = build_did_document(did=PRIMARY_DID, signing_key=key.public_key())
 
     async def resolver(did):
@@ -57,9 +57,9 @@ async def _recv(ws, timeout=5.0):
 
 async def test_getrepo_routes_by_did(running):
     srv, port, _resolver = running
-    channel = _did_key_repo()
+    channel = await _did_key_repo()
     handle = srv.register(channel, public=True)
-    handle.put_record(Note.nsid, "a", _note("in-channel"))
+    await handle.put_record(Note.nsid, "a", _note("in-channel"))
 
     base = f"http://127.0.0.1:{port}{GET_REPO_PATH}"
     async with httpx.AsyncClient() as client:
@@ -81,7 +81,7 @@ async def test_per_repo_firehose_isolation_and_independent_seq(running):
     """A follower of repo A never sees repo B's frames, and each repo's seq
     counts independently from 1."""
     srv, port, resolver = running
-    channel = _did_key_repo()
+    channel = await _did_key_repo()
     handle = srv.register(channel, public=True)
 
     ws_base = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}"
@@ -97,9 +97,9 @@ async def test_per_repo_firehose_isolation_and_independent_seq(running):
         websockets.connect(f"{ws_base}?did={channel.did}") as ws_channel,
     ):
         await asyncio.sleep(0.05)  # both subscriptions registered
-        srv.put_record(Note.nsid, "p0", _note("primary-0"))
-        handle.put_record(Note.nsid, "c0", _note("channel-0"))
-        srv.put_record(Note.nsid, "p1", _note("primary-1"))
+        await srv.put_record(Note.nsid, "p0", _note("primary-0"))
+        await handle.put_record(Note.nsid, "c0", _note("channel-0"))
+        await srv.put_record(Note.nsid, "p1", _note("primary-1"))
 
         # primary follower sees ONLY the two primary commits, seq 1,2
         _h1, b1 = await _recv(ws_primary)
@@ -127,9 +127,9 @@ async def test_per_repo_firehose_isolation_and_independent_seq(running):
 
 async def test_handle_only_writes_land_in_own_repo(running):
     srv, _port, _resolver = running
-    channel = _did_key_repo()
+    channel = await _did_key_repo()
     handle = srv.register(channel)
-    handle.put_record(Note.nsid, "x", _note("channel-only"))
+    await handle.put_record(Note.nsid, "x", _note("channel-only"))
 
     # the record is in the channel repo, signed under the channel DID
     assert handle.repo.get_record(Note.nsid, "x")["text"] == "channel-only"
@@ -142,7 +142,7 @@ async def test_handle_only_writes_land_in_own_repo(running):
 
 async def test_duplicate_register_and_primary_guard(running):
     srv, _port, _resolver = running
-    channel = _did_key_repo()
+    channel = await _did_key_repo()
     srv.register(channel)
     with pytest.raises(ValueError, match="already hosting"):
         srv.register(channel)
@@ -153,12 +153,12 @@ async def test_duplicate_register_and_primary_guard(running):
 
 async def test_unregister_cuts_subscribers(running):
     srv, port, _resolver = running
-    channel = _did_key_repo()
+    channel = await _did_key_repo()
     handle = srv.register(channel, public=True)
     ws_base = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}"
     async with websockets.connect(f"{ws_base}?did={channel.did}") as ws:
         await asyncio.sleep(0.05)
-        handle.put_record(Note.nsid, "a", _note("live"))
+        await handle.put_record(Note.nsid, "a", _note("live"))
         _, body = await _recv(ws)
         assert body["seq"] == 3
         srv.unregister(channel.did)

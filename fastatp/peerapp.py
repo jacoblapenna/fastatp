@@ -119,8 +119,8 @@ class PrivateChannel:
         allocated. The host answers on it by adding it to its interface."""
         return overlay_address(self.wg_public_key)
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self.handle.put_record(collection, rkey, record)
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+        return await self.handle.put_record(collection, rkey, record)
 
     def close(self) -> None:
         """Retire the channel now (before its TTL)."""
@@ -396,9 +396,9 @@ class PeerApp:
 
     # --- producing ------------------------------------------------------------
 
-    def emit(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+    async def emit(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
         """Write a record into this app's repo and broadcast it on the firehose."""
-        return self.server.put_record(collection, rkey, record)
+        return await self.server.put_record(collection, rkey, record)
 
     async def admit(self, did: str, **grant_opts: Any) -> Any:
         """Let ``did`` reach this app's firehose (WireGuard grant + capability)."""
@@ -412,7 +412,7 @@ class PeerApp:
             raise ValueError("evict requires a reconciler")
         return await self.reconciler.revoke(did, reason=reason)
 
-    def publish_schemas(self) -> list[dict[str, Any]]:
+    async def publish_schemas(self) -> list[dict[str, Any]]:
         """Publish a schema record for every ``advertise=True`` handler — and
         only those (per-lexicon opt-in, never publish-everything). Returns the
         emitted ``lexicon: 1`` docs so they can also be posted to a board."""
@@ -423,7 +423,7 @@ class PeerApp:
             if not reg.advertise:
                 continue
             doc = reg.lexicon_cls.to_lexicon_json()
-            self.emit("com.atproto.lexicon.schema", generate_tid(), doc)
+            await self.emit("com.atproto.lexicon.schema", generate_tid(), doc)
             published.append(doc)
         return published
 
@@ -450,7 +450,7 @@ class PeerApp:
         """
         signing_key = generate_keypair("k256")
         ephemeral_did = encode_did_key(signing_key.public_key())
-        repo = Repo(ephemeral_did, signing_key)
+        repo = await Repo.create(ephemeral_did, signing_key)
         handle = self.server.register(repo, public=False, ttl=ttl)
 
         recon = WireGuardReconciler(handle, self._wg_interface, self._channel_resolver())
@@ -499,7 +499,7 @@ class PeerApp:
             host=channel.endpoint_host,
         )
         rkey = generate_tid()
-        self.emit(Attestation.nsid, rkey, attestation)
+        await self.emit(Attestation.nsid, rkey, attestation)
         if to is not None:
             await push_proof(to, self.server.repo.prove(Attestation.nsid, rkey))
         return attestation
@@ -551,7 +551,7 @@ class PeerApp:
             ttl=ttl,
         )
         collection = type(record).nsid if isinstance(record, Lexicon) else record["$type"]
-        channel.put_record(collection, generate_tid(), record)
+        await channel.put_record(collection, generate_tid(), record)
         await self.attest(channel, ctx.context_id, to=to)
         return channel
 
@@ -1047,7 +1047,7 @@ class PeerApp:
         future: asyncio.Future[Lexicon] = loop.create_future()
         self._waiters[key] = future
         try:
-            self.emit(collection or request.nsid, rkey or generate_tid(), request)
+            await self.emit(collection or request.nsid, rkey or generate_tid(), request)
             return await asyncio.wait_for(future, timeout)
         finally:
             self._waiters.pop(key, None)
@@ -1083,9 +1083,9 @@ class PeerApp:
         # publish the request + our self-attestation (emit locally so we can prove
         # them; push to the board/peer when we host no reachable firehose)
         req_rkey = rkey or generate_tid()
-        self.emit(collection or request.nsid, req_rkey, request)
+        await self.emit(collection or request.nsid, req_rkey, request)
         att_rkey = generate_tid()
-        self.emit(Attestation.nsid, att_rkey, self_attestation)
+        await self.emit(Attestation.nsid, att_rkey, self_attestation)
         if push_url is not None:
             await push_proof(push_url, self.server.repo.prove(collection or request.nsid, req_rkey))
             await push_proof(push_url, self.server.repo.prove(Attestation.nsid, att_rkey))

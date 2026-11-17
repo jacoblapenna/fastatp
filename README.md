@@ -142,8 +142,8 @@ async def main() -> None:
     doc = build_did_document(did=did, signing_key=key.public_key())
 
     producer = Peer(did=did, signing_key=key)
-    repo = producer.create_repo()
-    repo.put_record(
+    repo = await producer.create_repo()
+    await repo.put_record(
         PressureReading.nsid,
         "boot",
         PressureReading(pressure_psi=1450, timestamp=datetime.now(timezone.utc)),
@@ -178,7 +178,7 @@ app = PeerApp(server)  # a PeerServer for this peer's DID
 async def handle(req, ctx):
     # work happens on your clock — there is no call waiting on the other side
     result = InspectionResult(context_id=req.context_id, finding="within spec")
-    app.emit(InspectionResult.nsid, generate_tid(), result)  # a durable signed reply
+    await app.emit(InspectionResult.nsid, generate_tid(), result)  # a durable signed reply
 
 
 # a private, one-shot reply on an ephemeral channel only the requester can read:

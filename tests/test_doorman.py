@@ -32,16 +32,16 @@ BOB = "did:key:zBob"
 WG_KEY = base64.b64encode(bytes(range(32))).decode()  # a valid 32-byte WG key
 
 
-def _channel_repo() -> Repo:
+async def _channel_repo() -> Repo:
     key = crypto.generate_keypair("k256")
-    return Repo(crypto.encode_did_key(key.public_key()), key)
+    return await Repo.create(crypto.encode_did_key(key.public_key()), key)
 
 
-def _admit(handle, subject, *, actions=(ACTION_SUBSCRIBE,), wg_key=None):
+async def _admit(handle, subject, *, actions=(ACTION_SUBSCRIBE,), wg_key=None):
     """Write a live capability admitting ``subject`` into the handle's repo,
     optionally by WireGuard key (whose overlay address is derived)."""
     cap = Capability(subject=subject, actions=list(actions), wg_public_key=wg_key)
-    handle.put_record(Capability.nsid, generate_tid(), cap)
+    await handle.put_record(Capability.nsid, generate_tid(), cap)
 
 
 def _arriving_from(key: str):
@@ -83,11 +83,11 @@ async def _first_frame(port, did, cursor=0):
 async def test_admitted_to_a_is_refused_b(serve_app):
     """Injected identity = Alice. Alice is admitted to A only. getRepo and the
     firehose both admit A and refuse B; a B-holder (Bob) would be admitted."""
-    srv = PeerServer(_peer(), identity_resolver=lambda conn: ALICE)
-    a = srv.register(_channel_repo())  # gated by default
-    b = srv.register(_channel_repo())
-    _admit(a, ALICE)
-    _admit(b, BOB)  # Bob holds B, Alice does not
+    srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: ALICE)
+    a = srv.register(await _channel_repo())  # gated by default
+    b = srv.register(await _channel_repo())
+    await _admit(a, ALICE)
+    await _admit(b, BOB)  # Bob holds B, Alice does not
 
     async with serve_app(srv.app) as port:
         # getRepo: A allowed, B refused
@@ -102,7 +102,7 @@ async def test_admitted_to_a_is_refused_b(serve_app):
         with pytest.raises(RepoError, match="RepoNotFound"):
             await _first_frame(port, b.did)
 
-        a.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "hi"})
+        await a.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "hi"})
         header, body = await _first_frame(port, a.did)
         assert header["t"] == "#commit" and body["repo"] == a.did
 
@@ -110,9 +110,9 @@ async def test_admitted_to_a_is_refused_b(serve_app):
 async def test_fail_closed_when_no_tunnel_identity(serve_app):
     """A caller the resolver cannot place (None) is refused every gated repo,
     but the public primary firehose stays open."""
-    srv = PeerServer(_peer(), identity_resolver=lambda conn: None)
-    a = srv.register(_channel_repo())
-    _admit(a, ALICE)
+    srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: None)
+    a = srv.register(await _channel_repo())
+    await _admit(a, ALICE)
 
     async with serve_app(srv.app) as port:
         assert (await _get(port, a.did)).status_code == 404  # gated: refused
@@ -123,9 +123,9 @@ async def test_fail_closed_when_no_tunnel_identity(serve_app):
 
 async def test_send_only_capability_does_not_confer_read(serve_app):
     """A 'send' grant (push intake) must not open the firehose."""
-    srv = PeerServer(_peer(), identity_resolver=lambda conn: ALICE)
-    a = srv.register(_channel_repo())
-    _admit(a, ALICE, actions=(ACTION_SEND,))  # send, not subscribe
+    srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: ALICE)
+    a = srv.register(await _channel_repo())
+    await _admit(a, ALICE, actions=(ACTION_SEND,))  # send, not subscribe
 
     async with serve_app(srv.app) as port:
         assert (await _get(port, a.did)).status_code == 404
@@ -135,11 +135,11 @@ async def test_tunnel_identity_resolver_maps_source_address(serve_app):
     """The tunnel resolver ties the source overlay address to Alice via A's
     signed capability: the address is derived from the granted key, never
     read from a record."""
-    srv = PeerServer(_peer())
+    srv = await PeerServer.create(_peer())
     srv.identity_resolver = TunnelIdentityResolver(srv, source_address=_arriving_from(WG_KEY))
-    a = srv.register(_channel_repo())
-    b = srv.register(_channel_repo())
-    _admit(a, ALICE, wg_key=WG_KEY)  # Alice's key -> her address -> Alice, admitted to A
+    a = srv.register(await _channel_repo())
+    b = srv.register(await _channel_repo())
+    await _admit(a, ALICE, wg_key=WG_KEY)  # Alice's key -> her address -> Alice, admitted to A
 
     async with serve_app(srv.app) as port:
         assert (await _get(port, a.did)).status_code == 200  # Alice admitted to A
@@ -165,9 +165,9 @@ async def test_a_did_web_grantee_admitted_through_the_reconciler_is_named_at_the
     async def resolver(did: str):
         return bob_doc if did == bob else None
 
-    srv = PeerServer(_peer())
+    srv = await PeerServer.create(_peer())
     srv.identity_resolver = TunnelIdentityResolver(srv, source_address=_arriving_from(WG_KEY))
-    channel = srv.register(_channel_repo())
+    channel = srv.register(await _channel_repo())
     interface = MemoryWireGuardInterface()
     await WireGuardReconciler(channel, interface, resolver).grant(bob)
     assert WG_KEY in interface.peers()  # the kernel admits bob's key...
@@ -179,9 +179,9 @@ async def test_a_did_web_grantee_admitted_through_the_reconciler_is_named_at_the
 async def test_proxy_warning_on_unidentifiable_loopback_read(serve_app, caplog):
     """A gated read that can't be tied to a tunnel identity, from loopback, logs
     a loud proxy-misconfiguration diagnosis (once)."""
-    srv = PeerServer(_peer())  # default resolver: the real client address, loopback
-    a = srv.register(_channel_repo())
-    _admit(a, ALICE, wg_key=WG_KEY)  # Alice's derived address is on the overlay, not loopback
+    srv = await PeerServer.create(_peer())  # default resolver: the real client address, loopback
+    a = srv.register(await _channel_repo())
+    await _admit(a, ALICE, wg_key=WG_KEY)  # Alice's derived address is on the overlay, not loopback
 
     async with serve_app(srv.app) as port:
         with caplog.at_level(logging.WARNING, logger="fastatp.peerserver"):
@@ -206,9 +206,9 @@ async def test_a_refused_gated_repo_is_indistinguishable_from_an_absent_one(serv
         LIST_BLOBS_PATH,
     )
 
-    srv = PeerServer(_peer(), identity_resolver=lambda conn: ALICE)
-    gated = srv.register(_channel_repo())
-    _admit(gated, BOB)  # Alice is not admitted
+    srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: ALICE)
+    gated = srv.register(await _channel_repo())
+    await _admit(gated, BOB)  # Alice is not admitted
     absent = "did:web:nobody.example"
     routes = [
         (GET_REPO_PATH, {}),

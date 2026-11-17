@@ -55,9 +55,9 @@ async def resolver(did: str):
 
 
 @pytest.fixture
-def grantor():
+async def grantor():
     key = crypto.generate_keypair("k256")
-    server = PeerServer(Peer(did=GRANTOR, signing_key=key))
+    server = await PeerServer.create(Peer(did=GRANTOR, signing_key=key))
     interface = MemoryWireGuardInterface()
     reconciler = WireGuardReconciler(server, interface, resolver)
     return server, interface, reconciler
@@ -181,7 +181,7 @@ async def test_reconcile_heals_drift_both_directions(grantor):
 
 async def test_reconcile_respects_pinned_pubkeys():
     key = crypto.generate_keypair("k256")
-    server = PeerServer(Peer(did=GRANTOR, signing_key=key))
+    server = await PeerServer.create(Peer(did=GRANTOR, signing_key=key))
     interface = MemoryWireGuardInterface()
     operator_key = _wg_key(7)
     interface.add_peer(operator_key, "10.0.0.7/32")
@@ -231,7 +231,7 @@ async def test_capability_lifecycle_is_firehosed(grantor):
     from fastatp.repo.sync import commit_frame_body
 
     server, _interface, reconciler = grantor
-    doc = build_did_document(did=GRANTOR, signing_key=server.peer.signing_key.public_key())
+    doc = build_did_document(did=GRANTOR, signing_key=server.peer.signer.public_key)
 
     async def grantor_resolver(did):
         return doc if did == GRANTOR else None
@@ -478,7 +478,7 @@ async def test_a_record_without_a_key_is_reported_not_resolved(grantor):
     admits nobody for it until the grantor grants again."""
     server, interface, reconciler = grantor
     old = Capability(subject=ALICE, actions=[ACTION_SUBSCRIBE])  # as 0.2 wrote it
-    server.put_record(Capability.nsid, generate_tid(), old)
+    await server.put_record(Capability.nsid, generate_tid(), old)
     report = await reconciler.reconcile()
     assert "grant again" in report.failed[ALICE]
     assert interface.peers() == {}
@@ -495,7 +495,7 @@ async def test_regranting_a_keyless_record_prunes_the_peer_it_once_opened(granto
     way revoke does for such a record."""
     server, interface, reconciler = grantor
     stale = _wg_key(7)  # the key 0.2 resolved and programmed back then
-    server.put_record(
+    await server.put_record(
         Capability.nsid, generate_tid(), Capability(subject=ALICE, actions=[ACTION_SUBSCRIBE])
     )
     interface.add_peer(stale, f"{overlay_address(stale)}/128")

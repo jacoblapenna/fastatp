@@ -66,14 +66,14 @@ async def run_demo(domain: str, state_dir: str) -> dict[str, Any]:
     """Run the whole pipeline; returns a summary for callers/tests."""
     wire_capture: list[bytes] = []  # every byte that crossed a socket
 
-    identity, server = build_server(
+    identity, server = await build_server(
         domain,
         state_dir,
         identity_resolver=_demo_identity_resolver,
         warn_on_proxy=False,  # the demo's stranger-read is deliberate, not a misconfig
     )
-    curator = Curator(server, domain)
-    curator.grant_subscribe(identity.did)  # presence IS authorization
+    curator = await Curator.create(server, domain)
+    await curator.grant_subscribe(identity.did)  # presence IS authorization
 
     # what a verifier resolves: persona doc (pretty) + curator genesis (twin)
     persona_doc = build_did_document(
@@ -85,7 +85,7 @@ async def run_demo(domain: str, state_dir: str) -> dict[str, Any]:
         return docs.get(did)
 
     poster = Poster(server, identity.did, resolver)
-    poster.ensure_profile("Sovereign Peer", "posts composed by my own agents")
+    await poster.ensure_profile("Sovereign Peer", "posts composed by my own agents")
     poster.attach(curator.did)
 
     sock = socket.socket()
@@ -110,7 +110,7 @@ async def run_demo(domain: str, state_dir: str) -> dict[str, Any]:
         ):
             # curator publishes; poster verifies + posts, frame by frame
             for caption, alt in SELECTIONS:
-                curator.publish_selection(caption, DEMO_PNG, alt)
+                await curator.publish_selection(caption, DEMO_PNG, alt)
             posted: list[str] = []
             while len(posted) < len(SELECTIONS):
                 frame = await asyncio.wait_for(gated_ws.recv(), 10)
@@ -177,11 +177,11 @@ async def run_demo(domain: str, state_dir: str) -> dict[str, Any]:
     }
 
 
-def main() -> None:
+async def main() -> None:
     import tempfile
 
     with tempfile.TemporaryDirectory() as state:
-        summary = asyncio.run(run_demo("alice.demo.example", state))
+        summary = await run_demo("alice.demo.example", state)
     print(f"persona  : {summary['persona']}")
     print(f"curator  : {summary['curator']}  (gated, never announced)")
     print(f"posts    : {summary['posts']}")
@@ -190,4 +190,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -49,7 +49,7 @@ async def test_call_private_round_trip(serve_app):
     # --- the private tool: served, push-intake on, ?as= identity, WantAd -> reply_private
     tool_key = crypto.generate_keypair("k256")
     tool_peer = Peer(did=TOOL_DID, signing_key=tool_key)
-    tool_server = PeerServer(tool_peer, identity_resolver=_as_resolver)
+    tool_server = await PeerServer.create(tool_peer, identity_resolver=_as_resolver)
     tool = PeerApp(tool_server)
     tool.enable_push_intake()
 
@@ -67,7 +67,9 @@ async def test_call_private_round_trip(serve_app):
     async def resolver(did):
         return tool_doc if did == TOOL_DID else None
 
-    requester = PeerApp(PeerServer(Peer(did=req_did, signing_key=req_key)), resolver=resolver)
+    requester = PeerApp(
+        await PeerServer.create(Peer(did=req_did, signing_key=req_key)), resolver=resolver
+    )
     self_att = build_attestation(
         context_id=CTX,
         ephemeral_did=req_did,
@@ -112,7 +114,7 @@ async def test_call_private_round_trip(serve_app):
 
 async def test_follow_attested_refuses_expired():
     peer = Peer(did="did:web:r.example", signing_key=crypto.generate_keypair("k256"))
-    requester = PeerApp(PeerServer(peer))
+    requester = PeerApp(await PeerServer.create(peer))
     _priv, wg = generate_wireguard_keypair()
     expired = build_attestation(
         context_id="ctx-x",

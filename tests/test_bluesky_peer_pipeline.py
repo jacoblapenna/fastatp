@@ -5,7 +5,6 @@ public firehose -> verifying consumer; image blob serves; segmentation
 holds; the wire audit finds no secret because none exists.
 """
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -15,8 +14,8 @@ sys.path.insert(0, str(REPO_ROOT / "examples"))
 from bluesky_peer.pipeline.demo import DEMO_PNG, SELECTIONS, run_demo  # noqa: E402
 
 
-def test_pipeline_end_to_end(tmp_path):
-    summary = asyncio.run(run_demo("alice.pipeline.example", str(tmp_path / "state")))
+async def test_pipeline_end_to_end(tmp_path):
+    summary = await run_demo("alice.pipeline.example", str(tmp_path / "state"))
 
     # the persona is the pretty subdomain DID; the curator is a slug twin of
     # the SAME domain, hosted gated on the same process

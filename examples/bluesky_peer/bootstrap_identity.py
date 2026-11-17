@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
 
@@ -40,7 +41,7 @@ from fastatp import build_did_document
 from fastatp.identity import Identity, _key_bytes  # example-only: printing the recovery pen
 
 
-def main() -> None:
+async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--domain", required=True, help="the handle/subdomain, e.g. alice.example.com")
     ap.add_argument("--pds", required=True, help="public https URL of YOUR peer (tunnel hostname)")
@@ -48,7 +49,7 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="output dir for the static artifacts")
     args = ap.parse_args()
 
-    identity = Identity.bootstrap(domain=args.domain, state_dir=args.state)
+    identity = await Identity.bootstrap(domain=args.domain, state_dir=args.state)
     assert identity.chain is not None  # did:web bootstrap always builds a chain
 
     # the atproto-visible pretty document: handle alias + twin alias + PDS
@@ -85,4 +86,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

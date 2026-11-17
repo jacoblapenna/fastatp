@@ -1,5 +1,12 @@
 """Present-state repository: current MST + signed commit, nothing else.
 
+A fresh repo is ``await Repo.create(did, signing_key)``: the genesis commit
+is signed through the signer seam (``fastatp.crypto.Signer``), so a key the
+process cannot hold works the same as one in memory. ``Repo(did, signing_key,
+head_cid=...)`` reopens a stored head without signing anything. Every write
+is awaited for the same reason: a hardware signer takes tens of
+milliseconds, and the peer keeps serving meanwhile.
+
 One DID = one repo holding many collections (NSIDs). A delete restructures
 the tree and orphans blocks; every commit ends with a garbage collection that
 deletes blocks unreachable from the new commit, so store size tracks current
@@ -17,7 +24,7 @@ from typing import Any, Union
 
 from fastatp import dagcbor, datamodel
 from fastatp.cid import CID
-from fastatp.crypto import PrivateKey, PublicKey
+from fastatp.crypto import PrivateKey, PublicKey, Signer, as_signer
 from fastatp.exceptions import DataModelError, FastATPError, RepoError, StaleCheckpoint
 from fastatp.lex.types import Blob, CidLink, validate_nsid
 from fastatp.lexicon import Lexicon
@@ -81,7 +88,7 @@ class Repo:
     def __init__(
         self,
         did: str,
-        signing_key: PrivateKey,
+        signing_key: PrivateKey | Signer,
         store: BlockStore | None = None,
         clock: TidClock | None = None,
         *,
@@ -89,8 +96,12 @@ class Repo:
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
     ) -> None:
+        """Reopen a repo from ``head_cid`` in ``store``, or set one up for
+        :meth:`create` to sign its genesis. ``signing_key`` is a private key or
+        any :class:`~fastatp.crypto.Signer`; it is held as ``self.signer``.
+        Without ``head_cid`` the repo has no commit until its first write."""
         self.did = did
-        self.signing_key = signing_key
+        self.signer: Signer = as_signer(signing_key)
         self.store: BlockStore = store if store is not None else MemoryBlockStore()
         # the media capability is optional wiring: media-free
         # peers carry no blob store and pay nothing
@@ -105,8 +116,22 @@ class Repo:
         self._on_commit = on_commit
         if head_cid is not None:
             self._load_head(head_cid)  # load-forever: reconstruct from a durable store
-        else:
-            self._commit_now([])  # genesis: signed empty tree
+
+    @classmethod
+    async def create(
+        cls,
+        did: str,
+        signing_key: PrivateKey | Signer,
+        store: BlockStore | None = None,
+        clock: TidClock | None = None,
+        *,
+        on_commit: Callable[[CommitEvent], None] | None = None,
+        blobs: BlobStore | None = None,
+    ) -> Repo:
+        """A new repo with its genesis commit (a signed empty tree)."""
+        repo = cls(did, signing_key, store, clock, on_commit=on_commit, blobs=blobs)
+        await repo._commit_now([])
+        return repo
 
     def _load_head(self, head_cid: CID) -> None:
         """Reconstruct state from a persisted head commit already in the store
@@ -138,14 +163,22 @@ class Repo:
 
     # --- state --------------------------------------------------------------
 
+    _NO_COMMIT = (
+        "this repo has no commit yet: a fresh repo is made with "
+        "`await Repo.create(did, signing_key)`; `Repo(did, signing_key, head_cid=...)` "
+        "reopens a stored head"
+    )
+
     @property
     def commit(self) -> Commit:
-        assert self._commit is not None
+        if self._commit is None:
+            raise RepoError(self._NO_COMMIT)
         return self._commit
 
     @property
     def commit_cid(self) -> CID:
-        assert self._commit_cid is not None
+        if self._commit_cid is None:
+            raise RepoError(self._NO_COMMIT)
         return self._commit_cid
 
     @property
@@ -154,7 +187,8 @@ class Repo:
 
     @property
     def root(self) -> CID:
-        assert self._root is not None
+        if self._root is None:
+            raise RepoError(self._NO_COMMIT)
         return self._root
 
     def record_count(self, collection: str | None = None) -> int:
@@ -182,20 +216,20 @@ class Repo:
 
     # --- writes -------------------------------------------------------------
 
-    def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
         action = "update" if f"{collection}/{rkey}" in self._entries else "create"
-        return self.apply_writes([WriteOp(action, collection, rkey, record)])
+        return await self.apply_writes([WriteOp(action, collection, rkey, record)])
 
-    def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self.apply_writes([WriteOp("delete", collection, rkey)])
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+        return await self.apply_writes([WriteOp("delete", collection, rkey)])
 
-    def recommit(self) -> CommitEvent:
-        """Re-sign the current state under the current ``signing_key`` (no data
+    async def recommit(self) -> CommitEvent:
+        """Re-sign the current state under the current ``signer`` (no data
         change). Used after a key rotation so the persisted head verifies under
         the new key on the next load."""
-        return self._commit_now([])
+        return await self._commit_now([])
 
-    def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
         if not writes:
             raise RepoError("apply_writes requires at least one write")
         # validate against the ACCUMULATED batch state, not just the committed
@@ -219,9 +253,9 @@ class Repo:
                 pending.discard(write.path)
             else:
                 raise RepoError(f"unknown write action {write.action!r}")
-        return self._commit_now(writes)
+        return await self._commit_now(writes)
 
-    def _commit_now(self, writes: list[WriteOp]) -> CommitEvent:
+    async def _commit_now(self, writes: list[WriteOp]) -> CommitEvent:
         old_entries = dict(self._entries)
         old_mst_nodes = set(self._mst_nodes)
         since = self._commit.rev if self._commit else None
@@ -247,7 +281,7 @@ class Repo:
             ops.append(op)
 
         root = self.mst.build(new_entries)
-        commit = Commit.create(self.did, root, self.clock.now(), self.signing_key)
+        commit = await Commit.create(self.did, root, self.clock.now(), self.signer)
         commit_bytes = commit.to_dag_cbor()
         commit_cid = commit.cid()
         self.store.put(commit_cid, commit_bytes)

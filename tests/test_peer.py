@@ -49,18 +49,18 @@ def db_resolver(doc):
     return resolver
 
 
-def _repo_with(keypair, *pings: Ping) -> Repo:
-    repo = Peer(did=DID, signing_key=keypair).create_repo()
+async def _repo_with(keypair, *pings: Ping) -> Repo:
+    repo = await Peer(did=DID, signing_key=keypair).create_repo()
     for ping in pings:
-        repo.put_record(COLL, f"seq-{ping.seq}", ping)
+        await repo.put_record(COLL, f"seq-{ping.seq}", ping)
     return repo
 
 
 async def test_prove_verify_round_trip_20_lines(keypair, db_resolver):
     # The complete user journey, well under 20 lines:
     signer = Peer(did=DID, signing_key=keypair)  # 1
-    repo = signer.create_repo()  # 2
-    repo.put_record(COLL, "boot", Ping(seq=7, at="2026-07-02T12:00:00Z"))  # 3
+    repo = await signer.create_repo()  # 2
+    await repo.put_record(COLL, "boot", Ping(seq=7, at="2026-07-02T12:00:00Z"))  # 3
     proof = repo.prove(COLL, "boot")  # 4
     verifier = Peer(resolver=db_resolver)  # 5
     record = await verifier.verify(proof)  # 6
@@ -68,7 +68,7 @@ async def test_prove_verify_round_trip_20_lines(keypair, db_resolver):
 
 
 async def test_expected_signer_binding(keypair, db_resolver):
-    repo = _repo_with(keypair, Ping(seq=1, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=1, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "seq-1")
     verifier = Peer(resolver=db_resolver)
     assert await verifier.verify(proof, expected_signer=DID)
@@ -83,7 +83,7 @@ async def test_chain_resolver_end_to_end(keypair, doc):
     async def hit(did):
         return doc if did == DID else None
 
-    repo = _repo_with(keypair, Ping(seq=2, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=2, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "seq-2")
     record = await Peer(resolver=chain(miss, hit)).verify(proof)
     assert isinstance(record, Ping)
@@ -95,7 +95,7 @@ async def test_chain_resolver_end_to_end(keypair, doc):
 async def test_proof_selects_record_in_populated_repo(keypair, db_resolver):
     """A proof from a many-record repo witnesses exactly its one record."""
     pings = [Ping(seq=i, at="2026-07-02T12:00:00Z") for i in range(30)]
-    repo = _repo_with(keypair, *pings)
+    repo = await _repo_with(keypair, *pings)
     proof = repo.prove(COLL, "seq-17")
     record = await Peer(resolver=db_resolver).verify(proof)
     assert isinstance(record, Ping)
@@ -112,7 +112,7 @@ async def test_tampered_proof_rejected(keypair, db_resolver):
     """Swapping the record for other bytes breaks the CAR/MST binding."""
     from fastatp.repo.car import decode_car, encode_car
 
-    repo = _repo_with(keypair, Ping(seq=1, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=1, at="2026-07-02T12:00:00Z"))
     forged_record = Ping(seq=999, at="2026-07-02T12:00:00Z")
     roots, blocks = decode_car(repo.prove(COLL, "seq-1"))
 
@@ -128,8 +128,8 @@ async def test_tampered_proof_rejected(keypair, db_resolver):
 
 async def test_wrong_key_rejected(keypair, db_resolver):
     impostor_key = generate_keypair("k256")
-    repo = Repo(DID, impostor_key)
-    repo.put_record(COLL, "evil", Ping(seq=1, at="2026-07-02T12:00:00Z"))
+    repo = await Repo.create(DID, impostor_key)
+    await repo.put_record(COLL, "evil", Ping(seq=1, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "evil")
     verifier = Peer(resolver=db_resolver)  # resolves the honest document
     with pytest.raises(SignatureInvalid):
@@ -137,7 +137,7 @@ async def test_wrong_key_rejected(keypair, db_resolver):
 
 
 async def test_authorize_hook(keypair, db_resolver):
-    repo = _repo_with(keypair, Ping(seq=1, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=1, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "seq-1")
 
     seen = []
@@ -162,8 +162,8 @@ async def test_did_key_issuer_short_circuits_resolution():
     from fastatp.crypto import encode_did_key
 
     did = encode_did_key(key.public_key())
-    repo = Repo(did, key)
-    repo.put_record(COLL, "self", Ping(seq=4, at="2026-07-02T12:00:00Z"))
+    repo = await Repo.create(did, key)
+    await repo.put_record(COLL, "self", Ping(seq=4, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "self")
 
     async def unreachable(did):  # must never be called for did:key
@@ -189,7 +189,7 @@ async def test_malformed_proofs_rejected(keypair, db_resolver):
 
 async def test_create_repo_requires_identity():
     with pytest.raises(ValueError):
-        Peer().create_repo()
+        await Peer().create_repo()
 
 
 async def test_multi_method_document_signing_key_not_first(keypair):
@@ -212,7 +212,7 @@ async def test_multi_method_document_signing_key_not_first(keypair):
     async def resolver(did):
         return doc if did == DID else None
 
-    repo = _repo_with(keypair, Ping(seq=9, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=9, at="2026-07-02T12:00:00Z"))
     record = await Peer(resolver=resolver).verify(repo.prove(COLL, "seq-9"))
     assert isinstance(record, Ping)
     assert record.seq == 9
@@ -233,7 +233,7 @@ async def test_malformed_method_key_does_not_mask_good_key(keypair):
     async def resolver(did):
         return doc if did == DID else None
 
-    repo = _repo_with(keypair, Ping(seq=3, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=3, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "seq-3")
     record = await Peer(resolver=resolver).verify(proof)
     assert isinstance(record, Ping) and record.seq == 3
@@ -265,7 +265,7 @@ async def test_crafted_proof_with_malformed_mst_node(keypair, db_resolver):
 
     junk = dagcbor.encode({"not": "a node"})
     junk_cid = CID.for_dag_cbor(junk)
-    commit = Commit.create(DID, junk_cid, "3jzfcijpj2z2a", keypair)
+    commit = await Commit.create(DID, junk_cid, "3jzfcijpj2z2a", keypair)
     car = encode_car([commit.cid()], {commit.cid(): commit.to_dag_cbor(), junk_cid: junk})
     verifier = Peer(resolver=db_resolver)
     with pytest.raises(SignatureInvalid):
@@ -286,7 +286,7 @@ async def test_proof_with_non_cbor_record_block(keypair, db_resolver):
     junk_cid = CID.for_dag_cbor(junk)
     store = MemoryBlockStore()
     root = MST(store).build({f"{COLL}/bad": junk_cid})
-    commit = Commit.create(DID, root, "3jzfcijpj2z2a", keypair)
+    commit = await Commit.create(DID, root, "3jzfcijpj2z2a", keypair)
     blocks = {commit.cid(): commit.to_dag_cbor(), junk_cid: junk}
     for cid in MST(store).node_cids(root):
         node_bytes = store.get(cid)
@@ -348,7 +348,7 @@ async def test_crafted_proof_with_non_utf8_key(keypair, db_resolver):
         {"e": [{"k": b"\xff\xfe", "p": 0, "t": None, "v": CID.for_raw(b"x")}], "l": None}
     )
     node_cid = CID.for_dag_cbor(node)
-    commit = Commit.create(DID, node_cid, "3jzfcijpj2z2a", keypair)
+    commit = await Commit.create(DID, node_cid, "3jzfcijpj2z2a", keypair)
     car = encode_car([commit.cid()], {commit.cid(): commit.to_dag_cbor(), node_cid: node})
     with pytest.raises(SignatureInvalid):
         await Peer(resolver=db_resolver).verify(car)
@@ -361,8 +361,8 @@ async def test_proof_with_non_record_block(keypair, db_resolver):
     an unregistered $type still surfaces as UnknownLexicon."""
     from fastatp import Repo
 
-    repo = Repo(DID, keypair)
-    repo.put_record(COLL, "notmap", {"$type": COLL, "seq": 1, "at": "2026-07-02T12:00:00Z"})
+    repo = await Repo.create(DID, keypair)
+    await repo.put_record(COLL, "notmap", {"$type": COLL, "seq": 1, "at": "2026-07-02T12:00:00Z"})
     # craft: a record that is a bare list (no $type dict)
     from fastatp import dagcbor
     from fastatp.cid import CID
@@ -375,7 +375,7 @@ async def test_proof_with_non_record_block(keypair, db_resolver):
     junk_cid = CID.for_dag_cbor(junk)
     store = MemoryBlockStore()
     root = MST(store).build({f"{COLL}/weird": junk_cid})
-    commit = Commit.create(DID, root, "3jzfcijpj2z2a", keypair)
+    commit = await Commit.create(DID, root, "3jzfcijpj2z2a", keypair)
     blocks = {commit.cid(): commit.to_dag_cbor(), junk_cid: junk}
     for cid in MST(store).node_cids(root):
         node_bytes = store.get(cid)
@@ -387,7 +387,7 @@ async def test_proof_with_non_record_block(keypair, db_resolver):
 
 async def test_verify_detailed_returns_metadata(keypair, db_resolver):
     """verify_detailed exposes issuer/cid/path from the single decode verify does."""
-    repo = _repo_with(keypair, Ping(seq=5, at="2026-07-02T12:00:00Z"))
+    repo = await _repo_with(keypair, Ping(seq=5, at="2026-07-02T12:00:00Z"))
     proof = repo.prove(COLL, "seq-5")
     vr = await Peer(resolver=db_resolver).verify_detailed(proof)
     assert isinstance(vr.record, Ping)
