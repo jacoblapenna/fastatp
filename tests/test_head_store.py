@@ -58,9 +58,12 @@ async def test_heads_are_per_did(store):
     assert (await store.load(a)).seq == 1 and (await store.load(b)).seq == 7
 
 
-async def test_two_processes_on_one_sqlite_file_cannot_both_win(tmp_path):
-    """Two connections (two processes) read the same head and both try to
-    advance it: the conditional UPDATE lets exactly one through."""
+async def test_a_swap_from_a_stale_snapshot_loses_on_one_sqlite_file(tmp_path):
+    """Two connections, as two processes would have, read the same head; the
+    second to swap holds a stale snapshot and the conditional UPDATE refuses
+    it. (The swaps here run one after the other; what this pins is that the
+    WHERE clause, not timing, decides. Overlapping writers are sqlite's own
+    serialization and the same clause.)"""
     path = tmp_path / "heads.sqlite"
     one, two = SqliteHeadStore(path), SqliteHeadStore(path)
     genesis = Head(_cid("genesis"), 1)

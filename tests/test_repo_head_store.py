@@ -95,7 +95,8 @@ async def test_two_processes_race_and_the_loser_retries_on_the_winners_head(shar
     final = await Repo.open(DID, None, blocks, heads)
     assert final.get_record(NOTE, "from-a") == _note("a")
     assert final.get_record(NOTE, "from-b") == _note("b")
-    assert a.commit_cid != b.commit_cid or a.rev == b.rev  # each object holds a real head
+    assert a.commit_cid != b.commit_cid  # the winner kept its head; the loser moved on
+    assert sorted((a.seq, b.seq)) == [1, 2]  # the loser's object is at the newer head
 
     async def resolver(did):
         return doc if did == DID else None

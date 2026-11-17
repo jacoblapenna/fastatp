@@ -80,10 +80,27 @@ async def test_a_restart_resumes_the_seq_and_an_old_cursor_still_works(tmp_path,
         assert kinds == ["#info", "#sync"]  # OutdatedCursor, then the checkpoint
 
 
-async def test_frames_enter_the_backfill_in_seq_order_whatever_finishes_first():
-    """A commit's seq is taken when it lands; an announcement in flight at the
-    same time takes the next one. The backfill sorts by seq, so a follower
-    never sees them out of order."""
+def test_the_backfill_keeps_seq_order_whatever_order_frames_arrive_in():
+    """A commit's seq is taken when it lands and its frame may enter the
+    backfill after a later-numbered announcement; the backfill sorts by seq
+    and trims to its window, so a follower never sees them out of order."""
+    from fastatp.repo.sync import encode_frame
+    from fastatp.server.peer_server import _HostedRepo
+
+    host = _HostedRepo.__new__(_HostedRepo)
+    host._backfill, host._queues, host.backfill_window = [], set(), 3
+    for seq in (3, 1, 2):  # the frame numbered 1 arrives last
+        host._emit_frame(seq, encode_frame("#info", {"name": "f", "seq": seq}))
+    assert [seq for seq, _frame in host._backfill] == [1, 2, 3]
+    host._emit_frame(4, encode_frame("#info", {"name": "f", "seq": 4}))
+    assert [seq for seq, _frame in host._backfill] == [2, 3, 4]  # the window drops the oldest
+    host._emit_frame(0, encode_frame("#info", {"name": "f", "seq": 0}))
+    assert [seq for seq, _frame in host._backfill] == [2, 3, 4]  # and never readmits it
+
+
+async def test_concurrent_commits_and_announcements_number_one_stream():
+    """Live writes and announcements racing on one host take distinct,
+    increasing numbers from one counter, and the store agrees."""
 
     class _Slow(crypto.SoftwareSigner):
         async def sign(self, message: bytes) -> bytes:
