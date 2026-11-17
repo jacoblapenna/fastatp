@@ -7,6 +7,15 @@ can see, so splitting them across databases would protect nothing. The three
 store protocols stay separate because each is a small thing to implement;
 :class:`Storage` is the one decision a builder makes.
 
+A ``Storage`` serves one repo. Its head store is keyed by DID and may be
+shared by every repo in the database, but a block store is a flat
+content-addressed space: a repo collects what its own commits orphan, so two
+repos over one block table never delete each other's blocks, except a block
+both reference by content, which a shared table cannot tell apart. An
+adapter for a database that holds many repos therefore keys blocks by
+``(did, cid)`` and is instantiated per repo; the built-in sqlite bundle is a
+directory per repo.
+
 Two bundles ship. :class:`SqliteStorage` is the built-in: a directory with
 ``blocks.sqlite`` (blocks and heads in one file) and ``blobs.sqlite``, what an
 ``Identity`` on a ``state_dir`` uses without being asked. :class:`MemoryStorage`

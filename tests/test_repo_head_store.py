@@ -179,7 +179,9 @@ async def test_a_crash_between_the_blocks_and_the_swap_leaves_the_old_head_loada
     assert reopened.commit_cid == old_head and reopened.get_record(NOTE, "n") is None
     orphans = set(blocks.cids()) - ({old_head} | reopened._mst_nodes)
     assert orphans  # the staged blocks are there, unreachable
-    await reopened.put_record(NOTE, "m", _note("after"))  # the next commit's GC clears them
+    await reopened.put_record(NOTE, "m", _note("after"))  # collects only what IT orphaned
+    assert orphans <= set(blocks.cids())  # a crash's leftovers are the sweep's to find
+    reopened.collect_garbage()  # the sweep, for a store this repo has to itself
     reachable = {reopened.commit_cid} | reopened._mst_nodes | set(reopened._entries.values())
     assert set(blocks.cids()) == reachable
 
@@ -213,3 +215,42 @@ async def test_a_caller_managed_head_still_works_without_a_store():
     assert isinstance(reopened.head_store, MemoryHeadStore)
     assert (await reopened.head_store.load(DID)) == Head(reopened.commit_cid, 1)
     assert isinstance(reopened.commit_cid, CID)
+
+
+async def test_repos_sharing_one_block_store_never_collect_each_other(shared):
+    """Per-commit collection is scoped to what the commit orphaned, so two
+    repos over one block table leave each other's blocks alone."""
+    blocks, heads = shared
+    key = crypto.generate_keypair("k256")
+    a = await Repo.create("did:web:a.example", key, store=blocks, head_store=heads)
+    b = await Repo.create("did:web:b.example", key, store=blocks, head_store=heads)
+    await a.put_record(NOTE, "a1", _note("a one"))
+    await b.put_record(NOTE, "b1", _note("b one"))
+    await a.put_record(NOTE, "a2", _note("a two"))
+    await a.delete_record(NOTE, "a1")
+    await b.delete_record(NOTE, "b1")
+    for repo in (a, b):
+        repo.export_car()  # every block each head reaches is still there
+        assert {repo.commit_cid} | repo._mst_nodes | set(repo._entries.values()) <= set(
+            blocks.cids()
+        )
+    assert a.get_record(NOTE, "a2") == _note("a two")
+
+
+async def test_processes_on_one_repo_never_collect_the_newer_head(shared):
+    """Process A commits and collects; process B had already reloaded A's
+    head and committed on top. A's collection touched only what A's own
+    commit orphaned, so B's head is intact."""
+    blocks, heads = shared
+    key = crypto.generate_keypair("k256")
+    await Repo.create(DID, key, store=blocks, head_store=heads)
+    a = await Repo.open(DID, key, blocks, heads)
+    b = await Repo.open(DID, key, blocks, heads)
+    await a.put_record(NOTE, "one", _note("from a"))
+    await b._reload()
+    await b.put_record(NOTE, "two", _note("from b"))
+    await a._reload()
+    await a.delete_record(NOTE, "one")  # a collects what this orphaned, nothing of b's
+    final = await Repo.open(DID, None, blocks, heads)
+    assert final.get_record(NOTE, "two") == _note("from b")
+    final.export_car()

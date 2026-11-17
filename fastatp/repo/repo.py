@@ -16,6 +16,15 @@ that loses the swap reloads the new head and retries on it (a write the other
 process already made, byte for byte, is then a no-op). Without one, an
 in-memory head store gives today's single-process behaviour.
 
+Garbage collection is per commit and per repo: a commit deletes only the
+blocks it orphaned (reachable from the head it replaced and not from the new
+one), never a sweep of the store, so a block store shared between repos, or
+between processes on one repo, loses nothing that another head still reaches
+(a store that is this repo's alone can still be swept with
+``collect_garbage()``). What a shared store cannot tell apart is one block two
+repos both reference by content: an adapter for a database holding many repos
+keys blocks by ``(did, cid)`` so that never happens.
+
 A repo reopened with no pen (``Repo(did, None, store=..., head_cid=...)``) is
 **frozen**: it serves ``getRepo`` and the firehose exactly as before, to the
 public or to whoever holds a live capability record in it, and refuses every
@@ -474,6 +483,7 @@ class Repo:
             raise RepoError(self._FROZEN)
         old_entries = dict(self._entries)
         old_mst_nodes = set(self._mst_nodes)
+        old_reachable = self._reachable()
         since = self._commit.rev if self._commit else None
         prev_data = self._root
 
@@ -567,7 +577,7 @@ class Repo:
         # new head (old blocks leak until the next GC, harmless).
         if self._on_commit is not None:
             self._on_commit(event)  # durable head tracking (fires on genesis too)
-        self._collect_garbage()
+        self._collect_orphans(old_reachable)
         return event
 
     def _drop_staged(self, staged_nodes: set[CID], record_blocks: dict[CID, bytes]) -> None:
@@ -579,8 +589,23 @@ class Repo:
         for cid in (staged_nodes | set(record_blocks)) - keep:
             self.store.delete(cid)
 
+    def _reachable(self) -> set[CID]:
+        """Every block the current head reaches (empty before any commit)."""
+        if self._commit_cid is None:
+            return set()
+        return {self._commit_cid} | self._mst_nodes | set(self._entries.values())
+
+    def _collect_orphans(self, old_reachable: set[CID]) -> None:
+        """Delete what the head move orphaned: blocks the old head reached and
+        the new one does not. Scoped to this repo's own history, so a store
+        shared with other repos or other processes loses nothing of theirs."""
+        for cid in old_reachable - self._reachable():
+            self.store.delete(cid)
+
     def _collect_garbage(self) -> None:
-        reachable = {self.commit_cid} | self._mst_nodes | set(self._entries.values())
+        """Sweep: delete every block the current head does not reach. Only
+        for a store this repo has to itself (see :meth:`collect_garbage`)."""
+        reachable = self._reachable()
         for cid in list(self.store.cids()):  # snapshot: we mutate while iterating
             if cid not in reachable:
                 self.store.delete(cid)
@@ -730,6 +755,7 @@ class Repo:
         if newer_than is not None and commit.rev <= newer_than:
             raise StaleCheckpoint(f"checkpoint rev {commit.rev} is not newer than {newer_than}")
         async with self._write_lock:
+            old_reachable = self._reachable()
             for cid, block in blocks.items():
                 self.store.put(cid, block)  # blocks before head
             new_head = Head(commit.cid(), self.seq + 1)
@@ -749,14 +775,17 @@ class Repo:
             # learn a rev from a head that was refused
             self.clock.observe(commit.rev)
             if gc:
-                self._collect_garbage()
+                self._collect_orphans(old_reachable)
 
     def collect_garbage(self) -> None:
-        """Drop store blocks unreachable from the current head.
+        """Sweep the store: drop every block the current head does not reach.
 
-        Runs automatically on every commit and (by default) on import; only
-        an ``import_car(gc=False)`` caller needs to invoke it, after its
-        durable head pointer is persisted."""
+        Commits and imports already collect what they orphan, per repo. The
+        sweep is for a store this repo has to itself: it also removes blocks
+        a crash left staged, and what an ``import_car(gc=False)`` deferred.
+        Never run it over a store shared with other repos or other processes
+        on this repo; there, anything beyond the per-commit collection is the
+        database's own maintenance job."""
         self._collect_garbage()
 
     def prove(self, collection: str, rkey: str) -> bytes:

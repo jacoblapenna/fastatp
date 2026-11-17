@@ -429,9 +429,12 @@ Not part of the package. Four tables, one per protocol, with the doorman's
 cache beside them:
 
 ```sql
-CREATE TABLE repo_blocks (cid BYTEA PRIMARY KEY, data BYTEA NOT NULL);
+-- blocks and blobs are keyed by repo: a repo collects what its own commits
+-- orphan, and two repos may hold one block by content, so rows never cross
+CREATE TABLE repo_blocks (did TEXT, cid BYTEA, data BYTEA NOT NULL, PRIMARY KEY (did, cid));
 CREATE TABLE repo_heads  (did TEXT PRIMARY KEY, cid BYTEA NOT NULL, seq BIGINT NOT NULL);
-CREATE TABLE repo_blobs  (cid BYTEA PRIMARY KEY, data BYTEA NOT NULL, mime TEXT NOT NULL);
+CREATE TABLE repo_blobs  (did TEXT, cid BYTEA, data BYTEA NOT NULL, mime TEXT NOT NULL,
+                          PRIMARY KEY (did, cid));
 -- the doorman's cache: overlay address -> (DID, the repo whose capability granted it)
 CREATE TABLE tunnel_addresses (address TEXT PRIMARY KEY, did TEXT NOT NULL, repo_did TEXT NOT NULL);
 ```
@@ -471,15 +474,27 @@ class PostgresHeadStore:  # satisfies fastatp.repo.head.HeadStore
         await self._pool.execute("DELETE FROM repo_heads WHERE did = $1", did)
 
 
-class PostgresStorage:  # satisfies fastatp.Storage
-    def __init__(self, pool):
-        self.blocks = PostgresBlockStore(pool)  # get/put/delete/__contains__/cids/__len__
-        self.heads = PostgresHeadStore(pool)
-        self.blobs = PostgresBlobStore(pool)  # or None
+class PostgresStorage:  # satisfies fastatp.Storage; one per repo
+    def __init__(self, pool, did):
+        self.blocks = PostgresBlockStore(pool, did)  # rows WHERE did = $1
+        self.heads = PostgresHeadStore(pool)  # keyed by DID already
+        self.blobs = PostgresBlobStore(pool, did)  # or None
 
 
-identity = await Identity.bootstrap(domain=..., state_dir=..., storage=PostgresStorage(pool))
+identity = await Identity.bootstrap(
+    domain="alice.example", state_dir=..., storage=PostgresStorage(pool, "did:web:alice.example")
+)
 ```
+
+Garbage collection under a shared database: a commit deletes only the
+blocks it orphaned, never a sweep, so processes on one repo and repos in one
+table leave each other's blocks alone. Do not call `collect_garbage()` (the
+sweep) over a shared table; blocks a crash left staged are the database's own
+maintenance to find, with every head in `repo_heads` as the roots. One race
+remains narrow but real: between one process's swap and its orphan deletion,
+another process can land a commit that reuses an orphaned block by content;
+the next pull or push repairs it, and an adapter that defers deletes by a few
+seconds removes it.
 
 Two honest limits. `BlockStore` and `BlobStore` are synchronous protocols
 (the MST walks them many times per commit), so a Postgres block adapter uses

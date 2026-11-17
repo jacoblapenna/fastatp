@@ -16,6 +16,12 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- Garbage collection is per commit and per repo: a commit or import
+  deletes only the blocks it orphaned, never a sweep of the store, so a
+  block store shared between repos or between processes loses nothing
+  another head reaches. `collect_garbage()` is the sweep, for a store the
+  repo has to itself; blocks a crash left staged are no longer collected by
+  the next commit, only by the sweep.
 - Firehose bookkeeping is awaited: `PeerServer.register`, `unregister` and
   `reap_expired`, `RepoHandle.emit_account`/`emit_identity`/`emit_sync`,
   `expire` and `unregister`, and `PrivateChannel.close`. Each frame's seq
