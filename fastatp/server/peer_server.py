@@ -382,8 +382,8 @@ class PeerServer:
     ) -> None:
         """Host ``repo`` as ``peer``'s public firehose. For a fresh repo use
         ``await PeerServer.create(peer)``, which signs the genesis commit."""
-        if peer.did is None or peer.signer is None:
-            raise ValueError("PeerServer requires a Peer with a did and signing_key")
+        if peer.did is None:
+            raise ValueError("PeerServer requires a Peer with a did")
         if repo.did != peer.did:
             raise ValueError(f"the primary repo is for {repo.did}, not this peer's {peer.did}")
         self.peer = peer

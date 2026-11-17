@@ -55,6 +55,12 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- Frozen repos: `Repo(did, None, store=..., head_cid=...)` reopens a repo
+  with no pen on this host. It serves `getRepo` and the firehose exactly as
+  before, publicly or to live capability holders, refuses every commit with
+  a clear error, and still takes pushes through `import_car`. `Repo.frozen`
+  says which it is, and a `PeerServer` no longer needs its peer to carry a
+  pen, only a DID.
 - Browser bundle: `generate_pen()`, `pen_did(key_pair)`,
   `BrowserPeer.create(did, key_pair)`, `BrowserPeer.restore(car, key_pair,
   verify?)` and `sign_challenge(key_pair, nonce, repo_did)`. Pens cross the

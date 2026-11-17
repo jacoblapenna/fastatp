@@ -7,6 +7,15 @@ head_cid=...)`` reopens a stored head without signing anything. Every write
 is awaited for the same reason: a hardware signer takes tens of
 milliseconds, and the peer keeps serving meanwhile.
 
+A repo reopened with no pen (``Repo(did, None, store=..., head_cid=...)``) is
+**frozen**: it serves ``getRepo`` and the firehose exactly as before, to the
+public or to whoever holds a live capability record in it, and refuses every
+commit. Pushes still land through ``import_car``, which signs nothing. This is
+the shape of a host serving a repo whose pen lives elsewhere (a browser, a
+device): requiring the pen to *serve* would protect nothing, since records
+are never encrypted in process and anyone who can start a peer over the store
+can read it; requiring the pen to *write* is the whole point, and that stays.
+
 One DID = one repo holding many collections (NSIDs). A delete restructures
 the tree and orphans blocks; every commit ends with a garbage collection that
 deletes blocks unreachable from the new commit, so store size tracks current
@@ -88,7 +97,7 @@ class Repo:
     def __init__(
         self,
         did: str,
-        signing_key: PrivateKey | Signer,
+        signing_key: PrivateKey | Signer | None,
         store: BlockStore | None = None,
         clock: TidClock | None = None,
         *,
@@ -98,10 +107,11 @@ class Repo:
     ) -> None:
         """Reopen a repo from ``head_cid`` in ``store``, or set one up for
         :meth:`create` to sign its genesis. ``signing_key`` is a private key or
-        any :class:`~fastatp.crypto.Signer`; it is held as ``self.signer``.
-        Without ``head_cid`` the repo has no commit until its first write."""
+        any :class:`~fastatp.crypto.Signer`, held as ``self.signer``; ``None``
+        makes the repo :attr:`frozen` (it serves, and never commits). Without
+        ``head_cid`` the repo has no commit until its first write or import."""
         self.did = did
-        self.signer: Signer = as_signer(signing_key)
+        self.signer: Signer | None = as_signer(signing_key) if signing_key is not None else None
         self.store: BlockStore = store if store is not None else MemoryBlockStore()
         # the media capability is optional wiring: media-free
         # peers carry no blob store and pay nothing
@@ -129,6 +139,11 @@ class Repo:
         blobs: BlobStore | None = None,
     ) -> Repo:
         """A new repo with its genesis commit (a signed empty tree)."""
+        if signing_key is None:
+            raise RepoError(
+                "a fresh repo needs a pen to sign its genesis commit; a frozen repo "
+                "reopens a stored head: Repo(did, None, store=..., head_cid=...)"
+            )
         repo = cls(did, signing_key, store, clock, on_commit=on_commit, blobs=blobs)
         await repo._commit_now([])
         return repo
@@ -163,11 +178,21 @@ class Repo:
 
     # --- state --------------------------------------------------------------
 
+    _FROZEN = (
+        "this repo is frozen: it has no pen on this host, so it serves and never "
+        "commits; a push still lands through import_car"
+    )
     _NO_COMMIT = (
         "this repo has no commit yet: a fresh repo is made with "
         "`await Repo.create(did, signing_key)`; `Repo(did, signing_key, head_cid=...)` "
         "reopens a stored head"
     )
+
+    @property
+    def frozen(self) -> bool:
+        """True when this host holds no pen for the repo: reads and imports
+        work, every commit is refused."""
+        return self.signer is None
 
     @property
     def commit(self) -> Commit:
@@ -256,6 +281,8 @@ class Repo:
         return await self._commit_now(writes)
 
     async def _commit_now(self, writes: list[WriteOp]) -> CommitEvent:
+        if self.signer is None:
+            raise RepoError(self._FROZEN)
         old_entries = dict(self._entries)
         old_mst_nodes = set(self._mst_nodes)
         since = self._commit.rev if self._commit else None
