@@ -49,6 +49,7 @@ from fastatp.crypto import (
     encode_multikey,
     generate_keypair,
     load_private_key_bytes,
+    sign_with,
 )
 from fastatp.did.continuity import ContinuityChain, build_did_document, build_pretty
 from fastatp.did.document import DIDDocument
@@ -83,14 +84,13 @@ def _write_pen(sdir: Path, pen: PrivateKey | Signer, meta: dict[str, Any]) -> No
     hardware pen as its public key alone (the app brings the signer back on
     the next load). ``meta`` is updated in place and written."""
     key = _software_key(pen)
+    meta["pen"] = "software" if key is not None else "external"
+    meta["public_key"] = encode_multikey(as_signer(pen).public_key)
     if key is not None:
         _write_secret(sdir / _SIGNING_KEY, _key_bytes(key))
-        meta["pen"] = "software"
-    else:
-        (sdir / _SIGNING_KEY).unlink(missing_ok=True)  # a rotation onto hardware
-        meta["pen"] = "external"
-    meta["public_key"] = encode_multikey(as_signer(pen).public_key)
-    (sdir / _META).write_text(json.dumps(meta))
+    (sdir / _META).write_text(json.dumps(meta))  # the marker is durable before...
+    if key is None:
+        (sdir / _SIGNING_KEY).unlink(missing_ok=True)  # ...the old software pen goes
 
 
 def _write_secret(path: Path, raw: bytes) -> None:
@@ -175,6 +175,10 @@ class Identity:
                 "(a lost did:key is a new did:key, i.e. a new identity)"
             )
         new_signer = as_signer(new_signing_key)
+        # prove the new pen before anything changes: a hardware pen that is
+        # unavailable, or signs with a key other than the one it reports,
+        # fails here, with the chain, the state_dir and the head untouched
+        await sign_with(new_signer, b"fastatp: rotation probe")
         new_doc = build_did_document(
             did=self.chain.twin_did,
             signing_key=new_signer.public_key,
@@ -182,14 +186,17 @@ class Identity:
             rotation_keys=list(self.chain.head.rotation_keys),
         )
         self.chain.append(new_doc, rotation_private_key)  # raises on a wrong pen
-        # persist the identity state (new signing key + extended chain) BEFORE
+        # persist the identity state (extended chain, then the new pen) BEFORE
         # re-signing the repo head, so a crash mid-rotation always reloads a
-        # consistent identity: the new key/chain are durable before any head
-        # moves under them, and the repo head loads by content-address either way
+        # consistent identity. The chain goes first and the pen's marker last:
+        # a crash between them leaves a chain whose head names a pen the box
+        # does not hold, which ``_load`` recognises and either completes (the
+        # pen is handed in) or rolls back (the page is dropped). The repo head
+        # loads by content address either way.
         if self.state_dir is not None:
+            (self.state_dir / _CHAIN).write_text(json.dumps(self.chain.to_json()))
             meta = json.loads((self.state_dir / _META).read_text())
             _write_pen(self.state_dir, new_signing_key, meta)
-            (self.state_dir / _CHAIN).write_text(json.dumps(self.chain.to_json()))
         self.signing_key = _software_key(new_signing_key)
         self.signer = new_signer
         self.repo.signer = new_signer
@@ -387,7 +394,6 @@ class Identity:
 
         store = SqliteBlockStore(sdir / _BLOCKS)
         repo = await Repo.create(did, signing, store=store, on_commit=_head_writer(sdir))
-        _write_pen(sdir, pen, {"kind": "did:web", "did": did, "domain": domain, "curve": curve})
         (sdir / _CHAIN).write_text(json.dumps(chain.to_json()))
         if persist_rotation_key and rotation_private is not None:
             warnings.warn(
@@ -398,6 +404,9 @@ class Identity:
                 stacklevel=2,
             )
             _write_secret(sdir / _ROTATION_KEY, _key_bytes(rotation_private))
+        # identity.json last: it is what bootstrap() treats as "an identity
+        # lives here", so nothing is loadable until everything is written
+        _write_pen(sdir, pen, {"kind": "did:web", "did": did, "domain": domain, "curve": curve})
         return cls(
             did=did,
             signer=signing,
@@ -417,6 +426,18 @@ class Identity:
         curve = meta.get("curve", "k256")
         did = meta["did"]
         recorded = meta.get("public_key")
+        chain = None
+        if meta.get("kind") == "did:web":
+            chain = ContinuityChain.from_json(json.loads((sdir / _CHAIN).read_text()))
+            chain.verify()  # fail closed on a corrupt/tampered persisted chain
+        head_key = (
+            encode_multikey(chain.head.get_verification_method().public_key())
+            if chain is not None
+            else None
+        )
+
+        signing: Signer
+        signing_key: PrivateKey | None
         if meta.get("pen") == "external":
             if signer is None:
                 raise IdentityError(
@@ -428,8 +449,17 @@ class Identity:
                     f"the signer passed for {did} is not its pen: it holds "
                     f"{encode_multikey(signer.public_key)}, the identity recorded {recorded}"
                 )
-            signing: Signer = signer
-            signing_key: PrivateKey | None = None
+            signing, signing_key = signer, None
+        elif (
+            signer is not None
+            and head_key is not None
+            and head_key == encode_multikey(signer.public_key)
+        ):
+            # a rotation onto this hardware pen was interrupted after the chain
+            # named it and before the pen was recorded: the pen is in hand, so
+            # finish the rotation now
+            _write_pen(sdir, signer, meta)
+            signing, signing_key = signer, None
         else:
             if signer is not None:
                 raise IdentityError(
@@ -439,14 +469,36 @@ class Identity:
             signing_key = load_private_key_bytes((sdir / _SIGNING_KEY).read_bytes(), curve)
             curve_name(signing_key.curve)  # sanity: the key matches the persisted curve
             signing = as_signer(signing_key)
+
+        if chain is not None and head_key != encode_multikey(signing.public_key):
+            # the chain was extended but the pen it names was never persisted:
+            # a rotation interrupted between its two writes. The page was never
+            # served (the pen that would sign under it was lost with the
+            # crash), so drop it and carry on with the pen the box holds.
+            pen_key = encode_multikey(signing.public_key)
+            previous = (
+                encode_multikey(chain.pages[-2].document.get_verification_method().public_key())
+                if len(chain.pages) > 1
+                else None
+            )
+            if previous != pen_key:
+                raise IdentityError(
+                    f"{did}'s state_dir is inconsistent: the chain head names {head_key}, "
+                    f"the pen is {pen_key}, and no earlier page names it either"
+                )
+            chain = ContinuityChain(chain.pages[:-1])
+            (sdir / _CHAIN).write_text(json.dumps(chain.to_json()))
+            warnings.warn(
+                f"{did}: a rotation onto {head_key} was interrupted before that pen was "
+                f"persisted; its chain page was dropped and the identity continues on "
+                f"{pen_key}. Rotate again.",
+                stacklevel=2,
+            )
+
         store = SqliteBlockStore(sdir / _BLOCKS)
         head_text = (sdir / _HEAD).read_text().strip()
         head_cid = CID.decode(head_text)
         repo = Repo(did, signing, store=store, head_cid=head_cid, on_commit=_head_writer(sdir))
-        chain = None
-        if meta.get("kind") == "did:web":
-            chain = ContinuityChain.from_json(json.loads((sdir / _CHAIN).read_text()))
-            chain.verify()  # fail closed on a corrupt/tampered persisted chain
         return cls(
             did=did,
             signer=signing,

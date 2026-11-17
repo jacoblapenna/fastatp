@@ -132,3 +132,96 @@ async def test_ephemeral_did_web_on_a_hardware_pen():
     ident = await Identity.bootstrap(domain=DOMAIN, ephemeral_ok=True, signer=pen)
     assert ident.signer is pen and ident.state_dir is None
     assert ident.peer().signer is pen
+
+
+# --- a rotation that is interrupted between its writes ------------------------------
+
+
+class _UnavailableSigner(_HardwareSigner):
+    """A pen whose device is not answering."""
+
+    async def sign(self, message: bytes) -> bytes:
+        raise OSError("TPM: device not responding")
+
+
+def _snapshot(sdir):
+    return {name: (sdir / name).read_bytes() for name in ("identity.json", "signing.key")}
+
+
+def _restore(sdir, snap):
+    for name, raw in snap.items():
+        (sdir / name).write_bytes(raw)
+
+
+async def test_rotate_probes_the_new_pen_before_changing_anything(tmp_path):
+    sdir = tmp_path / "id"
+    ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    before = _snapshot(sdir)
+    chain_before = (sdir / "chain.json").read_bytes()
+    head = ident.repo.commit_cid
+
+    with pytest.raises(OSError, match="not responding"):
+        await ident.rotate(_UnavailableSigner(), ident.rotation_private_key)
+    assert ident.chain is not None and len(ident.chain.pages) == 1
+    assert ident.repo.commit_cid == head
+    assert _snapshot(sdir) == before and (sdir / "chain.json").read_bytes() == chain_before
+
+
+async def test_a_rotation_interrupted_before_the_pen_is_persisted_rolls_back(tmp_path):
+    """The chain was extended, the crash came before the new pen was written:
+    the page names a pen the box never held, so loading drops it."""
+    sdir = tmp_path / "id"
+    ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    old_pub = ident.signer.public_key
+    rotation = ident.rotation_private_key
+    before = _snapshot(sdir)
+    await ident.rotate(crypto.generate_keypair("k256"), rotation)
+    _restore(sdir, before)  # chain.json has two pages; pen and marker are the old ones
+
+    with pytest.warns(UserWarning, match="interrupted"):
+        loaded = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    assert loaded.signer.public_key == old_pub
+    assert loaded.chain is not None and len(loaded.chain.pages) == 1
+    assert len(json.loads((sdir / "chain.json").read_text())["chain"]) == 1
+    await loaded.rotate(crypto.generate_keypair("k256"), rotation)  # and rotating again works
+    assert len(loaded.chain.pages) == 2
+
+
+async def test_an_interrupted_hardware_rotation_completes_when_the_pen_is_handed_back(tmp_path):
+    sdir = tmp_path / "id"
+    ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    rotation = ident.rotation_private_key
+    before = _snapshot(sdir)
+    pen = _HardwareSigner()
+    await ident.rotate(pen, rotation)
+    _restore(sdir, before)  # the chain names the pen; the box still records the old key
+
+    completed = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir, signer=pen)
+    assert completed.signer is pen and completed.signing_key is None
+    assert _meta(sdir)["pen"] == "external" and not (sdir / "signing.key").exists()
+    assert completed.chain is not None and len(completed.chain.pages) == 2
+    again = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir, signer=pen)
+    assert again.signer is pen  # the completed state loads normally from here on
+
+
+async def test_an_interrupted_hardware_rotation_rolls_back_without_the_pen(tmp_path):
+    sdir = tmp_path / "id"
+    ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    old_pub = ident.signer.public_key
+    before = _snapshot(sdir)
+    await ident.rotate(_HardwareSigner(), ident.rotation_private_key)
+    _restore(sdir, before)
+
+    with pytest.warns(UserWarning, match="interrupted"):
+        loaded = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    assert loaded.signer.public_key == old_pub and len(loaded.chain.pages) == 1
+
+
+async def test_an_inconsistent_state_dir_fails_closed(tmp_path):
+    sdir = tmp_path / "id"
+    await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    other = await Identity.bootstrap(domain=DOMAIN, state_dir=tmp_path / "other")
+    (sdir / "chain.json").write_bytes((tmp_path / "other" / "chain.json").read_bytes())
+    with pytest.raises(IdentityError, match="inconsistent"):
+        await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
+    assert other.did  # (the other identity is only a source of a foreign chain)
