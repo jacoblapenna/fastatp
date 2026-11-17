@@ -76,6 +76,16 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- Bring your own database, part three: `fastatp.Storage` is the one
+  decision, anything with `blocks`, `heads` and `blobs`. `SqliteStorage`
+  (the built-in: a directory, blocks and heads in one file) and
+  `MemoryStorage` ship. `Repo.create`/`Repo.open`, `Peer.create_repo`,
+  `PeerServer.create` and `Identity.bootstrap`/`adopt_web` take `storage=`;
+  an `Identity` given one keeps its repo, head and seq there and creates no
+  sqlite in its `state_dir`, which then holds only the chain, the marker
+  and a software pen. `Identity.storage` is the bundle; `Identity.store`
+  is its block store, as before. `docs/HOSTED-PEERS.md` "Bring your own
+  database" sketches the Postgres adapters and the doorman's cache table.
 - `TunnelIdentityResolver(lookup=...)`: a builder's cache in front of the
   doorman's walk. The lookup maps an overlay address to `(DID, granting
   repo)` from the builder's own store, sync or async; a hit is used only

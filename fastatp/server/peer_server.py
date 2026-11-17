@@ -47,6 +47,7 @@ from fastatp.crypto import decode_did_key
 from fastatp.exceptions import CryptoError, FastATPError, RepoError
 from fastatp.peer import Peer
 from fastatp.repo.repo import CommitEvent, RecordLike, Repo, WriteOp
+from fastatp.repo.storage import Storage
 from fastatp.repo.store import BlockStore
 from fastatp.repo.sync import (
     account_frame_body,
@@ -497,15 +498,17 @@ class PeerServer:
         repo: Repo | None = None,
         *,
         repo_store: BlockStore | None = None,
+        storage: Storage | None = None,
         backfill_window: int = 512,
         **kwargs: Any,
     ) -> PeerServer:
         """A server for ``peer``, announced on its firehose. Over ``repo`` if
-        given, else over a fresh one whose genesis the peer's signer signs,
-        with ``repo_store`` for its blocks. ``PeerServer(peer, repo)`` builds
-        one without announcing; it announces on the first emit or subscriber."""
+        given, else over a fresh one whose genesis the peer's signer signs, in
+        ``storage`` (one database for blocks, heads and blobs) or over a bare
+        ``repo_store`` for its blocks. ``PeerServer(peer, repo)`` builds one
+        without announcing; it announces on the first emit or subscriber."""
         if repo is None:
-            repo = await peer.create_repo(store=repo_store)
+            repo = await peer.create_repo(store=repo_store, storage=storage)
         server = cls(peer, repo, backfill_window, **kwargs)
         await server._primary.announce()
         return server

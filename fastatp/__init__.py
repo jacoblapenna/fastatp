@@ -36,6 +36,7 @@ from fastatp.lexicon import Lexicon, parse_record
 from fastatp.peer import Peer
 from fastatp.peerapp import Envelope, PeerApp, PrivateChannel
 from fastatp.repo.repo import Repo, WriteOp
+from fastatp.repo.storage import MemoryStorage, SqliteStorage, Storage
 from fastatp.repo.sync import RepoMirror
 from fastatp.server.did_server import DIDServer
 from fastatp.server.peer_server import PeerServer, RepoHandle
@@ -63,6 +64,7 @@ __all__ = [
     "LexiconError",
     "LexiconExportError",
     "LexiconValidationError",
+    "MemoryStorage",
     "NotAuthorized",
     "PLCResolver",
     "Peer",
@@ -77,6 +79,8 @@ __all__ = [
     "Signer",
     "SignerMismatch",
     "SoftwareSigner",
+    "SqliteStorage",
+    "Storage",
     "UnknownLexicon",
     "VerificationError",
     "WebResolver",

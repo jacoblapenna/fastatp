@@ -85,13 +85,14 @@ class Peer:
 
     # --- producing ------------------------------------------------------------
 
-    async def create_repo(self, store: Any = None) -> Any:
-        """A signed present-state repo for this peer's DID."""
+    async def create_repo(self, store: Any = None, *, storage: Any = None) -> Any:
+        """A signed present-state repo for this peer's DID, over ``storage``
+        (one database for blocks, heads and blobs) or a bare block ``store``."""
         from fastatp.repo.repo import Repo
 
         if self.did is None or self.signer is None:
             raise ValueError("a repo requires this Peer to have a did and a signing_key")
-        return await Repo.create(self.did, self.signer, store=store)
+        return await Repo.create(self.did, self.signer, store=store, storage=storage)
 
     # --- verification ---------------------------------------------------------
 

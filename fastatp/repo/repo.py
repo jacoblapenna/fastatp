@@ -66,6 +66,7 @@ from fastatp.repo.car import decode_car, encode_car
 from fastatp.repo.commit import Commit
 from fastatp.repo.head import Head, HeadStore, MemoryHeadStore
 from fastatp.repo.mst import MST, validate_mst_key
+from fastatp.repo.storage import Storage
 from fastatp.repo.store import BlockStore, MemoryBlockStore
 from fastatp.tid import TidClock, decode_tid
 
@@ -132,15 +133,22 @@ class Repo:
         head_store: HeadStore | None = None,
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
+        storage: Storage | None = None,
     ) -> None:
         """Reopen a repo from ``head_cid`` in ``store``, or set one up for
         :meth:`create` or :meth:`open`. ``signing_key`` is a private key or
         any :class:`~fastatp.crypto.Signer`, held as ``self.signer``; ``None``
         makes the repo :attr:`frozen` (it serves, and never commits).
-        ``head_store`` is where the head and seq live (the app's database);
-        without one an in-memory store is used, and ``head_cid`` is how a
-        caller-managed head is reopened. Without either the repo has no
+        ``storage`` is the one-decision form of ``store``, ``head_store`` and
+        ``blobs`` (one database for all three, :mod:`fastatp.repo.storage`);
+        pass it or them, not both. ``head_store`` is where the head and seq
+        live; without one an in-memory store is used, and ``head_cid`` is how
+        a caller-managed head is reopened. Without either the repo has no
         commit until its first write or import."""
+        if storage is not None:
+            if store is not None or head_store is not None or blobs is not None:
+                raise ValueError("pass storage=, or store=/head_store=/blobs=, not both")
+            store, head_store, blobs = storage.blocks, storage.heads, storage.blobs
         if head_cid is not None and head_store is not None:
             raise ValueError(
                 "pass head_cid to reopen a caller-managed head, or head_store "
@@ -179,9 +187,10 @@ class Repo:
         head_store: HeadStore | None = None,
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
+        storage: Storage | None = None,
     ) -> Repo:
         """A new repo with its genesis commit (a signed empty tree). With a
-        ``head_store`` that already holds a head for ``did`` this fails:
+        head store that already holds a head for ``did`` this fails:
         :meth:`open` that one instead."""
         if signing_key is None:
             raise RepoError(
@@ -189,7 +198,14 @@ class Repo:
                 "reopens a stored head: Repo(did, None, store=..., head_cid=...)"
             )
         repo = cls(
-            did, signing_key, store, clock, head_store=head_store, on_commit=on_commit, blobs=blobs
+            did,
+            signing_key,
+            store,
+            clock,
+            head_store=head_store,
+            on_commit=on_commit,
+            blobs=blobs,
+            storage=storage,
         )
         async with repo._write_lock:
             try:
@@ -206,17 +222,28 @@ class Repo:
         cls,
         did: str,
         signing_key: PrivateKey | Signer | None,
-        store: BlockStore | None,
-        head_store: HeadStore,
+        store: BlockStore | None = None,
+        head_store: HeadStore | None = None,
         clock: TidClock | None = None,
         *,
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
+        storage: Storage | None = None,
     ) -> Repo:
-        """Load ``did``'s current head from ``head_store`` (its blocks from
-        ``store``). ``signing_key=None`` opens it frozen."""
+        """Load ``did``'s current head from the head store (``head_store``, or
+        ``storage.heads``), its blocks from the block store. ``signing_key=None``
+        opens it frozen."""
+        if head_store is None and storage is None:
+            raise ValueError("Repo.open needs a head_store= or a storage= to load the head from")
         repo = cls(
-            did, signing_key, store, clock, head_store=head_store, on_commit=on_commit, blobs=blobs
+            did,
+            signing_key,
+            store,
+            clock,
+            head_store=head_store,
+            on_commit=on_commit,
+            blobs=blobs,
+            storage=storage,
         )
         await repo._reload()
         return repo
