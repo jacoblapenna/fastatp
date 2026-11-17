@@ -30,9 +30,9 @@ class Poster:
         self.resolver = resolver
         self.posted: list[str] = []  # rkeys of posts made, in order
 
-    def ensure_profile(self, display_name: str, description: str) -> None:
+    async def ensure_profile(self, display_name: str, description: str) -> None:
         if self.server.repo.get_record("app.bsky.actor.profile", "self") is None:
-            self.server.put_record(
+            await self.server.put_record(
                 "app.bsky.actor.profile", "self", records.profile(display_name, description)
             )
 
@@ -61,7 +61,9 @@ class Poster:
                 image_blob=blob.model_dump(by_alias=True),
                 image_alt=selection.get("alt", ""),
             )
-            event = self.server.put_record("app.bsky.feed.post", f"post-{len(self.posted)}", post)
+            event = await self.server.put_record(
+                "app.bsky.feed.post", f"post-{len(self.posted)}", post
+            )
             assert event.commit.did == self.persona_did  # signed by the persona pen
             self.posted.append(f"post-{len(self.posted)}")
             new_posts.append(self.posted[-1])

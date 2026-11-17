@@ -37,7 +37,7 @@ async def resolver(did: str):
 
 
 async def main() -> None:
-    server = PeerServer(Peer(did=GRANTOR, signing_key=generate_keypair("k256")))
+    server = await PeerServer.create(Peer(did=GRANTOR, signing_key=generate_keypair("k256")))
     interface = MemoryWireGuardInterface()
     guard = WireGuardReconciler(server, interface, resolver)
 

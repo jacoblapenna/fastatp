@@ -125,7 +125,7 @@ and the commit emits on the public firehose for the relay to index.
 - The public relay ecosystem may require a contact step or allowlist for new
   PDS hostnames; if indexing stalls after `requestCrawl`, that is the first
   thing to check (then `#account` visibility — this peer emits it).
-- Rotation: after `identity.rotate(...)`, re-run step 1 — the static
+- Rotation: after `await identity.rotate(...)`, re-run step 1 — the static
   artifacts (did.json + chain.json) must be republished.
 
 ## What is deliberately absent

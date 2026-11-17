@@ -75,20 +75,20 @@ class Note(Lexicon):
     at: Datetime
 
 
-def test_repo_uses_sqlite_store_as_backend(tmp_path):
+async def test_repo_uses_sqlite_store_as_backend(tmp_path):
     """A Repo drives put/commit/GC/export through the sqlite store unchanged."""
     from fastatp import crypto
 
     key = crypto.generate_keypair("k256")
     did = crypto.encode_did_key(key.public_key())
 
-    repo = Repo(did, key, store=SqliteBlockStore(tmp_path / "repo.db"))
-    repo.put_record(Note.nsid, "n1", Note(text="durable", at="2026-07-06T12:00:00Z"))
+    repo = await Repo.create(did, key, store=SqliteBlockStore(tmp_path / "repo.db"))
+    await repo.put_record(Note.nsid, "n1", Note(text="durable", at="2026-07-06T12:00:00Z"))
     car = repo.export_car()
 
     # a consumer imports the exported CAR and reads the record — proof the
     # store served every reachable block through commit + GC + export
-    consumer = Repo(did, key)
+    consumer = await Repo.create(did, key)
     consumer.import_car(car)
     rec_n1 = consumer.get_record(Note.nsid, "n1")
     assert rec_n1 is not None

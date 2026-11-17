@@ -42,7 +42,7 @@ def _free_port() -> int:
 async def server():
     key = crypto.generate_keypair("k256")
     peer = Peer(did=DID, signing_key=key)
-    srv = PeerServer(peer, backfill_window=8)
+    srv = await PeerServer.create(peer, backfill_window=8)
     port = _free_port()
     config = uvicorn.Config(srv.app, host="127.0.0.1", port=port, log_level="error")
     uv_server = uvicorn.Server(config)
@@ -70,7 +70,7 @@ async def test_commit_order_delivery_and_verification(server):
     async with websockets.connect(ws_url) as ws:
         await asyncio.sleep(0.05)  # subscription registered before writes
         for i in range(3):
-            srv.put_record(Reading.nsid, f"r{i}", _reading(i))
+            await srv.put_record(Reading.nsid, f"r{i}", _reading(i))
         seen = []
         for _ in range(3):
             header, body = await _recv_frame(ws)
@@ -91,12 +91,12 @@ async def test_disconnect_and_cursor_resume(server):
 
     async with websockets.connect(ws_url) as ws:
         await asyncio.sleep(0.05)
-        srv.put_record(Reading.nsid, "a", _reading(1))
+        await srv.put_record(Reading.nsid, "a", _reading(1))
         _, body = await _recv_frame(ws)
         await mirror.apply_commit(body)
     # consumer is now offline; producer keeps committing
-    srv.put_record(Reading.nsid, "b", _reading(2))
-    srv.put_record(Reading.nsid, "c", _reading(3))
+    await srv.put_record(Reading.nsid, "b", _reading(2))
+    await srv.put_record(Reading.nsid, "c", _reading(3))
 
     # reconnect with the kept cursor: replay only the two missed commits
     async with websockets.connect(f"{ws_url}?cursor={mirror.seq}") as ws:
@@ -115,7 +115,7 @@ async def test_outdated_cursor_falls_back_to_checkpoint(server):
     srv, ws_url, http, resolver = server
     # push far beyond the backfill window (8)
     for i in range(20):
-        srv.put_record(Reading.nsid, f"r{i}", _reading(i))
+        await srv.put_record(Reading.nsid, f"r{i}", _reading(i))
     # a consumer whose cursor predates the window
     mirror = RepoMirror(DID, resolver=resolver)
     async with websockets.connect(f"{ws_url}?cursor=1") as ws:
@@ -135,7 +135,7 @@ async def test_outdated_cursor_falls_back_to_checkpoint(server):
         assert mirror.resync_target is None
         assert len(mirror.entries) == 20
         # and the stream continues live from the checkpoint
-        srv.put_record(Reading.nsid, "after", _reading(99))
+        await srv.put_record(Reading.nsid, "after", _reading(99))
         header, body = await _recv_frame(ws)
         assert header["t"] == "#commit" and body["seq"] == 23
         await mirror.apply_commit(body)
@@ -156,7 +156,7 @@ async def test_future_cursor_rejected(server):
 
 async def test_get_repo_checkpoint_route(server):
     srv, _ws, http, _resolver = server
-    srv.put_record(Reading.nsid, "x", _reading(5))
+    await srv.put_record(Reading.nsid, "x", _reading(5))
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{http}{GET_REPO_PATH}")
         assert response.status_code == 200
@@ -186,7 +186,7 @@ async def test_mirror_rejects_forged_commit(server):
     honest_key_doc_resolver_mirror = RepoMirror(DID, resolver=forged_resolver)
     from fastatp.repo.sync import commit_frame_body
 
-    event = srv.put_record(Reading.nsid, "forge-test", _reading(1))
+    event = await srv.put_record(Reading.nsid, "forge-test", _reading(1))
     body = commit_frame_body(DID, srv.seq, event)
     with pytest.raises(RepoError, match="signature"):
         await honest_key_doc_resolver_mirror.apply_commit(body)

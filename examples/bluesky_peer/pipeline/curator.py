@@ -24,6 +24,7 @@ from fastatp.did.continuity import build_genesis
 from fastatp.did.document import DIDDocument
 from fastatp.repo.repo import Repo
 from fastatp.server.peer_server import PeerServer, RepoHandle
+from fastatp.tid import generate_tid
 
 SELECTION_NSID = "com.example.curation.selection"
 
@@ -32,6 +33,9 @@ class Curator:
     """Mints its slug identity, hosts its gated repo, publishes selections."""
 
     def __init__(self, server: PeerServer, domain: str) -> None:
+        """Mints the slug's keys and genesis; ``await Curator.create(...)``
+        signs the repo's genesis commit and registers it."""
+        self._server = server
         self.signing_key = crypto.generate_keypair("k256")
         # rotation pen for a demo agent: minted and immediately discarded —
         # an internal agent identity is replaceable (mint a new slug), which
@@ -43,19 +47,25 @@ class Curator:
             [encode_did_key(rotation.public_key())],
             bind_pretty=False,  # twin-only: the slug IS the identity
         )
-        repo = Repo(self.did, self.signing_key)
-        self.handle: RepoHandle = server.register(repo, public=False)  # gated
+        self.handle: RepoHandle
+
+    @classmethod
+    async def create(cls, server: PeerServer, domain: str) -> Curator:
+        curator = cls(server, domain)
+        repo = await Repo.create(curator.did, curator.signing_key)
+        curator.handle = server.register(repo, public=False)  # gated
+        return curator
 
     def document(self) -> DIDDocument:
         """The self-certifying genesis document (what a verifier resolves)."""
         return self.genesis
 
-    def grant_subscribe(self, subject_did: str) -> None:
+    async def grant_subscribe(self, subject_did: str) -> None:
         """Presence IS authorization: commit the capability into OUR repo."""
         cap = Capability(subject=subject_did, actions=[ACTION_SUBSCRIBE])
-        self.handle.put_record(Capability.nsid, "persona-poster", cap)
+        await self.handle.put_record(Capability.nsid, "persona-poster", cap)
 
-    def publish_selection(self, caption: str, image_png: bytes, alt: str) -> dict[str, Any]:
+    async def publish_selection(self, caption: str, image_png: bytes, alt: str) -> dict[str, Any]:
         """Sign one selection record into the gated repo; returns the record."""
         record: dict[str, Any] = {
             "$type": SELECTION_NSID,
@@ -65,6 +75,8 @@ class Curator:
             "imagePng": {"$bytes": base64.b64encode(image_png).decode().rstrip("=")},
             "alt": alt,
         }
-        event = self.handle.put_record(SELECTION_NSID, f"sel-{self.handle.seq + 1}", record)
+        # a TID rkey: unique under concurrent selections (a seq-derived name
+        # could be allocated twice while a write awaits its signer)
+        event = await self.handle.put_record(SELECTION_NSID, generate_tid(), record)
         assert event.commit.did == self.did
         return record

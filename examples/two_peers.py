@@ -57,7 +57,7 @@ async def main() -> None:
     key_a = generate_keypair("k256")
     doc_a = build_did_document(did=DID_A, signing_key=key_a.public_key())
     peer_a = Peer(did=DID_A, signing_key=key_a)
-    server_a = PeerServer(peer_a, backfill_window=64)
+    server_a = await PeerServer.create(peer_a, backfill_window=64)
 
     # bind the socket ourselves and hand it to uvicorn: no close/rebind race
     sock = socket.socket()
@@ -83,7 +83,7 @@ async def main() -> None:
     # A signs a task into its repo; B receives it over the firehose
     async with websockets.connect(url) as ws:
         await asyncio.sleep(0.05)
-        server_a.put_record(
+        await server_a.put_record(
             Task.nsid,
             generate_tid(),
             Task(
@@ -104,7 +104,7 @@ async def main() -> None:
 
     # --- WAN drop: B is offline while A keeps committing --------------------
     for i in range(3):
-        server_a.put_record(
+        await server_a.put_record(
             Task.nsid,
             generate_tid(),
             Task(
@@ -129,8 +129,8 @@ async def main() -> None:
     # --- multi-party: peer C answers in the same context --------------------
     key_c = generate_keypair("p256")
     peer_c = Peer(did=DID_C, signing_key=key_c)
-    server_c = PeerServer(peer_c)
-    server_c.put_record(
+    server_c = await PeerServer.create(peer_c)
+    await server_c.put_record(
         TaskResult.nsid,
         generate_tid(),
         TaskResult(context_id=context_id, summary="pressure nominal", created_at=now()),

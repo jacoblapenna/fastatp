@@ -21,13 +21,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 from pathlib import Path
 
 from fastatp.identity import Identity
 from fastatp.repo.blobs import SqliteBlobStore
 
 
-def build_server(domain: str, state: str | Path, *, identity_resolver=None, **kwargs):
+async def build_server(domain: str, state: str | Path, *, identity_resolver=None, **kwargs):
     """The composed server: persona identity + blob store, ready to host.
 
     Returns ``(identity, server)``. The gated curator repo is registered by
@@ -35,7 +36,7 @@ def build_server(domain: str, state: str | Path, *, identity_resolver=None, **kw
     internal agents hosts just the public persona repo.
     """
     state = Path(state)
-    identity = Identity.bootstrap(domain=domain, state_dir=state)
+    identity = await Identity.bootstrap(domain=domain, state_dir=state)
     # the media capability is optional wiring — a persona posts
     # images, so this peer wires a durable blob store into its repo
     identity.repo.blobs = SqliteBlobStore(state / "blobs.sqlite")
@@ -43,7 +44,7 @@ def build_server(domain: str, state: str | Path, *, identity_resolver=None, **kw
     return identity, server
 
 
-def main() -> None:
+async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--domain", required=True)
     ap.add_argument("--state", required=True)
@@ -51,11 +52,11 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8100)
     args = ap.parse_args()
 
-    identity, server = build_server(args.domain, args.state)
+    identity, server = await build_server(args.domain, args.state)
     print(f"hosting {identity.did} (public) on {args.host}:{args.port}")
     print("firehose: /xrpc/com.atproto.sync.subscribeRepos")
-    server.run(host=args.host, port=args.port)
+    await server.serve(host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

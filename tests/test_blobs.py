@@ -6,7 +6,6 @@ blob commits, emits (inversion-verified), exports, imports, and the blob
 serves over getBlob/listBlobs.
 """
 
-import asyncio
 import base64
 import json
 from typing import Any
@@ -27,8 +26,8 @@ DID = "did:web:blobs.example"
 NSID = "com.example.media.post"
 
 
-def _repo(blobs=None) -> Repo:
-    return Repo(DID, crypto.generate_keypair("k256"), blobs=blobs)
+async def _repo(blobs=None) -> Repo:
+    return await Repo.create(DID, crypto.generate_keypair("k256"), blobs=blobs)
 
 
 # --- 15a: the stores ------------------------------------------------------------
@@ -92,8 +91,8 @@ def test_blob_object_round_trips_both_encodings(interop_dir):
     assert blob.model_dump(by_alias=True) == blob_json
 
 
-def test_add_blob_produces_conforming_reference():
-    repo = _repo(blobs=MemoryBlobStore())
+async def test_add_blob_produces_conforming_reference():
+    repo = await _repo(blobs=MemoryBlobStore())
     data = b"picture!"
     blob = repo.add_blob(data, "image/jpeg")
     blob_json = blob.model_dump(by_alias=True)
@@ -107,8 +106,8 @@ def test_add_blob_produces_conforming_reference():
     assert datamodel.blob_refs(obj) == {CID.for_raw(data)}
 
 
-def test_media_free_repo_pays_nothing():
-    repo = _repo()  # no blob store wired
+async def test_media_free_repo_pays_nothing():
+    repo = await _repo()  # no blob store wired
     assert repo.blobs is None
     assert repo.get_blob(CID.for_raw(b"x")) is None
     assert repo.list_blobs() == [] and repo.gc_blobs() == 0
@@ -119,14 +118,14 @@ def test_media_free_repo_pays_nothing():
 # --- blob GC (explicit) ---------------------------------------------------------
 
 
-def test_gc_blobs_reclaims_unreferenced():
-    repo = _repo(blobs=MemoryBlobStore())
+async def test_gc_blobs_reclaims_unreferenced():
+    repo = await _repo(blobs=MemoryBlobStore())
     keep = repo.add_blob(b"keep me", "image/png")
     drop = repo.add_blob(b"drop me", "image/png")
-    repo.put_record(NSID, "keeper", {"$type": NSID, "image": keep.model_dump(by_alias=True)})
-    repo.put_record(NSID, "dropper", {"$type": NSID, "image": drop.model_dump(by_alias=True)})
+    await repo.put_record(NSID, "keeper", {"$type": NSID, "image": keep.model_dump(by_alias=True)})
+    await repo.put_record(NSID, "dropper", {"$type": NSID, "image": drop.model_dump(by_alias=True)})
     assert repo.gc_blobs() == 0  # both referenced
-    repo.delete_record(NSID, "dropper")
+    await repo.delete_record(NSID, "dropper")
     assert repo.blob_refs() == {CID.for_raw(b"keep me")}
     assert repo.gc_blobs() == 1
     assert repo.get_blob(CID.for_raw(b"drop me")) is None
@@ -136,7 +135,7 @@ def test_gc_blobs_reclaims_unreferenced():
 # --- the gate: full lifecycle ----------------------------------------------------
 
 
-def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, tmp_path):
+async def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, tmp_path):
     async def run() -> None:
         key = crypto.generate_keypair("k256")
         doc = build_did_document(did=DID, signing_key=key.public_key())
@@ -145,7 +144,7 @@ def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, tmp_pat
             return doc if did == DID else None
 
         blob_store = SqliteBlobStore(tmp_path / "blobs.sqlite")
-        repo = Repo(DID, key, blobs=blob_store)
+        repo = await Repo.create(DID, key, blobs=blob_store)
         srv = PeerServer(Peer(did=DID, signing_key=key), repo=repo)
 
         image = b"\xff\xd8\xff fake-jpeg body \xff\xd9"
@@ -155,7 +154,7 @@ def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, tmp_pat
 
         # commits + emits: the event passes the relay inversion check and a
         # verifying mirror; the blob bytes are NOT in the event blocks
-        event = srv.put_record(
+        event = await srv.put_record(
             NSID, "post1", {"$type": NSID, "text": "hi", "image": blob.model_dump(by_alias=True)}
         )
         body = commit_frame_body(DID, srv.seq, event)
@@ -167,7 +166,7 @@ def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, tmp_pat
 
         # exports/imports: the CAR round-trips the record (not the blob bytes)
         car = srv.repo.export_car()
-        replica = Repo(DID, key)
+        replica = await Repo.create(DID, key)
         replica.import_car(car)
         got = replica.get_record(NSID, "post1")
         assert got is not None and got["image"]["ref"]["$link"] == blob_cid.encode()
@@ -210,13 +209,13 @@ def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, tmp_pat
                 bad = await client.get(f"{base}{GET_BLOB_PATH}", params={"did": DID})
                 assert bad.status_code == 400
 
-    asyncio.run(run())
+    await run()
 
 
-def test_list_blobs_pagination(serve_app):
+async def test_list_blobs_pagination(serve_app):
     async def run() -> None:
         key = crypto.generate_keypair("k256")
-        repo = Repo(DID, key, blobs=MemoryBlobStore())
+        repo = await Repo.create(DID, key, blobs=MemoryBlobStore())
         srv = PeerServer(Peer(did=DID, signing_key=key), repo=repo)
         cids = sorted(
             srv.repo.add_blob(f"blob {i}".encode(), "text/plain").ref.ref for i in range(5)
@@ -239,4 +238,4 @@ def test_list_blobs_pagination(serve_app):
                 )
                 assert r.json() == {"cids": cids[4:]}
 
-    asyncio.run(run())
+    await run()

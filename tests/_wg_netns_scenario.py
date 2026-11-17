@@ -131,7 +131,7 @@ async def scenario() -> dict:
 
         interface = WgToolInterface("wgA", run_command=lambda argv: run(argv, ns=nsa).stdout)
         rec = WireGuardReconciler(
-            Repo("did:web:host.example", generate_keypair("k256")), interface, resolver
+            await Repo.create("did:web:host.example", generate_keypair("k256")), interface, resolver
         )
 
         before = ping_within(nsb, addr_a, 3)

@@ -28,9 +28,9 @@ class Result(Lexicon):
     finding: str
 
 
-def _tool_app():
+async def _tool_app():
     key = crypto.generate_keypair("k256")
-    server = PeerServer(Peer(did=TOOL_DID, signing_key=key))
+    server = await PeerServer.create(Peer(did=TOOL_DID, signing_key=key))
     return PeerApp(server), server, key
 
 
@@ -61,7 +61,7 @@ def _envelope(record, issuer_did):
 
 
 async def test_inbound_attestation_is_cached_generically():
-    app, _server, _key = _tool_app()
+    app, _server, _key = await _tool_app()
     requester_did, self_att = _requester()
     # dispatched with NO registered handler for Attestation -> still cached
     await app._dispatch(_envelope(self_att, requester_did), None)
@@ -82,7 +82,7 @@ async def test_inbound_attestation_is_cached_generically():
 
 
 async def test_reply_private_composes_the_producer_side():
-    app, server, key = _tool_app()
+    app, server, key = await _tool_app()
     requester_did, self_att = _requester()
     # the requester's self-attestation has arrived (board/firehose); cache it
     await app._dispatch(_envelope(self_att, requester_did), None)
@@ -118,7 +118,7 @@ async def test_reply_private_composes_the_producer_side():
 
 
 async def test_reply_private_without_self_attestation_is_a_clear_error():
-    app, _server, _key = _tool_app()
+    app, _server, _key = await _tool_app()
     requester_did, _self_att = _requester()  # NOT cached
     ctx = _envelope(WantAd(context_id=CTX, need="inspect"), requester_did)
     reply = Result(context_id=CTX, finding="x")
@@ -130,7 +130,7 @@ async def test_reply_private_without_self_attestation_is_a_clear_error():
 
 
 async def test_reply_private_allocates_distinct_channel_ips():
-    app, _server, _key = _tool_app()
+    app, _server, _key = await _tool_app()
     r1, att1 = _requester()
     r2 = crypto.generate_keypair("k256")
     r2_did = crypto.encode_did_key(r2.public_key())

@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import getpass
 import json
 import sys
@@ -38,7 +39,7 @@ from fastatp.exceptions import DIDDocumentInvalid
 from fastatp.identity import Identity
 
 
-def main() -> None:
+async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--state", required=True, help="durable identity state dir")
     ap.add_argument("--pds", required=True, help="public https URL of YOUR peer")
@@ -54,7 +55,7 @@ def main() -> None:
         # existing identity, and a bare state dir would mint a fresh one
         sys.exit(f"{state} has no identity.json — nothing to rotate. Restore it first.")
 
-    identity = Identity.bootstrap(state_dir=state)
+    identity = await Identity.bootstrap(state_dir=state)
     if identity.chain is None or identity.domain is None:
         sys.exit(f"{identity.did} is a did:key — a did:key's name IS its key; nothing rotates")
 
@@ -69,7 +70,7 @@ def main() -> None:
 
     new_signing_key = generate_keypair(identity.curve)
     try:
-        identity.rotate(new_signing_key, rotation_pen)  # rejects a wrong pen before mutating
+        await identity.rotate(new_signing_key, rotation_pen)  # rejects a wrong pen before mutating
     except DIDDocumentInvalid as exc:
         sys.exit(f"rotation refused (nothing changed): {exc}")
     print(f"rotated: {identity.did} now signs with a fresh {identity.curve} key")
@@ -99,4 +100,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -251,7 +251,7 @@ def test_x25519_known_answer_cross_impl():
 # --- audit items 5 & 7: reconciler idempotency, heal, endpoint roaming ----------
 
 
-def _reconciler_fixture(interface):
+async def _reconciler_fixture(interface):
     """A reconciler over an in-memory repo + a single did:web grantee whose
     document advertises a WG identity WITH a (roaming) endpoint."""
     import asyncio  # noqa: F401 - imported by callers' asyncio.run
@@ -271,35 +271,33 @@ def _reconciler_fixture(interface):
     from fastatp.repo.repo import Repo
 
     rec = WireGuardReconciler(
-        Repo("did:web:host.example", generate_keypair("k256")), interface, resolver
+        await Repo.create("did:web:host.example", generate_keypair("k256")), interface, resolver
     )
     return rec, did_b, wg_pub
 
 
-def test_reconcile_is_idempotent():
+async def test_reconcile_is_idempotent():
     """Audit item 5: after a grant, reconcile is a no-op and repeats stay
     no-ops — the _ips_key comparison prevents add_peer churn."""
-    import asyncio
 
     from fastatp.authz.wireguard import MemoryWireGuardInterface
 
     async def run():
         iface = MemoryWireGuardInterface()
-        rec, did_b, pub = _reconciler_fixture(iface)
+        rec, did_b, pub = await _reconciler_fixture(iface)
         await rec.grant(did_b)
         assert (await rec.reconcile()).changed is False
         assert (await rec.reconcile()).changed is False
         assert list(iface.peers()) == [pub]
 
-    asyncio.run(run())
+    await run()
 
 
-def test_partial_failure_heals_on_next_reconcile():
+async def test_partial_failure_heals_on_next_reconcile():
     """Audit item 5: grant commits the capability record BEFORE touching the
     interface, so a wg failure (now an EnforcementError, item 6) leaves the
     record but no peer — and the next reconcile adds it. Records first, teeth
     second, heal in the safe direction."""
-    import asyncio
 
     from fastatp.authz.wireguard import MemoryWireGuardInterface
     from fastatp.exceptions import EnforcementError
@@ -317,7 +315,7 @@ def test_partial_failure_heals_on_next_reconcile():
 
     async def run():
         iface = FlakyOnce()
-        rec, did_b, pub = _reconciler_fixture(iface)
+        rec, did_b, pub = await _reconciler_fixture(iface)
         with pytest.raises(EnforcementError):
             await rec.grant(did_b)
         assert iface.peers() == {}  # teeth not applied
@@ -325,22 +323,21 @@ def test_partial_failure_heals_on_next_reconcile():
         assert pub in iface.peers()
         assert report.added == [did_b]
 
-    asyncio.run(run())
+    await run()
 
 
-def test_endpoint_roaming_never_pinned():
+async def test_endpoint_roaming_never_pinned():
     """Audit item 7: a grantee's published endpoint is informational only.
     allowed-ips is the /128 overlay address derived from the key (the stable
     address the doorman routes on), and the reconciler never sends the
     roaming external endpoint to the interface — WireGuard learns it from
     the handshake."""
-    import asyncio
 
     from fastatp.authz.wireguard import MemoryWireGuardInterface, parse_wireguard_service
 
     async def run():
         iface = MemoryWireGuardInterface()
-        rec, did_b, pub = _reconciler_fixture(iface)
+        rec, did_b, pub = await _reconciler_fixture(iface)
         info = parse_wireguard_service(await rec.resolver(did_b))
         assert info.endpoint == "roamer.example:51820"  # present in the doc
         assert info.allowed_ips == f"{overlay_address(pub)}/128"  # derived from the key only
@@ -348,13 +345,13 @@ def test_endpoint_roaming_never_pinned():
         # the interface stores exactly the derived /128 allowed-ips, no endpoint anywhere
         assert iface.peers()[pub] == f"{overlay_address(pub)}/128"
 
-    asyncio.run(run())
+    await run()
 
 
 # --- shipping study: graceful degradation with no wg binary ---------------------
 
 
-def test_graceful_degradation_without_wg_binary():
+async def test_graceful_degradation_without_wg_binary():
     """WG enforcement is an optional adapter: with NO `wg` on PATH, the
     package still imports and the whole enforcement API is constructible;
     only the FIRST actual interface call fails, as one clear EnforcementError

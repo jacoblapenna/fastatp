@@ -4,6 +4,7 @@ from importlib import metadata as _metadata
 
 from fastatp import exceptions
 from fastatp.authz.attestation import Attestation
+from fastatp.crypto import Signer, SoftwareSigner
 from fastatp.did.document import DIDDocument, build_did_document
 from fastatp.did.plc import PLCResolver
 from fastatp.did.resolver import (
@@ -71,7 +72,9 @@ __all__ = [
     "RepoHandle",
     "RepoMirror",
     "SignatureInvalid",
+    "Signer",
     "SignerMismatch",
+    "SoftwareSigner",
     "UnknownLexicon",
     "VerificationError",
     "WebResolver",

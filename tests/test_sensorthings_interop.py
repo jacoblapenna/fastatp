@@ -23,8 +23,8 @@ sys.path.insert(0, str(REPO_ROOT / "examples"))
 from sensorthings_interop.demo import main  # noqa: E402
 
 
-def test_unmodified_flattener_reads_fastatp_export(tmp_path):
-    result = main(tmp_path)
+async def test_unmodified_flattener_reads_fastatp_export(tmp_path):
+    result = await main(tmp_path)
 
     # a slug-DID (twin-only) sensor identity signed everything
     assert result["did"].startswith("did:web:sensors.example.com:")

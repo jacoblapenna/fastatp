@@ -72,7 +72,7 @@ def test_canonical_encoder_agrees_with_libipld():
     assert libipld.encode_dag_cbor(libipld.decode_dag_cbor(ours)) == ours
 
 
-def test_sdk_car_reader_accepts_our_export():
+async def test_sdk_car_reader_accepts_our_export():
     """The SDK's CAR reader (libipld) parses a FastATP repo export and sees
     the same root and dag-cbor blocks (raw blob blocks are deliberately NOT
     in repo CARs, which keeps us inside libipld's dag-cbor-only support)."""
@@ -80,9 +80,11 @@ def test_sdk_car_reader_accepts_our_export():
     from fastatp import crypto
     from fastatp.repo.repo import Repo
 
-    repo = Repo("did:web:crosssdk.example", crypto.generate_keypair("k256"))
+    repo = await Repo.create("did:web:crosssdk.example", crypto.generate_keypair("k256"))
     for i in range(20):
-        repo.put_record("com.example.cross", f"r{i:02d}", {"$type": "com.example.cross", "n": i})
+        await repo.put_record(
+            "com.example.cross", f"r{i:02d}", {"$type": "com.example.cross", "n": i}
+        )
     car = repo.export_car()
 
     header, their_blocks = libipld.decode_car(car)
