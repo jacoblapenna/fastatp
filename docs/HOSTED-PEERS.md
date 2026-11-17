@@ -55,7 +55,10 @@ arrives through the browser knock anyway, which needs no global map.
 A "login system" fuses three things FastATP keeps apart:
 
 1. **The pen** — the private signing key. The only true secret. Never leaves
-   the device it was minted on, in any form.
+   the device it was minted on, in any form. The strongest form of that is a
+   pen that cannot leave even if asked: a key minted inside a TPM, a secure
+   element or a YubiKey, which signs on request and never shows its bytes
+   (see [Hardware-held pens](#hardware-held-pens)).
 2. **The phone book entry** — the DID document. Public. Hosting it grants no
    power: under the twin/chain, a host cannot forge a rotation; it
    can only go stale or dark (availability, not impersonation).
@@ -289,6 +292,90 @@ sovereign admission policy — edge business logic, never substrate.
   sync protocol. Its *own* repo it pulls as the owner.
 - Pairwise privacy = the isolation pattern: a conversation is
   a dedicated repo whose firehose admits exactly the counterpart.
+
+## Hardware-held pens
+
+The Python side has the same seam the browser does: the pen is a handle,
+and where it lives is a deployment property, not an architecture fork.
+`fastatp.Signer` is the protocol: a `public_key` and `async def sign(message)
+-> bytes`. `fastatp.SoftwareSigner` is the one implementation the package
+ships, holding a `cryptography` private key in memory, and it is what every
+`signing_key=` argument wraps a bare key in. `Peer(did, signing_key=...)`,
+`Repo.create(did, ...)` and `Commit.create(...)` take either, so the same
+code runs with a key in RAM or in a chip. The Rust core's `Signer` trait is
+the same shape, and the browser's WebCrypto signer is one of its
+implementations.
+
+What the package does for every signer, so adapters cannot get it wrong:
+
+- **Normalizes the wire form.** A device hands back whatever it has: DER
+  (PKCS#11, most HSMs, `cryptography` itself) or raw `r||s` (a TPM), low-S
+  or not. `normalize_signature` turns any of them into atproto's compact
+  64-byte low-S form in one place. Devices don't normalize, and every
+  atproto verifier rejects high-S, so leaving this to adapters would
+  guarantee interop bugs.
+- **Verifies before committing.** `sign_with` checks the normalized
+  signature against the signer's own public key, so a misbehaving device, a
+  wrong key handle or a wrong PIN fails at the write, with the repo
+  unchanged, not at a mirror hours later.
+- **Never blocks the peer.** `sign` is awaited. A TPM takes tens of
+  milliseconds per signature, and a peer that is also serving its firehose
+  keeps serving meanwhile.
+
+Curves are k256 and p256. TPM 2.0 parts, YubiKey PIV and most secure
+elements offer only P-256, so a hardware pen is usually a p256 `did:key`.
+
+The package ships no adapter: a TPM, PKCS#11 or HSM library is the app's
+dependency, never fastatp's (`AGENTS.md`: no new primitive dependency).
+An adapter is a few lines. For a TPM 2.0 through `tpm2-pytss`, the shape
+is:
+
+```python
+import asyncio
+import hashlib
+
+
+class TpmSigner:  # satisfies fastatp.Signer
+    def __init__(self, esys, handle, public_key):
+        self._esys, self._handle = esys, handle  # the key never leaves the TPM
+        self._public_key = public_key  # cryptography EllipticCurvePublicKey
+
+    @property
+    def public_key(self):
+        return self._public_key
+
+    async def sign(self, message: bytes) -> bytes:
+        # the TPM call blocks for ~20-50 ms; run it off the event loop and
+        # hand back exactly what the device returned (raw r||s, any S)
+        return await asyncio.to_thread(self._sign_blocking, message)
+
+    def _sign_blocking(self, message: bytes) -> bytes:
+        digest = hashlib.sha256(message).digest()
+        sig = self._esys.sign(self._handle, digest, ...)  # ESYS_TR + TPMT_SIG_SCHEME
+        return sig.signature.ecdsa.signatureR.buffer + sig.signature.ecdsa.signatureS.buffer
+
+
+peer = Peer(did, signing_key=TpmSigner(esys, handle, public_key))
+repo = await Repo.create(did, peer.signer)
+```
+
+A YubiKey or an HSM is the same class with a PKCS#11 `C_Sign` in
+`_sign_blocking` (it returns DER; the package normalizes). A pen that wants a
+touch or a PIN per signature is a human-in-the-loop pen: right for an
+operator's identity, wrong for a device that commits unattended, and the
+adapter, not the package, decides how to prompt.
+
+What a hardware pen pairs with: a **frozen** copy of its repo on any host
+(see the runtime shape above). The device signs; hosts serve what it signed
+and can never commit. A device that boots fresh and starts a new repo each
+time, keeping the old one served until the backend has acknowledged it, is
+exactly this shape.
+
+Not yet on the seam: `Identity`, the create-once/load-forever bootstrap,
+still holds a software `PrivateKey`, because it persists the key bytes to
+its state directory and reads them back on load. An identity whose pen is
+in hardware needs a load path that takes the signer instead; until then a
+hardware pen is a `Peer` plus a `Repo`, which is what a device needs.
 
 ## Two confidentiality tiers — apps must declare which
 

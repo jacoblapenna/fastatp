@@ -59,6 +59,16 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- The signer seam: `fastatp.Signer` (a `public_key` and `async sign`) is
+  what an app implements to sign with a key the process cannot hold (a TPM,
+  an HSM, a secure element, a YubiKey); `fastatp.SoftwareSigner` is the
+  in-memory implementation every bare `PrivateKey` is wrapped in.
+  `crypto.normalize_signature` turns a device's DER or raw `r||s`, low-S or
+  not, into compact low-S in one place; `crypto.sign_with` signs,
+  normalizes and verifies against the signer's own key before anything is
+  committed, so a misbehaving device fails at the write with the repo
+  unchanged. The package ships no adapter; `docs/HOSTED-PEERS.md`
+  "Hardware-held pens" sketches one.
 - `RepoHandle.emit_sync()` announces a hosted repo's current head as a
   `#sync` event, for a host whose repo took a push through `import_car`
   (which commits nothing and so emits nothing by itself). The hosted-peer

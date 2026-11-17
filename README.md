@@ -141,7 +141,7 @@ async def main() -> None:
     did = "did:web:example.com:device-1"
     doc = build_did_document(did=did, signing_key=key.public_key())
 
-    producer = Peer(did=did, signing_key=key)
+    producer = Peer(did=did, signing_key=key)  # or any fastatp.Signer: a TPM, an HSM
     repo = await producer.create_repo()
     await repo.put_record(
         PressureReading.nsid,
@@ -197,7 +197,11 @@ exchange a private reply, end to end).
 ## What's in the box
 
 - **Identity** — `did:web` and `did:key`, DID documents, Multikey, low-S compact
-  ECDSA (secp256k1 / P-256). Optional **self-certifying `did:web` continuity**
+  ECDSA (secp256k1 / P-256). The pen is a handle: `Signer` lets a key that
+  never leaves a TPM, HSM or secure element sign commits, and the package
+  normalizes and verifies every signature before it is committed (no adapter
+  shipped; `docs/HOSTED-PEERS.md` sketches one). Optional **self-certifying
+  `did:web` continuity**
   (`Identity.bootstrap`, `ContinuityResolver`): a hash-anchored twin + rotation-
   signed chain gives plc-grade first-contact assurance with **no registry**, so
   identity survives a lapsed or hijacked domain.
@@ -209,7 +213,8 @@ exchange a private reply, end to end).
   current state (per-commit GC, no history accretion) with CAR export/import.
 - **Firehose** — `PeerServer` hosts one or many repos (routed by DID) behind a
   `com.atproto.sync.subscribeRepos`-shaped WebSocket with cursor resume;
-  `RepoMirror` verifies every commit against the producer's DID.
+  `RepoMirror` verifies every commit against the producer's DID. A repo whose
+  pen lives elsewhere is hosted **frozen**: served, never committed to.
 - **Authorization** — signed **capability** records decide *why* a peer is
   allowed; a **WireGuard** peer set enforces it physically (absence =
   cryptographic unreachability). The reconciler keeps them in lock-step — a
