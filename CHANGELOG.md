@@ -67,7 +67,12 @@ To upgrade safely within one minor line, pin with `~=`, for example
   not, into compact low-S in one place; `crypto.sign_with` signs,
   normalizes and verifies against the signer's own key before anything is
   committed, so a misbehaving device fails at the write with the repo
-  unchanged. The package ships no adapter; `docs/HOSTED-PEERS.md`
+  unchanged. `Identity.bootstrap(..., signer=)`, `adopt_web(domain, signer,
+  ...)` and `rotate(signer, ...)` put a durable identity's pen in hardware:
+  its state directory records only the public key, the signer is required
+  again on every load and checked against it, and `Identity.signer` is what
+  the identity signs with (`signing_key` is the software key when there is
+  one, else `None`). The package ships no adapter; `docs/HOSTED-PEERS.md`
   "Hardware-held pens" sketches one.
 - `RepoHandle.emit_sync()` announces a hosted repo's current head as a
   `#sync` event, for a host whose repo took a push through `import_car`

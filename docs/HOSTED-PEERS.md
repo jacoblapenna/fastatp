@@ -371,11 +371,16 @@ and can never commit. A device that boots fresh and starts a new repo each
 time, keeping the old one served until the backend has acknowledged it, is
 exactly this shape.
 
-Not yet on the seam: `Identity`, the create-once/load-forever bootstrap,
-still holds a software `PrivateKey`, because it persists the key bytes to
-its state directory and reads them back on load. An identity whose pen is
-in hardware needs a load path that takes the signer instead; until then a
-hardware pen is a `Peer` plus a `Repo`, which is what a device needs.
+A long-lived `did:web` on a hardware pen goes through `Identity` like any
+other: `await Identity.bootstrap(domain=..., state_dir=..., signer=pen)`
+on every boot. The first call mints the chain and the repo and records the
+pen as external with its public key; nothing secret is written. Every later
+call needs the signer again (the app re-opens its TPM handle, which it had
+to do anyway) and refuses a signer whose public key is not the recorded
+one. `adopt_web(domain, pen, state_dir)` brings a `did:web` whose key is
+already in hardware, and `rotate(new_pen, rotation_key)` moves an identity
+onto a hardware pen or off one. A device repo is simpler still: a
+`did:key` is its pen, so `Peer` plus `Repo` is the whole story.
 
 ## Two confidentiality tiers — apps must declare which
 
