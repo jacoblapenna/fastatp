@@ -5,6 +5,8 @@ worst-behaved encoding a device gives back. Everything above it (commit,
 repo, server, mirror) must not be able to tell it from an in-memory key.
 """
 
+import asyncio
+
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -15,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
 
 from fastatp import Peer, PeerServer, Repo, RepoMirror, crypto
 from fastatp.did.document import build_did_document
-from fastatp.exceptions import CryptoError
+from fastatp.exceptions import CryptoError, RepoError
 from fastatp.repo.sync import commit_frame_body, encode_frame, sync_frame_body
 
 DID = "did:web:device.example"
@@ -120,3 +122,61 @@ async def test_a_fresh_repo_has_no_commit_until_create_signs_one():
         _ = repo.commit
     with pytest.raises(Exception, match=r"await Repo\.create"):
         repo.export_car()
+
+
+# --- one head, one writer at a time ------------------------------------------------
+
+
+class _SlowSigner(_HardwareSigner):
+    """Yields to the event loop while signing, the way a device does."""
+
+    async def sign(self, message: bytes) -> bytes:
+        await asyncio.sleep(0.01)
+        return await super().sign(message)
+
+
+async def test_concurrent_writes_on_one_repo_all_land_in_sequence():
+    repo = await Repo.create(DID, _SlowSigner(crypto.generate_keypair("p256")))
+    await asyncio.gather(
+        *(repo.put_record(NOTE, f"n{i}", {"$type": NOTE, "text": str(i)}) for i in range(5))
+    )
+    assert repo.record_count(NOTE) == 5
+    assert {rkey for rkey, _ in repo.list_records(NOTE)} == {f"n{i}" for i in range(5)}
+    repo.export_car()  # every reachable block is present: no write GC'd another's nodes
+    reachable = {repo.commit_cid} | repo._mst_nodes | set(repo._entries.values())
+    assert set(repo.store.cids()) == reachable  # and nothing staged was left behind
+
+
+async def test_a_failing_signer_leaves_no_staged_blocks():
+    repo = await Repo.create(DID, _HardwareSigner(crypto.generate_keypair("p256")))
+    await repo.put_record(NOTE, "kept", {"$type": NOTE, "text": "before"})
+    before = set(repo.store.cids())
+
+    repo.signer = _LyingSigner(crypto.generate_keypair("p256"), crypto.generate_keypair("p256"))
+    with pytest.raises(CryptoError):
+        await repo.put_record(NOTE, "lost", {"$type": NOTE, "text": "never"})
+    assert set(repo.store.cids()) == before
+
+
+async def test_a_checkpoint_landing_mid_signature_is_caught_after_it():
+    key = crypto.generate_keypair("p256")
+    owner = await Repo.create(DID, key)
+    await owner.put_record(NOTE, "theirs", {"$type": NOTE, "text": "pushed"})
+    pushed = owner.export_car()
+
+    repo = await Repo.create(DID, key)
+
+    class _ImportsWhileSigning(_HardwareSigner):
+        async def sign(self, message: bytes) -> bytes:
+            repo.import_car(pushed, verify_key=key.public_key())  # sync, no lock to take
+            return await super().sign(message)
+
+    repo.signer = _ImportsWhileSigning(key)
+    before = set(repo.store.cids())  # the state before the write began
+    with pytest.raises(RepoError, match="head moved"):
+        await repo.put_record(NOTE, "mine", {"$type": NOTE, "text": "stale"})
+    assert repo.rev == owner.rev  # the checkpoint stood
+    assert repo.get_record(NOTE, "mine") is None
+    reachable = {repo.commit_cid} | repo._mst_nodes | set(repo._entries.values())
+    assert set(repo.store.cids()) == reachable
+    assert before != set(repo.store.cids())  # the import, not the write, changed the store

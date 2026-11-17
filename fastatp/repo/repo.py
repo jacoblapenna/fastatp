@@ -34,6 +34,7 @@ walkable history chain. Retention is a per-collection application policy
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -132,6 +133,9 @@ class Repo:
         self._root: CID | None = None
         self._mst_nodes: set[CID] = set()
         self._on_commit = on_commit
+        # one head, one writer at a time: a commit awaits its signer, and two
+        # coroutines on this object must not build on the same snapshot
+        self._write_lock = asyncio.Lock()
         if head_cid is not None:
             self._load_head(head_cid)  # load-forever: reconstruct from a durable store
 
@@ -153,7 +157,8 @@ class Repo:
                 "reopens a stored head: Repo(did, None, store=..., head_cid=...)"
             )
         repo = cls(did, signing_key, store, clock, on_commit=on_commit, blobs=blobs)
-        await repo._commit_now([])
+        async with repo._write_lock:
+            await repo._commit_now([])
         return repo
 
     def _load_head(self, head_cid: CID) -> None:
@@ -260,11 +265,26 @@ class Repo:
         """Re-sign the current state under the current ``signer`` (no data
         change). Used after a key rotation so the persisted head verifies under
         the new key on the next load."""
-        return await self._commit_now([])
+        async with self._write_lock:
+            return await self._commit_now([])
 
     async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+        """Commit ``writes`` as one signed change.
+
+        Writers sharing this object take turns: validation, signing, the head
+        update and garbage collection happen under one lock, so concurrent
+        writes land in sequence and each builds on the previous. A sync
+        ``import_car`` that lands while a commit is being signed is caught
+        after the signature and refused (``RepoError``), with nothing staged
+        left behind. That after-signing check is the compare-and-swap a
+        shared head store generalizes across processes.
+        """
         if not writes:
             raise RepoError("apply_writes requires at least one write")
+        async with self._write_lock:
+            return await self._apply_writes_locked(writes)
+
+    async def _apply_writes_locked(self, writes: list[WriteOp]) -> CommitEvent:
         # validate against the ACCUMULATED batch state, not just the committed
         # state — two creates for one path in a batch is a protocol error
         pending = set(self._entries)
@@ -316,12 +336,24 @@ class Repo:
             ops.append(op)
 
         root = self.mst.build(new_entries)
-        commit = await Commit.create(self.did, root, self.clock.now(), self.signer)
+        staged_nodes = self.mst.node_cids(root)  # before yielding: an import may GC them
+        try:
+            commit = await Commit.create(self.did, root, self.clock.now(), self.signer)
+            # the signer yielded; a sync import_car may have moved the head
+            # under this commit, and landing it would discard that state
+            if self._root != prev_data or (self._commit.rev if self._commit else None) != since:
+                raise RepoError(
+                    "the head moved while this commit was being signed (a checkpoint "
+                    "landed); nothing was committed, retry on the new head"
+                )
+        except BaseException:
+            self._drop_staged(staged_nodes, new_record_blocks)
+            raise
         commit_bytes = commit.to_dag_cbor()
         commit_cid = commit.cid()
         self.store.put(commit_cid, commit_bytes)
 
-        new_mst_nodes = self.mst.node_cids(root)
+        new_mst_nodes = staged_nodes
         self._entries = new_entries
         self._commit = commit
         self._commit_cid = commit_cid
@@ -361,6 +393,15 @@ class Repo:
             self._on_commit(event)  # durable head tracking (fires on genesis too)
         self._collect_garbage()
         return event
+
+    def _drop_staged(self, staged_nodes: set[CID], record_blocks: dict[CID, bytes]) -> None:
+        """A commit that will not land leaves no blocks behind: its new MST
+        nodes and record blocks go, except any the current head reaches."""
+        keep: set[CID] = set(self._mst_nodes) | set(self._entries.values())
+        if self._commit_cid is not None:
+            keep.add(self._commit_cid)
+        for cid in (staged_nodes | set(record_blocks)) - keep:
+            self.store.delete(cid)
 
     def _collect_garbage(self) -> None:
         reachable = {self.commit_cid} | self._mst_nodes | set(self._entries.values())
