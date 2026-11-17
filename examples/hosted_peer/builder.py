@@ -137,6 +137,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
             builder.handles[twin_did] = peers.register(repo, owner_pull=builder.owner_pen)
         except ValueError:
             return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
+        builder.handles[twin_did].emit_sync()  # the first state, announced like every later one
         return JSONResponse({"hosting": twin_did}, status_code=201)
 
     async def push_car(request: Request) -> Response:
@@ -167,6 +168,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
                     builder.handles[did] = peers.register(repo, owner_pull=True)
                 except ValueError:
                     return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
+                builder.handles[did].emit_sync()  # announce the first state too
                 return JSONResponse({"hosting": did}, status_code=201)
         else:
             handle = builder.handles.get(did)

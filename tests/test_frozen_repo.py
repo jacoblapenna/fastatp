@@ -158,3 +158,17 @@ async def test_a_peer_without_a_pen_can_host_a_frozen_repo():
         await host.create_repo()
     srv = PeerServer(host, _frozen_copy(penned))
     assert srv.repo.frozen
+
+
+async def test_a_frozen_repo_refuses_an_unverified_push():
+    """A host with no pen has no other way to know the bytes are the owner's,
+    so the verification the docs ask of every push handler is enforced."""
+    key, penned = await _penned_repo(MemoryBlockStore())
+    frozen = Repo(DID, None, store=MemoryBlockStore())
+    with pytest.raises(RepoError, match="verified pushes"):
+        frozen.import_car(penned.export_car())
+    assert frozen._commit is None  # nothing landed
+    frozen.import_car(penned.export_car(), verify_key=key.public_key())
+    assert frozen.rev == penned.rev
+    assert penned.frozen is False
+    penned.import_car(penned.export_car())  # a penned repo may still import unverified

@@ -541,6 +541,12 @@ class Repo:
         ``_commit_now`` enforces, so a crash mid-import never leaves the
         pointer naming a deleted block (see ``Identity.import_repo_car``).
         """
+        if self.frozen and verify_key is None:
+            raise RepoError(
+                "a frozen repo takes only verified pushes: pass verify_key= (the owner's "
+                "public key). With no pen of its own, this host has no other way to know "
+                "the bytes are the owner's"
+            )
         commit, entries, blocks = self.read_car(data, verify_key)
         if commit.did != self.did:
             raise RepoError(f"CAR is for {commit.did}, not {self.did}")

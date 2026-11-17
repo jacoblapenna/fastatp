@@ -85,6 +85,8 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     # record, no delegation, no iss — owner pull, not a subscription
     assert phases["owner-pull-device1"] == 200
     hosted = builder.handles[twin].repo
+    # the first push was announced like every later one: #identity, #account, #sync
+    assert builder.handles[twin].seq >= 3
     assert live_capabilities(hosted) == {}  # nobody is admitted by record, ever
 
     # each device writes its own repo: device 2's is hosted on first push,

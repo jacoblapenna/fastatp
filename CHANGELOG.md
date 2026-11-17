@@ -81,7 +81,9 @@ To upgrade safely within one minor line, pin with `~=`, for example
 - Frozen repos: `Repo(did, None, store=..., head_cid=...)` reopens a repo
   with no pen on this host. It serves `getRepo` and the firehose exactly as
   before, publicly or to live capability holders, refuses every commit with
-  a clear error, and still takes pushes through `import_car`. `Repo.frozen`
+  a clear error, and still takes pushes through `import_car`, which for a
+  frozen repo requires `verify_key` (a host with no pen has no other way to
+  know the bytes are the owner's). `Repo.frozen`
   says which it is, and a `PeerServer` no longer needs its peer to carry a
   pen, only a DID.
 - Browser bundle: `generate_pen()`, `pen_did(key_pair)`,

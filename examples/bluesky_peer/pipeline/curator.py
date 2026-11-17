@@ -24,6 +24,7 @@ from fastatp.did.continuity import build_genesis
 from fastatp.did.document import DIDDocument
 from fastatp.repo.repo import Repo
 from fastatp.server.peer_server import PeerServer, RepoHandle
+from fastatp.tid import generate_tid
 
 SELECTION_NSID = "com.example.curation.selection"
 
@@ -74,6 +75,8 @@ class Curator:
             "imagePng": {"$bytes": base64.b64encode(image_png).decode().rstrip("=")},
             "alt": alt,
         }
-        event = await self.handle.put_record(SELECTION_NSID, f"sel-{self.handle.seq + 1}", record)
+        # a TID rkey: unique under concurrent selections (a seq-derived name
+        # could be allocated twice while a write awaits its signer)
+        event = await self.handle.put_record(SELECTION_NSID, generate_tid(), record)
         assert event.commit.did == self.did
         return record
