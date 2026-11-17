@@ -196,6 +196,15 @@ class _HostedRepo:
             )
         )
 
+    def emit_sync(self) -> None:
+        """Announce the current head as a ``#sync`` event: what a host does
+        after a push lands in a frozen repo through ``import_car``, which
+        commits nothing and so emits nothing by itself."""
+        rev, car = self.repo.rev, self.repo.commit_car()
+        self._emit_frame(
+            lambda seq: encode_frame("#sync", sync_frame_body(self.did, seq, rev, car, _now_iso()))
+        )
+
     def emit_identity(self, *, handle: str | None = None) -> None:
         self._emit_frame(
             lambda seq: encode_frame(
@@ -355,6 +364,11 @@ class RepoHandle:
         """Prod subscribers to refresh this DID's identity (#identity)."""
         self._host.emit_identity(handle=handle)
 
+    def emit_sync(self) -> None:
+        """Announce the head to subscribers after a push landed through
+        ``repo.import_car`` (which emits nothing by itself)."""
+        self._host.emit_sync()
+
     def expire(self) -> None:
         """Retire this repo now — the channel-owner's "TTL reached / done with
         it" intent. A semantic alias that **delegates** to :meth:`unregister`
@@ -458,13 +472,21 @@ class PeerServer:
         the browser gate's signed knock); the capability rule applies to
         everyone else exactly as before.
 
-        Owner pull decides who *reads*. It does not stop this host writing:
-        the hosted ``repo`` still carries whatever key it was built with, and
-        what stops a host forging is that every reader verifies against the
-        identity's real pen, so a host-signed commit fails everywhere. The
-        planned frozen repo (no pen on this host, every write raises) makes
-        that mechanical, and an ``owner_pull`` registration will then require
-        a frozen repo: a host serving a repo to its pen never holds one.
+        Owner pull decides who *reads*; frozen decides that this host cannot
+        write. An ``owner_pull`` registration requires a frozen repo
+        (``Repo(did, None, ...)``, see :attr:`Repo.frozen`): a repo served to
+        its own pen is one whose pen lives elsewhere, and a host holding a
+        pen for it is the custody shape the philosophy forbids, so the
+        package says so at registration. The rule is one-way: a frozen repo
+        may be registered without owner pull (a public mirror), and a penned
+        repo without owner pull is this peer's own. Pushes land through
+        ``repo.import_car`` with the owner's key, and :meth:`RepoHandle.emit_sync`
+        announces the new head to subscribers.
+
+        What keeps a hosted repo honest is the owner's signature, verified
+        by every consumer, as on any atproto host; that is not FastATP's
+        rule but atproto's. Frozen makes the same rule hold inside this
+        host's code: with no pen there is no path here that makes a commit.
 
         A whole-repo TTL retires the repo automatically: pass ``ttl`` (seconds
         from now) or ``expires_at`` (an aware datetime). Past its expiry the
@@ -475,6 +497,11 @@ class PeerServer:
         """
         if repo.did in self._hosts:
             raise ValueError(f"already hosting a repo for {repo.did!r}")
+        if owner_pull and not repo.frozen:
+            raise ValueError(
+                f"owner_pull for {repo.did!r} needs a frozen repo (Repo(did, None, ...)): a "
+                "host serving a repo to its own pen never holds that pen"
+            )
         if ttl is not None and expires_at is not None:
             raise ValueError("pass ttl or expires_at, not both")
         if ttl is not None:

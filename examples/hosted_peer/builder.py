@@ -23,10 +23,10 @@ ships primitives; builders compose them). It wires together:
     does not have.
 
 At no point does the builder hold a user secret or sign user content: hosted
-repos carry a throwaway local key that never signs (imports replace state
-wholesale), and reads are checkpoint CARs. A production router would also
-emit sync frames per import so firehose subscribers see updates live; this
-example keeps to checkpoint reads for clarity.
+repos are frozen (``Repo(did, None)``: no pen on this host, every write
+raises, imports replace state wholesale), and ``register(owner_pull=...)``
+refuses anything else. Reads are checkpoint CARs; each landed push is
+announced with ``handle.emit_sync()`` so firehose subscribers see it live.
 """
 
 from __future__ import annotations
@@ -122,8 +122,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
         except KeyError:
             return JSONResponse({"error": "NotShelved"}, status_code=404)
         car = await request.body()
-        # throwaway local key: it never signs — imports replace state wholesale
-        repo = await Repo.create(twin_did, crypto.generate_keypair("k256"))
+        repo = Repo(twin_did, None)  # frozen: this host never holds the pen
         try:
             repo.import_car(car, verify_key=key)
         except FastATPError as exc:
@@ -159,9 +158,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
                 return JSONResponse({"error": "BadDid"}, status_code=400)
             handle = builder.handles.get(did)
             if handle is None:
-                repo = await Repo.create(
-                    did, crypto.generate_keypair("k256")
-                )  # throwaway, never signs
+                repo = Repo(did, None)  # frozen: the device keeps its pen
                 try:
                     repo.import_car(car, verify_key=key)
                 except FastATPError as exc:
@@ -188,6 +185,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
             return JSONResponse({"error": "Stale", "message": str(exc)}, status_code=409)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
+        handle.emit_sync()  # subscribers learn the new head
         return JSONResponse({"accepted": handle.repo.rev})
 
     peers.app.router.routes.append(Route("/signup", signup, methods=["POST"]))

@@ -264,16 +264,26 @@ sovereign admission policy — edge business logic, never substrate.
   The host answers "which pen writes this repo" either from the head commit
   (`True`) or from its own knowledge of the identity's chain head (a rule),
   which is what admits a freshly rotated pen before it has pushed.
-- Hosted repos whose pen lives on another peer are **read-only on the
-  host**. Today the host's `Repo` object still carries whatever key it was
-  built with, and nothing in the process stops a write; what stops the host
-  forging is that readers that verify against the identity's real pen
-  reject it (`restore` with a verify key, a mirror, the next push's
-  `verify_key`), and a reader that skips verification has trusted the host
-  by choice. The planned external-signer work
-  makes this mechanical: a repo can be opened **frozen** (no pen on this
-  host, every write raises), and an `owner_pull` registration will require
-  it, so a host serving a repo to its pen can never hold a pen for it.
+- Hosted repos whose pen lives on another peer are **frozen on the host**:
+  opened with no pen (`Repo(did, None, ...)`), every commit raises, and the
+  only way state changes is a push the host verifies against the owner's
+  key and re-hosts (`import_car`, then `handle.emit_sync()` so subscribers
+  see the new head). An `owner_pull` registration requires a frozen repo,
+  so a host serving a repo to its pen can never hold a pen for it.
+
+  Be clear about what that does and does not protect. Anyone with write
+  access to a repo's storage can write to it: a privileged user on the
+  host's disk, the operator of a PDS at Bluesky, a cloud database admin.
+  That has always been true, and atproto's answer has always been that
+  **authenticity is the consumer's to verify**: every commit is signed by
+  the identity's pen, so bytes nobody's pen signed fail at every reader
+  that checks (`restore` with a verify key, a mirror, the next push's
+  `verify_key`), and a reader that skips the check has trusted the host by
+  choice. That is atproto, not FastATP. What FastATP adds is that the same
+  rule is enforced *in the host's own code*: a peer without the repo's pen
+  cannot commit to it, so there is no code path on the host that produces
+  a commit the owner did not sign, and the frozen rule is checked at
+  registration rather than left to discipline.
 - Multi-device sync: a device reads the user's other repos the same way
   any peer does, admitted by capability record, with the firehose as the
   sync protocol. Its *own* repo it pulls as the owner.

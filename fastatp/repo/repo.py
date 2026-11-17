@@ -16,6 +16,14 @@ device): requiring the pen to *serve* would protect nothing, since records
 are never encrypted in process and anyone who can start a peer over the store
 can read it; requiring the pen to *write* is the whole point, and that stays.
 
+Frozen is not what keeps a repo honest; signatures are. Anyone with write
+access to the storage (a privileged user on the disk, a PDS operator) can
+write bytes into any repo, on any atproto host, and it has always been the
+consumer's job to verify that a commit was signed by the identity's pen.
+That is atproto's design, not FastATP's. Frozen adds that the same rule
+holds in this host's own code: without the pen there is no path here that
+makes a commit, so the host cannot produce one the owner did not sign.
+
 One DID = one repo holding many collections (NSIDs). A delete restructures
 the tree and orphans blocks; every commit ends with a garbage collection that
 deletes blocks unreachable from the new commit, so store size tracks current

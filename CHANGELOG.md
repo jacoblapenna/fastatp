@@ -16,6 +16,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- `PeerServer.register(repo, owner_pull=...)` requires a frozen repo. A
+  repo served back to its own pen is one whose pen lives elsewhere, so a host
+  holding a pen for it is refused at registration with a `ValueError`.
+  Pushes land through `repo.import_car` as before.
 - The repo write path is async, and a pen is a handle. `Repo.put_record`,
   `delete_record`, `apply_writes` and `recommit`, `PeerServer`/`RepoHandle`
   /`PrivateChannel` writes, `PeerApp.emit` and `publish_schemas`,
@@ -55,6 +59,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- `RepoHandle.emit_sync()` announces a hosted repo's current head as a
+  `#sync` event, for a host whose repo took a push through `import_car`
+  (which commits nothing and so emits nothing by itself). The hosted-peer
+  example calls it after every landed push.
 - Frozen repos: `Repo(did, None, store=..., head_cid=...)` reopens a repo
   with no pen on this host. It serves `getRepo` and the firehose exactly as
   before, publicly or to live capability holders, refuses every commit with

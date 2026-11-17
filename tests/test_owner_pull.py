@@ -55,6 +55,24 @@ async def _server(caller: str | None, proof: str | None = "signature") -> PeerSe
     )
 
 
+async def _hosted(did: str, key) -> tuple[Repo, Repo]:
+    """The pen's own repo and the host's frozen copy of it: the host only
+    ever imports what the pen signed, and never holds the pen."""
+    pen = await Repo.create(did, key)
+    frozen = Repo(did, None)
+    frozen.import_car(pen.export_car(), verify_key=key.public_key())
+    return pen, frozen
+
+
+def _push(pen: Repo, handle) -> None:
+    """The pen pushes its head to the host, which re-hosts and announces it."""
+    assert pen.signer is not None
+    handle.repo.import_car(
+        pen.export_car(), verify_key=pen.signer.public_key, newer_than=handle.repo.rev
+    )
+    handle.emit_sync()
+
+
 async def _get_repo(port: int, did: str, extra: dict[str, str] | None = None) -> httpx.Response:
     async with httpx.AsyncClient() as client:
         return await client.get(
@@ -62,16 +80,16 @@ async def _get_repo(port: int, did: str, extra: dict[str, str] | None = None) ->
         )
 
 
-async def _first_commit_frame(port: int, did: str):
+async def _first_frame(port: int, did: str, kind: str):
     query = urlencode({"did": did, "cursor": 0})
     async with websockets.connect(f"ws://127.0.0.1:{port}{FIREHOSE_PATH}?{query}") as ws:
         for _ in range(8):
             header, body = decode_frame(
                 await asyncio.wait_for(cast("Awaitable[bytes]", ws.recv()), 5.0)
             )
-            if header.get("t") == "#commit":
+            if header.get("t") == kind:
                 return header, body
-        raise AssertionError("no #commit frame within 8 frames")
+        raise AssertionError(f"no {kind} frame within 8 frames")
 
 
 # --- the rule ---------------------------------------------------------------------
@@ -88,31 +106,48 @@ async def test_off_by_default_the_owner_is_just_another_stranger(serve_app):
         assert response.json()["error"] == "RepoNotFound"
 
 
+async def test_owner_pull_requires_a_frozen_repo():
+    """A host serving a repo to its own pen never holds that pen: the package
+    refuses the custody shape at registration, for the default rule and a
+    builder's rule alike. Without owner pull a penned repo is still fine."""
+    pen_key, _ = _pen()
+    srv = await _server(caller=None)
+    penned = await Repo.create(ROOT, pen_key)
+    with pytest.raises(ValueError, match="frozen"):
+        srv.register(penned, owner_pull=True)
+    with pytest.raises(ValueError, match="frozen"):
+        srv.register(penned, owner_pull=lambda repo: None)
+    assert srv.register(penned).owner_pull is False
+
+
 async def test_the_pen_that_signed_the_head_reads_with_no_capability(serve_app):
     pen_key, pen_did = _pen()
     srv = await _server(caller=pen_did)
-    handle = srv.register(await Repo.create(ROOT, pen_key), owner_pull=True)
-    await handle.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "mine"})
+    pen, frozen = await _hosted(ROOT, pen_key)
+    handle = srv.register(frozen, owner_pull=True)
+    await pen.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "mine"})
+    _push(pen, handle)
     assert handle.owner_pull is True
 
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200
-        header, body = await _first_commit_frame(port, ROOT)
-        assert header["t"] == "#commit" and body["repo"] == ROOT
+        header, body = await _first_frame(port, ROOT, "#sync")
+        assert header["t"] == "#sync" and body["did"] == ROOT and body["rev"] == pen.rev
 
 
 async def test_a_different_pen_is_refused_and_so_is_no_identity(serve_app):
     pen_key, _ = _pen()
     _other_key, other_did = _pen()
+    _pen_repo, frozen = await _hosted(ROOT, pen_key)
     refused = await _server(caller=other_did)
-    refused.register(await Repo.create(ROOT, pen_key), owner_pull=True)
+    refused.register(frozen, owner_pull=True)
     nobody = await _server(caller=None)
-    nobody.register(await Repo.create(ROOT, pen_key), owner_pull=True)
+    nobody.register(frozen, owner_pull=True)
 
     async with serve_app(refused.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 404
         with pytest.raises(RepoError, match="RepoNotFound"):
-            await _first_commit_frame(port, ROOT)
+            await _first_frame(port, ROOT, "#sync")
     async with serve_app(nobody.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 404
 
@@ -122,10 +157,11 @@ async def test_the_identity_itself_is_an_owner_of_its_own_repo(serve_app):
     record in this repo (a device speaking for the identity), so it reads
     with no capability. Only when owner pull is on."""
     pen_key, _ = _pen()
+    _pen_repo, frozen = await _hosted(ROOT, pen_key)
     on = await _server(caller=ROOT, proof=f"repo:{ROOT}")  # a delegation in ROOT's own repo
-    on.register(await Repo.create(ROOT, pen_key), owner_pull=True)
+    on.register(frozen, owner_pull=True)
     off = await _server(caller=ROOT, proof=f"repo:{ROOT}")
-    off.register(await Repo.create(ROOT, pen_key))
+    off.register(frozen)
 
     async with serve_app(on.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200
@@ -139,13 +175,15 @@ async def test_another_identity_is_never_an_owner_but_capabilities_still_work(se
     pen_key, _ = _pen()
     other = "did:web:other.example:x"
     srv = await _server(caller=other)
-    handle = srv.register(await Repo.create(ROOT, pen_key), owner_pull=True)
+    pen, frozen = await _hosted(ROOT, pen_key)
+    handle = srv.register(frozen, owner_pull=True)
 
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 404
-        await handle.put_record(
+        await pen.put_record(
             Capability.nsid, generate_tid(), Capability(subject=other, actions=["subscribe"])
         )
+        _push(pen, handle)  # the owner's word, pushed; the host could not have written it
         assert (await _get_repo(port, ROOT)).status_code == 200
 
 
@@ -162,10 +200,11 @@ async def test_a_builder_rule_names_the_current_pen_before_it_has_signed(serve_a
         assert repo.did == ROOT
         return current["pen"]
 
+    _pen_repo, frozen = await _hosted(ROOT, old_key)
     new_pen_calls = await _server(caller=new_did)
-    new_pen_calls.register(await Repo.create(ROOT, old_key), owner_pull=from_chain)
+    new_pen_calls.register(frozen, owner_pull=from_chain)
     old_pen_calls = await _server(caller=old_did)
-    old_pen_calls.register(await Repo.create(ROOT, old_key), owner_pull=from_chain)
+    old_pen_calls.register(frozen, owner_pull=from_chain)
 
     async with serve_app(new_pen_calls.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 404  # not rotated yet
@@ -182,14 +221,14 @@ async def test_the_default_rule_keeps_a_rotated_out_pen_until_the_new_one_pushes
     old_key, old_did = _pen()
     new_key, _ = _pen()
     srv = await _server(caller=old_did)
-    handle = srv.register(await Repo.create(ROOT, old_key), owner_pull=True)
+    pen, frozen = await _hosted(ROOT, old_key)
+    handle = srv.register(frozen, owner_pull=True)
 
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200
-        handle.repo.signer = crypto.as_signer(new_key)  # the new pen's first commit lands
-        await handle.put_record(
-            "com.example.note", "n", {"$type": "com.example.note", "text": "new"}
-        )
+        pen.signer = crypto.as_signer(new_key)  # the new pen's first commit lands
+        await pen.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "new"})
+        _push(pen, handle)
         assert (await _get_repo(port, ROOT)).status_code == 404
 
 
@@ -226,7 +265,8 @@ async def test_the_browser_pen_pulls_its_own_repo_with_no_record_naming_it(serve
     gate = BrowserGate(ttl=5.0)
     gate.install(srv)
     device_repo = pen_did  # a device repo: its DID is its pen
-    srv.register(await Repo.create(device_repo, pen_key), owner_pull=True)
+    _pen_repo, frozen = await _hosted(device_repo, pen_key)
+    srv.register(frozen, owner_pull=True)
     stranger_key, stranger_did = _pen()
 
     def knock(key, as_pen: str, nonce: str) -> dict[str, str]:
@@ -259,13 +299,15 @@ async def test_an_unscoped_identity_is_never_an_owner(serve_app):
     enough for the capability rule, never for owner pull."""
     pen_key, pen_did = _pen()
     srv = await _server(caller=pen_did, proof=None)
-    handle = srv.register(await Repo.create(ROOT, pen_key), owner_pull=True)
+    pen, frozen = await _hosted(ROOT, pen_key)
+    handle = srv.register(frozen, owner_pull=True)
 
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 404
-        await handle.put_record(
+        await pen.put_record(
             Capability.nsid, generate_tid(), Capability(subject=pen_did, actions=["subscribe"])
         )
+        _push(pen, handle)
         assert (await _get_repo(port, ROOT)).status_code == 200  # capability rule still works
 
 
@@ -284,7 +326,8 @@ async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
     srv.identity_resolver = TunnelIdentityResolver(
         srv, source_address=lambda conn: overlay_address(attacker_wg)
     )
-    victim = srv.register(await Repo.create(ROOT, pen_key), owner_pull=True)
+    pen, frozen = await _hosted(ROOT, pen_key)
+    victim = srv.register(frozen, owner_pull=True)
     attacker = srv.register(
         await Repo.create("did:web:attacker.example:x", crypto.generate_keypair("k256"))
     )
@@ -300,10 +343,11 @@ async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
 
     # the same binding written by the repo itself IS the owner's own word
     attacker.unregister()
-    await victim.put_record(
+    await pen.put_record(
         Capability.nsid,
         generate_tid(),
         Capability(subject=pen_did, actions=["send"], wg_public_key=attacker_wg),
     )
+    _push(pen, victim)
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200
