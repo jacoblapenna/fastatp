@@ -110,8 +110,10 @@ Owner pull decides who reads; frozen decides that the host cannot write.
 An `owner_pull` registration requires a frozen repo (`Repo(did, None, ...)`:
 no pen on this host, every commit raises, pushes land through `import_car`),
 so the package refuses the custody shape at registration. What stops a host
-forging is still that every reader verifies against the identity's real pen;
-frozen makes it mechanical on the host too.
+forging is still that readers verify against the identity's real pen
+(`restore` with a verify key, a mirror, `import_car` with `verify_key`); a
+reader that skips verification has trusted the host by choice. Frozen makes
+the rule mechanical on the host too.
 
 ### 5. Recovery on the page
 

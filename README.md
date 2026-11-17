@@ -214,7 +214,9 @@ exchange a private reply, end to end).
 - **Firehose** — `PeerServer` hosts one or many repos (routed by DID) behind a
   `com.atproto.sync.subscribeRepos`-shaped WebSocket with cursor resume;
   `RepoMirror` verifies every commit against the producer's DID. A repo whose
-  pen lives elsewhere is hosted **frozen**: served, never committed to.
+  pen lives elsewhere is hosted **frozen**: the host serves it and takes the
+  owner's signed pushes, and can never commit to it itself. Readers still
+  verify; frozen is enforced in the host's code, not a property of its disk.
 - **Authorization** — signed **capability** records decide *why* a peer is
   allowed; a **WireGuard** peer set enforces it physically (absence =
   cryptographic unreachability). The reconciler keeps them in lock-step — a

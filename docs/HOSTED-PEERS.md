@@ -320,7 +320,10 @@ What the package does for every signer, so adapters cannot get it wrong:
   unchanged, not at a mirror hours later.
 - **Never blocks the peer.** `sign` is awaited. A TPM takes tens of
   milliseconds per signature, and a peer that is also serving its firehose
-  keeps serving meanwhile.
+  keeps serving meanwhile. Awaiting is only half of that: a device library
+  with a blocking API (`tpm2-pytss`, PKCS#11) stalls the loop for as long as
+  it runs, so an adapter over one must offload the call, as the sketch below
+  does with `asyncio.to_thread`.
 
 Curves are k256 and p256. TPM 2.0 parts, YubiKey PIV and most secure
 elements offer only P-256, so a hardware pen is usually a p256 `did:key`.
@@ -377,9 +380,11 @@ on every boot. The first call mints the chain and the repo and records the
 pen as external with its public key; nothing secret is written. Every later
 call needs the signer again (the app re-opens its TPM handle, which it had
 to do anyway) and refuses a signer whose public key is not the recorded
-one. `adopt_web(domain, pen, state_dir)` brings a `did:web` whose key is
-already in hardware, and `rotate(new_pen, rotation_key)` moves an identity
-onto a hardware pen or off one. A device repo is simpler still: a
+one. `await Identity.adopt_web(domain, pen, state_dir)` brings a `did:web`
+whose key is already in hardware, and `await identity.rotate(new_pen,
+rotation_key)` moves an identity onto a hardware pen or off one (the new
+pen is proven with a signature before anything is persisted). A device
+repo is simpler still: a
 `did:key` is its pen, so `Peer` plus `Repo` is the whole story.
 
 ## Two confidentiality tiers — apps must declare which

@@ -30,8 +30,11 @@ To upgrade safely within one minor line, pin with `~=`, for example
   its first write. `PeerServer(peer, repo)` takes the repo; `await
   PeerServer.create(peer)` makes a fresh one, and `await server.serve()`
   serves on a running loop where `run()` cannot. Every `signing_key=`
-  argument also accepts a `Signer`, so the same code runs with a key in
-  memory or in a TPM; the repo and peer hold it as `.signer`.
+  argument that takes a private key (`Repo`, `Repo.create`, `Peer`,
+  `Commit.create`, `Identity.adopt_web`) also accepts a `Signer`, so the
+  same code runs with a key in memory or in a TPM; the repo and peer hold
+  it as `.signer`. `build_did_document(signing_key=)` takes the public key
+  as before: pass `signer.public_key`.
 - The browser bundle's `BrowserPeer.sign_challenge(nonce)` is removed. The
   knock at a host is now one free function, `sign_challenge(key_pair, nonce,
   repo_did)`, which needs no repo loaded and names the repo the pen is
@@ -114,8 +117,8 @@ To upgrade safely within one minor line, pin with `~=`, for example
   `True` admits the `did:key` whose key verifies the head commit; an
   `OwnerRule` callable names the current pen when the host knows it (its
   chain head), so a freshly rotated pen pulls before it has pushed.
-  Owner pull decides who reads; a frozen (penless) hosted repo, which will
-  be required for it, is planned separately.
+  Owner pull decides who reads; a frozen (penless) hosted repo is required
+  for it (see Breaking).
 - `ResolvedCaller(did, proof)`: a `CallerResolver` may now say how it knows
   who is asking (`"signature"`, or `"repo:<did>"` for a tunnel binding or
   delegation chain rooted in that repo). A bare DID still works for the
