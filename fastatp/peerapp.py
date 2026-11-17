@@ -119,7 +119,9 @@ class PrivateChannel:
         allocated. The host answers on it by adding it to its interface."""
         return overlay_address(self.wg_public_key)
 
-    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+    async def put_record(
+        self, collection: str, rkey: str, record: RecordLike
+    ) -> CommitEvent | None:
         return await self.handle.put_record(collection, rkey, record)
 
     def close(self) -> None:
@@ -396,8 +398,10 @@ class PeerApp:
 
     # --- producing ------------------------------------------------------------
 
-    async def emit(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        """Write a record into this app's repo and broadcast it on the firehose."""
+    async def emit(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent | None:
+        """Write a record into this app's repo and broadcast it on the firehose.
+        ``None`` means a concurrent writer on a shared head store already made
+        exactly this change."""
         return await self.server.put_record(collection, rkey, record)
 
     async def admit(self, did: str, **grant_opts: Any) -> Any:

@@ -68,11 +68,11 @@ async def test_a_fresh_repo_cannot_be_frozen():
 async def test_a_push_lands_in_a_frozen_repo_through_import_car():
     key, penned = await _penned_repo(MemoryBlockStore())
     frozen = Repo(DID, None, store=MemoryBlockStore())  # a host that has nothing yet
-    frozen.import_car(penned.export_car(), verify_key=key.public_key())
+    await frozen.import_car(penned.export_car(), verify_key=key.public_key())
     assert frozen.rev == penned.rev
 
     await penned.put_record(NOTE, "two", {"$type": NOTE, "text": "pushed"})
-    frozen.import_car(penned.export_car(), verify_key=key.public_key(), newer_than=frozen.rev)
+    await frozen.import_car(penned.export_car(), verify_key=key.public_key(), newer_than=frozen.rev)
     assert frozen.rev == penned.rev
     assert frozen.get_record(NOTE, "two") == {"$type": NOTE, "text": "pushed"}
     assert frozen.frozen
@@ -134,7 +134,7 @@ async def test_a_gated_frozen_repo_admits_only_live_capability_holders(serve_app
         Capability.nsid, generate_tid(), Capability(subject=reader, actions=["subscribe"])
     )
     frozen = Repo(DID, None, store=MemoryBlockStore())
-    frozen.import_car(penned.export_car(), verify_key=key.public_key())
+    await frozen.import_car(penned.export_car(), verify_key=key.public_key())
 
     admitted = await _host(reader)
     refused = await _host(stranger)
@@ -166,9 +166,9 @@ async def test_a_frozen_repo_refuses_an_unverified_push():
     key, penned = await _penned_repo(MemoryBlockStore())
     frozen = Repo(DID, None, store=MemoryBlockStore())
     with pytest.raises(RepoError, match="verified pushes"):
-        frozen.import_car(penned.export_car())
+        await frozen.import_car(penned.export_car())
     assert frozen._commit is None  # nothing landed
-    frozen.import_car(penned.export_car(), verify_key=key.public_key())
+    await frozen.import_car(penned.export_car(), verify_key=key.public_key())
     assert frozen.rev == penned.rev
     assert penned.frozen is False
-    penned.import_car(penned.export_car())  # a penned repo may still import unverified
+    await penned.import_car(penned.export_car())  # a penned repo may still import unverified

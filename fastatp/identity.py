@@ -204,7 +204,7 @@ class Identity:
 
     # --- repo migration ---------------------------------------------------------
 
-    def import_repo_car(self, data: bytes, *, verify: bool = True) -> None:
+    async def import_repo_car(self, data: bytes, *, verify: bool = True) -> None:
         """Bring an existing repo's full CAR into this identity (checkpoint load).
 
         With ``verify=True`` (default) the CAR's head commit must verify
@@ -216,7 +216,9 @@ class Identity:
         # old and imported states are still in the store — a crash anywhere in
         # this sequence leaves repo_head naming a block that exists (old head
         # pre-write, new head post-write). GC only after the pointer is durable.
-        self.repo.import_car(data, verify_key=self.signer.public_key if verify else None, gc=False)
+        await self.repo.import_car(
+            data, verify_key=self.signer.public_key if verify else None, gc=False
+        )
         if self.state_dir is not None:
             # import_car is a checkpoint load, not a commit — it deliberately
             # fires no on_commit (nothing to announce on a firehose), so the

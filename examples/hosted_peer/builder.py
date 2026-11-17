@@ -124,7 +124,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
         car = await request.body()
         repo = Repo(twin_did, None)  # frozen: this host never holds the pen
         try:
-            repo.import_car(car, verify_key=key)
+            await repo.import_car(car, verify_key=key)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
         try:
@@ -161,7 +161,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
             if handle is None:
                 repo = Repo(did, None)  # frozen: the device keeps its pen
                 try:
-                    repo.import_car(car, verify_key=key)
+                    await repo.import_car(car, verify_key=key)
                 except FastATPError as exc:
                     return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
                 try:
@@ -182,7 +182,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
         # hosted state back. Revs rise strictly across commits, so the head
         # must move forward: one parse verifies, checks freshness, imports.
         try:
-            handle.repo.import_car(car, verify_key=key, newer_than=handle.repo.rev)
+            await handle.repo.import_car(car, verify_key=key, newer_than=handle.repo.rev)
         except StaleCheckpoint as exc:
             return JSONResponse({"error": "Stale", "message": str(exc)}, status_code=409)
         except FastATPError as exc:

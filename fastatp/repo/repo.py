@@ -7,6 +7,15 @@ head_cid=...)`` reopens a stored head without signing anything. Every write
 is awaited for the same reason: a hardware signer takes tens of
 milliseconds, and the peer keeps serving meanwhile.
 
+Where the head lives is the app's choice (``fastatp.repo.head``). With a
+``head_store=`` the pointer and the firehose seq sit in the app's database and
+every commit advances them with a compare-and-swap, so several processes
+behind one database can never fork a repo: ``await Repo.create(...)`` makes
+the genesis, ``await Repo.open(...)`` loads the current head, and a commit
+that loses the swap reloads the new head and retries on it (a write the other
+process already made, byte for byte, is then a no-op). Without one, an
+in-memory head store gives today's single-process behaviour.
+
 A repo reopened with no pen (``Repo(did, None, store=..., head_cid=...)``) is
 **frozen**: it serves ``getRepo`` and the firehose exactly as before, to the
 public or to whoever holds a live capability record in it, and refuses every
@@ -43,12 +52,19 @@ from typing import Any, Union
 from fastatp import dagcbor, datamodel
 from fastatp.cid import CID
 from fastatp.crypto import PrivateKey, PublicKey, Signer, as_signer
-from fastatp.exceptions import DataModelError, FastATPError, RepoError, StaleCheckpoint
+from fastatp.exceptions import (
+    DataModelError,
+    FastATPError,
+    HeadMoved,
+    RepoError,
+    StaleCheckpoint,
+)
 from fastatp.lex.types import Blob, CidLink, validate_nsid
 from fastatp.lexicon import Lexicon
 from fastatp.repo.blobs import BlobInfo, BlobStore
 from fastatp.repo.car import decode_car, encode_car
 from fastatp.repo.commit import Commit
+from fastatp.repo.head import Head, HeadStore, MemoryHeadStore
 from fastatp.repo.mst import MST, validate_mst_key
 from fastatp.repo.store import BlockStore, MemoryBlockStore
 from fastatp.tid import TidClock, decode_tid
@@ -80,6 +96,8 @@ class CommitEvent:
     ops: list[dict[str, Any]]
     blocks: dict[CID, bytes] = field(repr=False)
     time: str = ""
+    #: the firehose seq the head store assigned this commit (0 with none)
+    seq: int = 0
 
     def blocks_car(self) -> bytes:
         return encode_car([self.commit_cid], self.blocks)
@@ -111,15 +129,26 @@ class Repo:
         clock: TidClock | None = None,
         *,
         head_cid: CID | None = None,
+        head_store: HeadStore | None = None,
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
     ) -> None:
         """Reopen a repo from ``head_cid`` in ``store``, or set one up for
-        :meth:`create` to sign its genesis. ``signing_key`` is a private key or
+        :meth:`create` or :meth:`open`. ``signing_key`` is a private key or
         any :class:`~fastatp.crypto.Signer`, held as ``self.signer``; ``None``
-        makes the repo :attr:`frozen` (it serves, and never commits). Without
-        ``head_cid`` the repo has no commit until its first write or import."""
+        makes the repo :attr:`frozen` (it serves, and never commits).
+        ``head_store`` is where the head and seq live (the app's database);
+        without one an in-memory store is used, and ``head_cid`` is how a
+        caller-managed head is reopened. Without either the repo has no
+        commit until its first write or import."""
+        if head_cid is not None and head_store is not None:
+            raise ValueError(
+                "pass head_cid to reopen a caller-managed head, or head_store "
+                "and Repo.open() to load one from the store; not both"
+            )
         self.did = did
+        self.head_store: HeadStore = head_store if head_store is not None else MemoryHeadStore()
+        self._head: Head | None = None  # the store's view: what the next swap expects
         self.signer: Signer | None = as_signer(signing_key) if signing_key is not None else None
         self.store: BlockStore = store if store is not None else MemoryBlockStore()
         # the media capability is optional wiring: media-free
@@ -147,19 +176,67 @@ class Repo:
         store: BlockStore | None = None,
         clock: TidClock | None = None,
         *,
+        head_store: HeadStore | None = None,
         on_commit: Callable[[CommitEvent], None] | None = None,
         blobs: BlobStore | None = None,
     ) -> Repo:
-        """A new repo with its genesis commit (a signed empty tree)."""
+        """A new repo with its genesis commit (a signed empty tree). With a
+        ``head_store`` that already holds a head for ``did`` this fails:
+        :meth:`open` that one instead."""
         if signing_key is None:
             raise RepoError(
                 "a fresh repo needs a pen to sign its genesis commit; a frozen repo "
                 "reopens a stored head: Repo(did, None, store=..., head_cid=...)"
             )
-        repo = cls(did, signing_key, store, clock, on_commit=on_commit, blobs=blobs)
+        repo = cls(
+            did, signing_key, store, clock, head_store=head_store, on_commit=on_commit, blobs=blobs
+        )
         async with repo._write_lock:
-            await repo._commit_now([])
+            try:
+                await repo._commit_now([])
+            except HeadMoved as e:
+                raise RepoError(
+                    f"the head store already holds a head for {did} ({e.head}); open it "
+                    "with Repo.open() instead of creating it again"
+                ) from None
         return repo
+
+    @classmethod
+    async def open(
+        cls,
+        did: str,
+        signing_key: PrivateKey | Signer | None,
+        store: BlockStore | None,
+        head_store: HeadStore,
+        clock: TidClock | None = None,
+        *,
+        on_commit: Callable[[CommitEvent], None] | None = None,
+        blobs: BlobStore | None = None,
+    ) -> Repo:
+        """Load ``did``'s current head from ``head_store`` (its blocks from
+        ``store``). ``signing_key=None`` opens it frozen."""
+        repo = cls(
+            did, signing_key, store, clock, head_store=head_store, on_commit=on_commit, blobs=blobs
+        )
+        await repo._reload()
+        return repo
+
+    async def _reload(self) -> None:
+        """Take the head the store holds now (after a lost swap, or on open)."""
+        head = await self.head_store.load(self.did)
+        if head is None:
+            raise RepoError(
+                f"the head store holds no head for {self.did}: create the repo with "
+                "Repo.create(..., head_store=...) first"
+            )
+        if head.cid != self._commit_cid:
+            self._load_head(head.cid)
+        self._head = head
+
+    @property
+    def seq(self) -> int:
+        """The last firehose seq used on this repo (0 before any)."""
+        return self._head.seq if self._head is not None else 0
 
     def _load_head(self, head_cid: CID) -> None:
         """Reconstruct state from a persisted head commit already in the store
@@ -254,11 +331,13 @@ class Repo:
 
     # --- writes -------------------------------------------------------------
 
-    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
+    async def put_record(
+        self, collection: str, rkey: str, record: RecordLike
+    ) -> CommitEvent | None:
         action = "update" if f"{collection}/{rkey}" in self._entries else "create"
         return await self.apply_writes([WriteOp(action, collection, rkey, record)])
 
-    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
         return await self.apply_writes([WriteOp("delete", collection, rkey)])
 
     async def recommit(self) -> CommitEvent:
@@ -266,9 +345,11 @@ class Repo:
         change). Used after a key rotation so the persisted head verifies under
         the new key on the next load."""
         async with self._write_lock:
-            return await self._commit_now([])
+            event = await self._commit_retrying([])
+            assert event is not None  # an empty write set never dedupes away
+            return event
 
-    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
         """Commit ``writes`` as one signed change.
 
         Writers sharing this object take turns: validation, signing, the head
@@ -276,13 +357,52 @@ class Repo:
         writes land in sequence and each builds on the previous. A sync
         ``import_car`` that lands while a commit is being signed is caught
         after the signature and refused (``RepoError``), with nothing staged
-        left behind. That after-signing check is the compare-and-swap a
-        shared head store generalizes across processes.
+        left behind.
+
+        Across processes the head store decides: the commit lands only if the
+        store's head is still the one it was built on. When it is not, the
+        repo reloads the new head and retries the writes on it, a few times,
+        re-validating each time; a write the other process already made byte
+        for byte is dropped as done, and if nothing is left this returns
+        ``None`` (the repo already holds exactly this). A ``create`` whose
+        path now holds different bytes fails as it always has. Contention
+        beyond the retries surfaces as :class:`HeadMoved`.
         """
         if not writes:
             raise RepoError("apply_writes requires at least one write")
         async with self._write_lock:
-            return await self._apply_writes_locked(writes)
+            return await self._commit_retrying(writes)
+
+    _RETRIES = 3
+
+    async def _commit_retrying(self, writes: list[WriteOp]) -> CommitEvent | None:
+        for attempt in range(self._RETRIES + 1):
+            pending = writes if attempt == 0 else self._still_needed(writes)
+            if attempt and writes and not pending:
+                return None  # the other writer did exactly this already
+            try:
+                return await self._apply_writes_locked(pending)
+            except HeadMoved:
+                if attempt == self._RETRIES:
+                    raise
+        raise AssertionError("unreachable")
+
+    def _still_needed(self, writes: list[WriteOp]) -> list[WriteOp]:
+        """On a retry, the writes the reloaded head does not already hold."""
+        needed = []
+        for write in writes:
+            current = self._entries.get(write.path)
+            if write.action == "delete" and current is None:
+                continue
+            if (
+                write.action in ("create", "update")
+                and current is not None
+                and write.record is not None
+                and CID.for_dag_cbor(_record_bytes(write.record)) == current
+            ):
+                continue
+            needed.append(write)
+        return needed
 
     async def _apply_writes_locked(self, writes: list[WriteOp]) -> CommitEvent:
         # validate against the ACCUMULATED batch state, not just the committed
@@ -351,7 +471,19 @@ class Repo:
             raise
         commit_bytes = commit.to_dag_cbor()
         commit_cid = commit.cid()
-        self.store.put(commit_cid, commit_bytes)
+        self.store.put(commit_cid, commit_bytes)  # blocks before head, always
+
+        new_head = Head(commit_cid, self.seq + 1)
+        if not await self.head_store.swap(self.did, self._head, new_head):
+            # another process extended this head first: take its head, then
+            # drop what this commit staged, except what the new head reaches
+            # (the same record written by both has the same blocks)
+            current = await self.head_store.load(self.did)
+            if current is not None:
+                await self._reload()
+            self._drop_staged(staged_nodes | {commit_cid}, new_record_blocks)
+            raise HeadMoved(current)
+        self._head = new_head
 
         new_mst_nodes = staged_nodes
         self._entries = new_entries
@@ -383,6 +515,7 @@ class Repo:
             ops=ops,
             blocks=event_blocks,
             time=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            seq=new_head.seq,
         )
         # persist the new head BEFORE GC deletes the old commit block: a crash
         # between the two must never leave repo_head naming a block GC removed.
@@ -518,7 +651,7 @@ class Repo:
             raise RepoError(f"CAR contains malformed MST blocks: {e}") from None
         return commit, entries, blocks
 
-    def import_car(
+    async def import_car(
         self,
         data: bytes,
         verify_key: PublicKey | None = None,
@@ -553,19 +686,27 @@ class Repo:
         _check_rev(commit.rev)  # refused here, before any state changes
         if newer_than is not None and commit.rev <= newer_than:
             raise StaleCheckpoint(f"checkpoint rev {commit.rev} is not newer than {newer_than}")
-        for cid, block in blocks.items():
-            self.store.put(cid, block)
-        self._entries = entries
-        self._commit = commit
-        self._commit_cid = commit.cid()
-        self._root = commit.data
-        self._mst_nodes = self.mst.node_cids(commit.data)
-        # only once the head is in place: the next rev must sort after it,
-        # clock or no clock, and a clock shared with other repos must not
-        # learn a rev from a head that was refused
-        self.clock.observe(commit.rev)
-        if gc:
-            self._collect_garbage()
+        async with self._write_lock:
+            for cid, block in blocks.items():
+                self.store.put(cid, block)  # blocks before head
+            new_head = Head(commit.cid(), self.seq + 1)
+            if not await self.head_store.swap(self.did, self._head, new_head):
+                current = await self.head_store.load(self.did)
+                if current is not None:
+                    await self._reload()  # the imported blocks stay until a GC
+                raise HeadMoved(current)
+            self._head = new_head
+            self._entries = entries
+            self._commit = commit
+            self._commit_cid = new_head.cid
+            self._root = commit.data
+            self._mst_nodes = self.mst.node_cids(commit.data)
+            # only once the head is in place: the next rev must sort after it,
+            # clock or no clock, and a clock shared with other repos must not
+            # learn a rev from a head that was refused
+            self.clock.observe(commit.rev)
+            if gc:
+                self._collect_garbage()
 
     def collect_garbage(self) -> None:
         """Drop store blocks unreachable from the current head.

@@ -104,7 +104,7 @@ async def test_hosted_peer_end_to_end(serve_app, tmp_path):
     # identity and syncs the full repo (multi-device sync)
     assert phases["sync-device2"] == 200
     synced = await Repo.create(twin, crypto.generate_keypair("k256"))
-    synced.import_car(
+    await synced.import_car(
         Path(report["files"]["device2-sync"]).read_bytes(),
         verify_key=crypto.decode_did_key(report["pen_did"]),  # the pen of that moment
     )

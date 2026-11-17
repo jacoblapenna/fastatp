@@ -158,25 +158,21 @@ async def test_a_failing_signer_leaves_no_staged_blocks():
     assert set(repo.store.cids()) == before
 
 
-async def test_a_checkpoint_landing_mid_signature_is_caught_after_it():
+async def test_an_import_waits_for_the_commit_in_flight():
+    """An import and a commit on one repo object take turns: the import lands
+    after the signature it overlapped with, never under it."""
     key = crypto.generate_keypair("p256")
     owner = await Repo.create(DID, key)
     await owner.put_record(NOTE, "theirs", {"$type": NOTE, "text": "pushed"})
     pushed = owner.export_car()
 
-    repo = await Repo.create(DID, key)
-
-    class _ImportsWhileSigning(_HardwareSigner):
-        async def sign(self, message: bytes) -> bytes:
-            repo.import_car(pushed, verify_key=key.public_key())  # sync, no lock to take
-            return await super().sign(message)
-
-    repo.signer = _ImportsWhileSigning(key)
-    before = set(repo.store.cids())  # the state before the write began
-    with pytest.raises(RepoError, match="head moved"):
-        await repo.put_record(NOTE, "mine", {"$type": NOTE, "text": "stale"})
-    assert repo.rev == owner.rev  # the checkpoint stood
-    assert repo.get_record(NOTE, "mine") is None
+    repo = await Repo.create(DID, _SlowSigner(key))
+    write = asyncio.create_task(repo.put_record(NOTE, "mine", {"$type": NOTE, "text": "mine"}))
+    await asyncio.sleep(0)  # the write holds the lock and is signing
+    with pytest.raises(RepoError, match="not newer"):
+        await repo.import_car(pushed, verify_key=key.public_key(), newer_than=repo.rev)
+    assert (await write) is not None
+    assert repo.get_record(NOTE, "mine") is not None  # the write landed
+    assert repo.get_record(NOTE, "theirs") is None  # the stale checkpoint did not
     reachable = {repo.commit_cid} | repo._mst_nodes | set(repo._entries.values())
     assert set(repo.store.cids()) == reachable
-    assert before != set(repo.store.cids())  # the import, not the write, changed the store

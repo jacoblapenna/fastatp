@@ -276,7 +276,7 @@ async def test_adopted_repo_migrates_without_resigning(tmp_path):
 
     sdir = tmp_path / "id"
     ident = await Identity.adopt_web(DOMAIN, key, sdir)
-    ident.import_repo_car(car)  # verifies against the SAME key
+    await ident.import_repo_car(car)  # verifies against the SAME key
     assert ident.repo.commit_cid == old_head  # the identical signed commit
     assert ident.repo.get_record("com.example.state", "one")["text"] == "carried over"
 
@@ -294,12 +294,12 @@ async def test_import_repo_car_rejects_foreign_repo(tmp_path):
     # a CAR signed by a DIFFERENT key under the same DID must not import
     thief = await Repo.create(f"did:web:{DOMAIN}", crypto.generate_keypair())
     with pytest.raises(RepoError):
-        ident.import_repo_car(thief.export_car())
+        await ident.import_repo_car(thief.export_car())
 
     # a CAR for a different DID must not import either
     other = await Repo.create("did:web:other.example", key)
     with pytest.raises(RepoError, match="CAR is for"):
-        ident.import_repo_car(other.export_car())
+        await ident.import_repo_car(other.export_car())
 
 
 async def test_import_gc_false_preserves_old_head_until_collected(tmp_path):
@@ -314,7 +314,7 @@ async def test_import_gc_false_preserves_old_head_until_collected(tmp_path):
 
     target = await Repo.create(f"did:web:{DOMAIN}", key)
     genesis_head = target.commit_cid
-    target.import_car(car, verify_key=key.public_key(), gc=False)
+    await target.import_car(car, verify_key=key.public_key(), gc=False)
     assert target.store.get(genesis_head) is not None  # old head still loadable
     target.collect_garbage()
     assert target.store.get(genesis_head) is None  # now (and only now) dropped
@@ -341,7 +341,7 @@ async def test_import_crash_before_head_write_keeps_identity_loadable(tmp_path, 
 
     monkeypatch.setattr(Path, "write_text", crash)
     with pytest.raises(RuntimeError, match="simulated crash"):
-        ident.import_repo_car(car)
+        await ident.import_repo_car(car)
     monkeypatch.undo()
     assert isinstance(ident.store, SqliteBlockStore)
     ident.store.close()
@@ -349,5 +349,5 @@ async def test_import_crash_before_head_write_keeps_identity_loadable(tmp_path, 
     # reload: repo_head still names the genesis head, whose block must exist
     reloaded = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
     assert reloaded.repo.commit_cid == genesis_head
-    reloaded.import_repo_car(car)  # the migration simply retries
+    await reloaded.import_repo_car(car)  # the migration simply retries
     assert reloaded.repo.get_record("com.example.state", "one")["text"] == "carried over"

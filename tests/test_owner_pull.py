@@ -60,14 +60,14 @@ async def _hosted(did: str, key) -> tuple[Repo, Repo]:
     ever imports what the pen signed, and never holds the pen."""
     pen = await Repo.create(did, key)
     frozen = Repo(did, None)
-    frozen.import_car(pen.export_car(), verify_key=key.public_key())
+    await frozen.import_car(pen.export_car(), verify_key=key.public_key())
     return pen, frozen
 
 
-def _push(pen: Repo, handle) -> None:
+async def _push(pen: Repo, handle) -> None:
     """The pen pushes its head to the host, which re-hosts and announces it."""
     assert pen.signer is not None
-    handle.repo.import_car(
+    await handle.repo.import_car(
         pen.export_car(), verify_key=pen.signer.public_key, newer_than=handle.repo.rev
     )
     handle.emit_sync()
@@ -126,7 +126,7 @@ async def test_the_pen_that_signed_the_head_reads_with_no_capability(serve_app):
     pen, frozen = await _hosted(ROOT, pen_key)
     handle = srv.register(frozen, owner_pull=True)
     await pen.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "mine"})
-    _push(pen, handle)
+    await _push(pen, handle)
     assert handle.owner_pull is True
 
     async with serve_app(srv.app) as port:
@@ -183,7 +183,7 @@ async def test_another_identity_is_never_an_owner_but_capabilities_still_work(se
         await pen.put_record(
             Capability.nsid, generate_tid(), Capability(subject=other, actions=["subscribe"])
         )
-        _push(pen, handle)  # the owner's word, pushed; the host could not have written it
+        await _push(pen, handle)  # the owner's word, pushed; the host could not have written it
         assert (await _get_repo(port, ROOT)).status_code == 200
 
 
@@ -228,7 +228,7 @@ async def test_the_default_rule_keeps_a_rotated_out_pen_until_the_new_one_pushes
         assert (await _get_repo(port, ROOT)).status_code == 200
         pen.signer = crypto.as_signer(new_key)  # the new pen's first commit lands
         await pen.put_record("com.example.note", "n", {"$type": "com.example.note", "text": "new"})
-        _push(pen, handle)
+        await _push(pen, handle)
         assert (await _get_repo(port, ROOT)).status_code == 404
 
 
@@ -307,7 +307,7 @@ async def test_an_unscoped_identity_is_never_an_owner(serve_app):
         await pen.put_record(
             Capability.nsid, generate_tid(), Capability(subject=pen_did, actions=["subscribe"])
         )
-        _push(pen, handle)
+        await _push(pen, handle)
         assert (await _get_repo(port, ROOT)).status_code == 200  # capability rule still works
 
 
@@ -348,6 +348,6 @@ async def test_a_binding_in_another_repo_never_makes_an_owner_here(serve_app):
         generate_tid(),
         Capability(subject=pen_did, actions=["send"], wg_public_key=attacker_wg),
     )
-    _push(pen, victim)
+    await _push(pen, victim)
     async with serve_app(srv.app) as port:
         assert (await _get_repo(port, ROOT)).status_code == 200

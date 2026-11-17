@@ -188,6 +188,12 @@ class _HostedRepo:
         )
         return event
 
+    def emit_if(self, event: CommitEvent | None) -> CommitEvent | None:
+        """``emit``, unless the write turned out to be a no-op (``None``: a
+        concurrent writer already made exactly this change; its own frame
+        announced it)."""
+        return self.emit(event) if event is not None else None
+
     def emit_account(self, *, active: bool, status: str | None = None) -> None:
         self._emit_frame(
             lambda seq: encode_frame(
@@ -347,14 +353,16 @@ class RepoHandle:
     def expires_at(self) -> datetime | None:
         return self._host.expires_at
 
-    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._host.emit(await self._host.repo.put_record(collection, rkey, record))
+    async def put_record(
+        self, collection: str, rkey: str, record: RecordLike
+    ) -> CommitEvent | None:
+        return self._host.emit_if(await self._host.repo.put_record(collection, rkey, record))
 
-    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._host.emit(await self._host.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
+        return self._host.emit_if(await self._host.repo.delete_record(collection, rkey))
 
-    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._host.emit(await self._host.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
+        return self._host.emit_if(await self._host.repo.apply_writes(writes))
 
     def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
         """Re-announce this repo's hosting status (#account)."""
@@ -611,17 +619,22 @@ class PeerServer:
 
     # --- writes (broadcast on commit) ------------------------------------------
 
-    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._emit(await self.repo.put_record(collection, rkey, record))
+    async def put_record(
+        self, collection: str, rkey: str, record: RecordLike
+    ) -> CommitEvent | None:
+        return self._emit_if(await self.repo.put_record(collection, rkey, record))
 
-    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._emit(await self.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
+        return self._emit_if(await self.repo.delete_record(collection, rkey))
 
-    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._emit(await self.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
+        return self._emit_if(await self.repo.apply_writes(writes))
 
     def _emit(self, event: CommitEvent) -> CommitEvent:
         return self._primary.emit(event)
+
+    def _emit_if(self, event: CommitEvent | None) -> CommitEvent | None:
+        return self._emit(event) if event is not None else None
 
     def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
         """Re-announce the primary repo's hosting status (#account)."""

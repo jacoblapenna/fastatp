@@ -89,7 +89,7 @@ async def test_repo_uses_sqlite_store_as_backend(tmp_path):
     # a consumer imports the exported CAR and reads the record — proof the
     # store served every reachable block through commit + GC + export
     consumer = await Repo.create(did, key)
-    consumer.import_car(car)
+    await consumer.import_car(car)
     rec_n1 = consumer.get_record(Note.nsid, "n1")
     assert rec_n1 is not None
     assert rec_n1["text"] == "durable"

@@ -16,6 +16,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- `Repo.import_car` is awaited (it advances the head through the head
+  store), and `put_record`, `delete_record` and `apply_writes` may return
+  `None`: a concurrent writer on a shared head store already made exactly
+  that change, byte for byte, so there was nothing to commit.
 - `PeerServer.register(repo, owner_pull=...)` requires a frozen repo. A
   repo served back to its own pen is one whose pen lives elsewhere, so a host
   holding a pen for it is refused at registration with a `ValueError`.
@@ -62,6 +66,16 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- Bring your own database, part one: `fastatp.repo.head.HeadStore`, the
+  per-repo write lock as a compare-and-swap. `Repo.create(...,
+  head_store=)` puts a repo's head and firehose seq in the app's store,
+  `await Repo.open(did, signing_key, store, head_store)` loads it, and
+  every commit and import writes its blocks first, then advances the head
+  only if it is still the one it was built on. A lost swap reloads the new
+  head and retries the write on it (bounded); contention beyond that is
+  `HeadMoved`, carrying the current head. `MemoryHeadStore` (the default,
+  today's behaviour) and `SqliteHeadStore` ship; `CommitEvent.seq` is the
+  seq the swap assigned.
 - The signer seam: `fastatp.Signer` (a `public_key` and `async sign`) is
   what an app implements to sign with a key the process cannot hold (a TPM,
   an HSM, a secure element, a YubiKey); `fastatp.SoftwareSigner` is the
