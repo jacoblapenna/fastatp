@@ -389,6 +389,8 @@ repo is simpler still: a
 
 ## Bring your own database
 
+The decisions here are recorded in `docs/decisions/0003`.
+
 A repo is signed blocks plus one pointer to the newest commit, and a hosted
 repo also carries a firehose seq. Where those live is **one decision**, made
 once per deployment: either everything is in the builder's own database, or
