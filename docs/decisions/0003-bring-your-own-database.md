@@ -14,8 +14,10 @@ repo also carries a firehose seq. The blocks already went through
 `repo_head` file, the hosted example kept it in memory, and the seq was a
 counter in `_HostedRepo`. So "my repos live in my database" meant every app
 wrote its own head bookkeeping, nothing stopped two processes from
-committing on the same head (every commit is a link in one signed chain, so
-two writers fork it), and every restart sent every follower a `FutureCursor`.
+committing on the same head (commits carry `prev: null`, so two writers do
+not fork a chain; they publish two competing current heads, and one repo
+has two truths until something picks one), and every restart sent every
+follower a `FutureCursor`.
 The first user wants its repos in its own Postgres beside the rest of its
 data, with one peer process now and several behind the same repos later.
 
@@ -40,9 +42,11 @@ left the process); reuse never is. A restarted peer continues from the last
 number it allocated and followers' cursors stay valid.
 
 **Storage is one decision.** `Storage` bundles `blocks`, `heads` and
-`blobs`; a deployment picks one database for all three, never split, since
-the swap only protects a repo whose blocks every process can see. A
-`Storage` serves one repo. `SqliteStorage(directory)` is the built-in and
+`blobs`; a deployment picks it once. Blocks and heads must share a database:
+the swap only protects a repo whose blocks every process can see. Blobs are
+referenced from records by CID and collected on their own, so they may live
+elsewhere (the built-in sqlite keeps them in a second file). A `Storage`
+serves one repo. `SqliteStorage(directory)` is the built-in and
 what `Identity.bootstrap(state_dir=)` uses unasked; bringing your own is a
 class with the same three attributes over the app's adapters, passed again
 on every boot the way a hardware signer is. The package ships no adapter and

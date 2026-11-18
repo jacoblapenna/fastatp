@@ -1,11 +1,13 @@
 """One place for everything a peer keeps: blocks, heads and blobs.
 
-A deployment picks one database. Blocks (the repo's content), heads (its
-pointer and firehose seq) and blobs (its media) belong together: the
-compare-and-swap on a head only protects a repo whose blocks every process
-can see, so splitting them across databases would protect nothing. The three
-store protocols stay separate because each is a small thing to implement;
-:class:`Storage` is the one decision a builder makes.
+A deployment picks one database. Blocks (the repo's content) and heads (its
+pointer and firehose seq) must share it: the compare-and-swap on a head only
+protects a repo whose blocks every process can see, so splitting those two
+would protect nothing. Blobs (its media) are referenced by CID and collected
+on their own, so they may live beside or elsewhere; the built-in sqlite keeps
+them in a second file. The three store protocols stay separate because each
+is a small thing to implement; :class:`Storage` is the one decision a builder
+makes.
 
 A ``Storage`` serves one repo. Its head store is keyed by DID and may be
 shared by every repo in the database, but a block store is a flat

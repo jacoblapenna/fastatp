@@ -389,7 +389,8 @@ repo is simpler still: a
 
 ## Bring your own database
 
-The decisions here are recorded in `docs/decisions/0003`.
+The decisions here are recorded in
+[`docs/decisions/0003-bring-your-own-database.md`](decisions/0003-bring-your-own-database.md).
 
 A repo is signed blocks plus one pointer to the newest commit, and a hosted
 repo also carries a firehose seq. Where those live is **one decision**, made
@@ -500,7 +501,12 @@ Garbage collection under a shared database: a commit deletes only the
 blocks it orphaned, never a sweep, so processes on one repo and repos in one
 table leave each other's blocks alone. Do not call `collect_garbage()` (the
 sweep) over a shared table; blocks a crash left staged are the database's own
-maintenance to find, with every head in `repo_heads` as the roots. One race
+maintenance to find, with every head in `repo_heads` as the roots, and that
+maintenance must never race a writer: a commit stages its blocks before its
+swap, so a sweep that runs while commits are in flight can delete blocks a
+head is about to reference. Either run it with the writers stopped, or give
+`repo_blocks` a `created_at` and sweep only rows older than the longest a
+commit can take (minutes is plenty). One race
 remains narrow but real: between one process's swap and its orphan deletion,
 another process can land a commit that reuses an orphaned block by content;
 the next pull or push repairs it, and an adapter that defers deletes by a few
