@@ -106,7 +106,7 @@ pip install fastatp
 > adds. To take fixes without surprises, pin the minor line:
 >
 > ```bash
-> pip install "fastatp~=0.2.0"   # at least 0.2.0, below 0.3
+> pip install "fastatp~=0.3.0"   # at least 0.3.0, below 0.4
 > ```
 >
 > Breaking changes are listed under **Breaking** in the

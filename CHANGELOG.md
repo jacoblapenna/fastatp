@@ -11,9 +11,13 @@ it before 1.0:
 - **1.0.0 means stable**, and normal Semantic Versioning applies from there.
 
 To upgrade safely within one minor line, pin with `~=`, for example
-`fastatp~=0.2.0` (at least 0.2.0, below 0.3).
+`fastatp~=0.3.0` (at least 0.3.0, below 0.4).
 
 ## [Unreleased]
+
+Nothing yet.
+
+## [0.3.0] - 2026-11-18
 
 ### Breaking
 - Garbage collection is per commit and per repo: a commit or import
@@ -337,6 +341,7 @@ First release.
 - A WebAssembly build of the wire-format core (Rust) ships pre-built inside
   the package. Installing never needs a Rust toolchain.
 
-[Unreleased]: https://github.com/jacoblapenna/fastatp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jacoblapenna/fastatp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jacoblapenna/fastatp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jacoblapenna/fastatp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jacoblapenna/fastatp/releases/tag/v0.1.0
