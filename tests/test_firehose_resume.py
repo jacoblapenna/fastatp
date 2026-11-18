@@ -207,3 +207,22 @@ async def test_retiring_a_repo_poisons_its_subscribers_even_if_the_frame_fails()
         await srv.unregister(channel_did)
     assert channel_did not in srv.hosts()
     assert queue.get_nowait()[0] == _EVICTED  # not left hanging
+
+
+def test_a_full_subscriber_queue_still_gets_the_eviction_marker():
+    """A slow subscriber whose queue is full must still learn the repo is
+    gone: one frame makes way for the marker."""
+    from fastatp.server.peer_server import _EVICTED, _HostedRepo
+
+    host = _HostedRepo.__new__(_HostedRepo)
+    host._backfill, host.backfill_window = [], 8
+    queue: asyncio.Queue = asyncio.Queue(maxsize=2)
+    queue.put_nowait((1, b"one"))
+    queue.put_nowait((2, b"two"))
+    host._queues = {queue}
+    host.close_subscribers()
+    assert host._queues == set()
+    items = []
+    while not queue.empty():
+        items.append(queue.get_nowait())
+    assert items[-1][0] == _EVICTED and len(items) == 2

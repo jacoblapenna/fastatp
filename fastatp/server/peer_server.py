@@ -263,6 +263,9 @@ class _HostedRepo:
         """Poison every live subscriber (whole-repo teardown / expiry)."""
         for queue in list(self._queues):
             self._queues.discard(queue)
+            if queue.full():  # make room: the marker must land, a frame may go
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait((_EVICTED, b""))
 

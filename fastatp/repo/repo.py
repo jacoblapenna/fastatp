@@ -806,7 +806,9 @@ class Repo:
             # learn a rev from a head that was refused
             self.clock.observe(commit.rev)
             if gc:
-                self._collect_orphans(old_reachable)
+                # what the old head reached, and what this CAR brought: a
+                # checkpoint may carry blocks its own commit does not reach
+                self._collect_orphans(old_reachable | set(blocks))
 
     def collect_garbage(self) -> None:
         """Sweep the store: drop every block the current head does not reach.

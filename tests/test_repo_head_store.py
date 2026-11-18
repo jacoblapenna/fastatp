@@ -303,3 +303,23 @@ async def test_the_event_is_complete_even_if_the_proof_is_collected_right_after_
     assert event is not None
     assert event.commit_cid in event.blocks and event.ops[0]["cid"] in event.blocks
     assert len(event.blocks) > 2  # the commit, the record, and the proof nodes
+
+
+async def test_an_import_collects_what_the_checkpoint_brought_and_does_not_reach():
+    """A CAR may carry blocks its own commit does not reach; they must not
+    accumulate across imports."""
+    from fastatp.cid import CID
+    from fastatp.repo.car import decode_car, encode_car
+
+    key = crypto.generate_keypair("k256")
+    owner = await Repo.create(DID, key)
+    await owner.put_record(NOTE, "n", _note("real"))
+    roots, blocks = decode_car(owner.export_car())
+    junk = b"not part of any record"
+    junk_cid = CID.for_raw(junk)
+    padded = encode_car(roots, {**blocks, junk_cid: junk})
+
+    host = Repo(DID, None)
+    await host.import_car(padded, verify_key=key.public_key())
+    assert host.get_record(NOTE, "n") == _note("real")
+    assert host.store.get(junk_cid) is None  # brought, unreachable, collected
