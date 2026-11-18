@@ -233,7 +233,7 @@ async def run_board_rendezvous() -> dict:
     # --- lifetime: past its TTL the channel is unroutable -------------------
     host = service_server._hosts[engagement.ephemeral_did]
     host.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    reaped = service_server.reap_expired()
+    reaped = await service_server.reap_expired()
     result["channel_expired"] = engagement.ephemeral_did in reaped
     result["channel_unroutable_after_ttl"] = (
         service_server._resolve_host(engagement.ephemeral_did) is None

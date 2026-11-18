@@ -158,25 +158,24 @@ async def test_a_failing_signer_leaves_no_staged_blocks():
     assert set(repo.store.cids()) == before
 
 
-async def test_a_checkpoint_landing_mid_signature_is_caught_after_it():
+async def test_an_import_waits_for_the_commit_in_flight_and_is_rechecked_after():
+    """An import and a commit on one repo object take turns. The checkpoint
+    here is newer than the head the import saw, so it passes the first
+    freshness check, waits for the in-flight write, and is then refused
+    because the head it would replace moved past it meanwhile."""
     key = crypto.generate_keypair("p256")
+    repo = await Repo.create(DID, _SlowSigner(key))
+    old_rev = repo.rev
     owner = await Repo.create(DID, key)
     await owner.put_record(NOTE, "theirs", {"$type": NOTE, "text": "pushed"})
-    pushed = owner.export_car()
+    pushed = owner.export_car()  # newer than old_rev, older than the write below
 
-    repo = await Repo.create(DID, key)
-
-    class _ImportsWhileSigning(_HardwareSigner):
-        async def sign(self, message: bytes) -> bytes:
-            repo.import_car(pushed, verify_key=key.public_key())  # sync, no lock to take
-            return await super().sign(message)
-
-    repo.signer = _ImportsWhileSigning(key)
-    before = set(repo.store.cids())  # the state before the write began
-    with pytest.raises(RepoError, match="head moved"):
-        await repo.put_record(NOTE, "mine", {"$type": NOTE, "text": "stale"})
-    assert repo.rev == owner.rev  # the checkpoint stood
-    assert repo.get_record(NOTE, "mine") is None
+    write = asyncio.create_task(repo.put_record(NOTE, "mine", {"$type": NOTE, "text": "mine"}))
+    await asyncio.sleep(0)  # the write holds the lock and is signing; its rev is newest
+    with pytest.raises(RepoError, match="moved while the import waited"):
+        await repo.import_car(pushed, verify_key=key.public_key(), newer_than=old_rev)
+    assert (await write) is not None
+    assert repo.get_record(NOTE, "mine") is not None  # the write landed
+    assert repo.get_record(NOTE, "theirs") is None  # the older checkpoint did not roll it back
     reachable = {repo.commit_cid} | repo._mst_nodes | set(repo._entries.values())
     assert set(repo.store.cids()) == reachable
-    assert before != set(repo.store.cids())  # the import, not the write, changed the store

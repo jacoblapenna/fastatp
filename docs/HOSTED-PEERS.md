@@ -270,7 +270,7 @@ sovereign admission policy — edge business logic, never substrate.
 - Hosted repos whose pen lives on another peer are **frozen on the host**:
   opened with no pen (`Repo(did, None, ...)`), every commit raises, and the
   only way state changes is a push the host verifies against the owner's
-  key and re-hosts (`import_car`, then `handle.emit_sync()` so subscribers
+  key and re-hosts (`import_car`, then `await handle.emit_sync()` so subscribers
   see the new head). An `owner_pull` registration requires a frozen repo,
   so a host serving a repo to its pen can never hold a pen for it.
 
@@ -386,6 +386,153 @@ rotation_key)` moves an identity onto a hardware pen or off one (the new
 pen is proven with a signature before anything is persisted). A device
 repo is simpler still: a
 `did:key` is its pen, so `Peer` plus `Repo` is the whole story.
+
+## Bring your own database
+
+The decisions here are recorded in
+[`docs/decisions/0003-bring-your-own-database.md`](decisions/0003-bring-your-own-database.md).
+
+A repo is signed blocks plus one pointer to the newest commit, and a hosted
+repo also carries a firehose seq. Where those live is **one decision**, made
+once per deployment: either everything is in the builder's own database, or
+everything is in the built-in sqlite under a `state_dir`. Never split: the
+compare-and-swap on a head only protects a repo whose blocks every process
+can see.
+
+The decision is a `Storage`: anything with `blocks` (a `BlockStore`),
+`heads` (a `HeadStore`) and `blobs` (a `BlobStore`, or `None` for a
+media-free peer). Two ship. `SqliteStorage(directory)` is the built-in, and
+what `Identity.bootstrap(state_dir=...)` uses without being asked: `blocks`
+and `heads` in one file, `blobs` in another. `MemoryStorage()` is for
+ephemeral peers and tests. Bringing your own is a class with the same three
+attributes over your own adapters, passed as `storage=` to `Repo.create`,
+`Repo.open`, `PeerServer.create` or `Identity.bootstrap`, and passed again
+on every boot the way a hardware `signer=` is. Nothing in the package
+depends on a database driver; the adapter is the app's, like a TPM adapter.
+
+### What the head store is
+
+The `HeadStore` is the per-repo write lock in compare-and-swap form, and
+the one thing that lets several identical processes serve the same repos
+from one database. A commit reads the head, builds and signs the new commit
+(a hardware pen may take 50 ms here, and nothing in the database waits),
+writes its blocks, then advances the head in one statement: *move it from
+the head I built on to mine, only if it still is that head.* The database's
+own atomicity for a single-row update decides who wins; the loser reloads
+the new head and retries on it, a write the winner already made byte for
+byte is a no-op, and contention beyond a few retries surfaces as
+`HeadMoved`. No row is ever held: a crash leaves unreachable blocks for
+garbage collection, never a lock to time out. The firehose seq rides on the
+same row: a number is durable before its frame goes out, and a restarted
+peer continues from the last number it allocated. That is a monotonic
+cursor, not replay: a frame whose number was allocated but which never
+left the process is a gap, which the protocol allows, and the backfill
+itself is per process. Followers' cursors stay valid across the restart;
+what they missed in the gap they recover the usual way, by checkpoint.
+
+### The Postgres sketch
+
+Not part of the package. Four tables, one per protocol, with the doorman's
+cache beside them:
+
+```sql
+-- blocks and blobs are keyed by repo: a repo collects what its own commits
+-- orphan, and two repos may hold one block by content, so rows never cross
+CREATE TABLE repo_blocks (did TEXT, cid BYTEA, data BYTEA NOT NULL, PRIMARY KEY (did, cid));
+CREATE TABLE repo_heads  (did TEXT PRIMARY KEY, cid BYTEA NOT NULL, seq BIGINT NOT NULL);
+CREATE TABLE repo_blobs  (did TEXT, cid BYTEA, data BYTEA NOT NULL, mime TEXT NOT NULL,
+                          rev TEXT, PRIMARY KEY (did, cid));  -- rev: for listBlobs?since=
+-- the doorman's cache: overlay address -> (DID, the repo whose capability granted it)
+CREATE TABLE tunnel_addresses (address TEXT PRIMARY KEY, did TEXT NOT NULL, repo_did TEXT NOT NULL);
+```
+
+The head store is the only adapter with any logic, and the logic is the
+conditional update:
+
+```python
+class PostgresHeadStore:  # satisfies fastatp.repo.head.HeadStore
+    def __init__(self, pool):
+        self._pool = pool
+
+    async def load(self, did):
+        row = await self._pool.fetchrow("SELECT cid, seq FROM repo_heads WHERE did = $1", did)
+        return Head(CID.decode(bytes(row["cid"])), row["seq"]) if row else None
+
+    async def swap(self, did, expected, new):
+        if expected is None:  # a genesis: only if nothing is there yet
+            tag = await self._pool.execute(
+                "INSERT INTO repo_heads (did, cid, seq) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                did,
+                bytes(new.cid),
+                new.seq,
+            )
+        else:  # the swap: only if the head is still the expected one
+            tag = await self._pool.execute(
+                "UPDATE repo_heads SET cid = $2, seq = $3 WHERE did = $1 AND cid = $4 AND seq = $5",
+                did,
+                bytes(new.cid),
+                new.seq,
+                bytes(expected.cid),
+                expected.seq,
+            )
+        return tag.endswith(" 1")  # exactly one row changed
+
+    async def delete(self, did):
+        await self._pool.execute("DELETE FROM repo_heads WHERE did = $1", did)
+
+
+class PostgresStorage:  # satisfies fastatp.Storage; one per repo
+    def __init__(self, sync_conn, async_pool, did):
+        # blocks and blobs are synchronous protocols: a psycopg connection;
+        # heads is async: an asyncpg pool. Two handles to one database.
+        self.blocks = PostgresBlockStore(sync_conn, did)  # rows WHERE did = %s
+        self.heads = PostgresHeadStore(async_pool)  # keyed by DID already
+        self.blobs = PostgresBlobStore(sync_conn, did)  # or None
+
+
+identity = await Identity.bootstrap(
+    domain="alice.example",
+    state_dir=...,
+    storage=PostgresStorage(sync_conn, async_pool, "did:web:alice.example"),
+)
+```
+
+Garbage collection under a shared database: a commit deletes only the
+blocks it orphaned, never a sweep, so processes on one repo and repos in one
+table leave each other's blocks alone. Do not call `collect_garbage()` (the
+sweep) over a shared table; blocks a crash left staged are the database's own
+maintenance to find, with every head in `repo_heads` as the roots, and that
+maintenance must never race a writer: a commit stages its blocks before its
+swap, so a sweep that runs while commits are in flight can delete blocks a
+head is about to reference. Either run it with the writers stopped, or give
+`repo_blocks` a `created_at` and sweep only rows older than the longest a
+commit can take (minutes is plenty). One race
+remains narrow but real: between one process's swap and its orphan deletion,
+another process can land a commit that reuses an orphaned block by content;
+the next pull or push repairs it, and an adapter that defers deletes by a few
+seconds removes it.
+
+Two honest limits. `BlockStore` and `BlobStore` are synchronous protocols
+(the MST walks them many times per commit) while `HeadStore` is async, so a
+Postgres storage holds two handles to one database, a synchronous
+connection for blocks and blobs and an async pool for heads, and each
+synchronous call blocks the loop for one round-trip; keep the database
+close, or front it with a local cache. And live fan-out across
+processes (a commit made by process A reaching subscribers connected to
+process B) is the app's to build on the head store, with `LISTEN/NOTIFY` or
+by polling the head; the package does not do it.
+
+The doorman's cache is the last table. A host serving many repos keeps
+"this overlay address is this DID, granted in this repo" current as owners
+write and delete capabilities, and hands a lookup to
+`TunnelIdentityResolver(server, lookup=...)`. A hit is confirmed against the
+capability currently in the named repo before it names anyone, and a miss
+falls back to the walk over every hosted repo, so the cache is for speed and
+never for authority. Without one, the walk is the behaviour.
+
+What the `state_dir` still holds under bring-your-own: the identity's small
+files only, the document chain, `identity.json`, and the pen when it is a
+software key. No sqlite is created there.
 
 ## Two confidentiality tiers — apps must declare which
 

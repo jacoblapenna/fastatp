@@ -241,9 +241,9 @@ async def test_capability_lifecycle_is_firehosed(grantor):
 
     original_emit = server._emit
 
-    def capture(event):
+    async def capture(event):
         events.append(event)
-        return original_emit(event)
+        return await original_emit(event)
 
     server._emit = capture
     await reconciler.grant(ALICE)

@@ -87,7 +87,7 @@ async def test_rust_repo_car_imports_into_python(cross_bin, tmp_path):
     verify_key = crypto.decode_multikey(manifest["multikey"])
 
     target = await Repo.create(manifest["did"], crypto.generate_keypair("k256"))
-    target.import_car((tmp_path / "repo.car").read_bytes(), verify_key=verify_key)
+    await target.import_car((tmp_path / "repo.car").read_bytes(), verify_key=verify_key)
     record = target.get_record(CrossNote.nsid, "note-1")
     assert record is not None and record["text"] == "from rust"
     assert target.rev == manifest["rev"]

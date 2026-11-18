@@ -84,8 +84,8 @@ async def test_admitted_to_a_is_refused_b(serve_app):
     """Injected identity = Alice. Alice is admitted to A only. getRepo and the
     firehose both admit A and refuse B; a B-holder (Bob) would be admitted."""
     srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: ALICE)
-    a = srv.register(await _channel_repo())  # gated by default
-    b = srv.register(await _channel_repo())
+    a = await srv.register(await _channel_repo())  # gated by default
+    b = await srv.register(await _channel_repo())
     await _admit(a, ALICE)
     await _admit(b, BOB)  # Bob holds B, Alice does not
 
@@ -111,7 +111,7 @@ async def test_fail_closed_when_no_tunnel_identity(serve_app):
     """A caller the resolver cannot place (None) is refused every gated repo,
     but the public primary firehose stays open."""
     srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: None)
-    a = srv.register(await _channel_repo())
+    a = await srv.register(await _channel_repo())
     await _admit(a, ALICE)
 
     async with serve_app(srv.app) as port:
@@ -124,7 +124,7 @@ async def test_fail_closed_when_no_tunnel_identity(serve_app):
 async def test_send_only_capability_does_not_confer_read(serve_app):
     """A 'send' grant (push intake) must not open the firehose."""
     srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: ALICE)
-    a = srv.register(await _channel_repo())
+    a = await srv.register(await _channel_repo())
     await _admit(a, ALICE, actions=(ACTION_SEND,))  # send, not subscribe
 
     async with serve_app(srv.app) as port:
@@ -137,8 +137,8 @@ async def test_tunnel_identity_resolver_maps_source_address(serve_app):
     read from a record."""
     srv = await PeerServer.create(_peer())
     srv.identity_resolver = TunnelIdentityResolver(srv, source_address=_arriving_from(WG_KEY))
-    a = srv.register(await _channel_repo())
-    b = srv.register(await _channel_repo())
+    a = await srv.register(await _channel_repo())
+    b = await srv.register(await _channel_repo())
     await _admit(a, ALICE, wg_key=WG_KEY)  # Alice's key -> her address -> Alice, admitted to A
 
     async with serve_app(srv.app) as port:
@@ -167,7 +167,7 @@ async def test_a_did_web_grantee_admitted_through_the_reconciler_is_named_at_the
 
     srv = await PeerServer.create(_peer())
     srv.identity_resolver = TunnelIdentityResolver(srv, source_address=_arriving_from(WG_KEY))
-    channel = srv.register(await _channel_repo())
+    channel = await srv.register(await _channel_repo())
     interface = MemoryWireGuardInterface()
     await WireGuardReconciler(channel, interface, resolver).grant(bob)
     assert WG_KEY in interface.peers()  # the kernel admits bob's key...
@@ -180,7 +180,7 @@ async def test_proxy_warning_on_unidentifiable_loopback_read(serve_app, caplog):
     """A gated read that can't be tied to a tunnel identity, from loopback, logs
     a loud proxy-misconfiguration diagnosis (once)."""
     srv = await PeerServer.create(_peer())  # default resolver: the real client address, loopback
-    a = srv.register(await _channel_repo())
+    a = await srv.register(await _channel_repo())
     await _admit(a, ALICE, wg_key=WG_KEY)  # Alice's derived address is on the overlay, not loopback
 
     async with serve_app(srv.app) as port:
@@ -207,7 +207,7 @@ async def test_a_refused_gated_repo_is_indistinguishable_from_an_absent_one(serv
     )
 
     srv = await PeerServer.create(_peer(), identity_resolver=lambda conn: ALICE)
-    gated = srv.register(await _channel_repo())
+    gated = await srv.register(await _channel_repo())
     await _admit(gated, BOB)  # Alice is not admitted
     absent = "did:web:nobody.example"
     routes = [
@@ -231,3 +231,92 @@ async def test_a_refused_gated_repo_is_indistinguishable_from_an_absent_one(serv
         for did in (gated.did, absent):
             with pytest.raises(RepoError, match="RepoNotFound"):
                 await _first_frame(port, did)
+
+
+# --- the lookup seam: a builder's cache in front of the walk -----------------------
+
+
+async def _gated_with_alice(lookup):
+    """A server whose doorman consults ``lookup`` first; Alice is admitted to
+    repo A by her key, and repo B admits nobody."""
+    srv = await PeerServer.create(_peer())
+    srv.identity_resolver = TunnelIdentityResolver(
+        srv, source_address=_arriving_from(WG_KEY), lookup=lookup
+    )
+    a = await srv.register(await _channel_repo())
+    b = await srv.register(await _channel_repo())
+    await _admit(a, ALICE, wg_key=WG_KEY)
+    return srv, a, b
+
+
+async def test_a_lookup_hit_skips_the_walk(serve_app):
+    calls = []
+
+    def lookup(address):
+        calls.append(address)
+        return (ALICE, a.did)
+
+    srv, a, _b = await _gated_with_alice(lookup)
+
+    def never_walk():
+        raise AssertionError("the walk ran on a confirmed hit")
+
+    srv._ip_to_did = never_walk  # type: ignore[method-assign]
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, a.did)).status_code == 200
+    assert calls == [overlay_address(WG_KEY)]
+
+
+async def test_a_lookup_miss_falls_back_to_the_walk(serve_app):
+    async def lookup(address):  # async is fine too
+        return None
+
+    srv, a, b = await _gated_with_alice(lookup)
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, a.did)).status_code == 200  # the walk found her
+        assert (await _get(port, b.did)).status_code == 404
+
+
+async def test_a_stale_hit_naming_a_revoked_capability_cannot_admit(serve_app):
+    """The cache still says Alice; the repo no longer does. The hit fails
+    confirmation, the walk finds nothing, and the door stays shut."""
+    srv, a, _b = await _gated_with_alice(lambda address: (ALICE, a.did))
+    from fastatp.authz.capability import live_capabilities
+
+    rkey, _cap = live_capabilities(a.repo)[ALICE]
+    await a.delete_record(Capability.nsid, rkey)  # the owner revokes
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, a.did)).status_code == 404
+
+
+async def test_a_stale_hit_after_a_key_rotation_cannot_admit_the_old_key(serve_app):
+    """Alice re-granted with a new key: the cache still maps her OLD address
+    to her. Whoever still holds the old key is a stranger at the door."""
+    new_key = base64.b64encode(bytes(range(32, 64))).decode()
+    stale = {overlay_address(WG_KEY): (ALICE, None)}  # filled in below
+
+    def lookup(address):
+        hit = stale.get(address)
+        return (hit[0], a.did) if hit else None
+
+    srv, a, _b = await _gated_with_alice(lookup)
+    from fastatp.authz.capability import live_capabilities
+
+    rkey, _cap = live_capabilities(a.repo)[ALICE]
+    await a.delete_record(Capability.nsid, rkey)
+    await _admit(a, ALICE, wg_key=new_key)  # rotated: the record names the new key
+
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, a.did)).status_code == 404  # arriving from the old address
+    srv.identity_resolver = TunnelIdentityResolver(
+        srv, source_address=_arriving_from(new_key), lookup=lookup
+    )
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, a.did)).status_code == 200  # cache miss, the walk finds her
+
+
+async def test_a_wrong_hit_naming_another_repo_is_just_a_miss(serve_app):
+    srv, a, b = await _gated_with_alice(lambda address: (ALICE, b.did))  # B never granted her
+    async with serve_app(srv.app) as port:
+        assert (await _get(port, b.did)).status_code == 404
+        assert (await _get(port, a.did)).status_code == 200  # the walk still finds the truth

@@ -225,8 +225,16 @@ exchange a private reply, end to end).
   isolation, not ciphertext.
 - **Private-response channels** — ephemeral `did:key` repos + signed attestations
   for one-shot private replies, with a per-repo doorman enforcing isolation.
-- **Durable storage** — an optional stdlib-`sqlite3` block store so an identity's
-  repo survives process death.
+- **Storage is one decision** — `Storage` bundles a repo's blocks, head and
+  blobs. The built-in `SqliteStorage` is what `Identity.bootstrap(state_dir=)`
+  uses; bring your own database as a class with the same three stores
+  (`docs/HOSTED-PEERS.md`, "Bring your own database"). The head store is a
+  compare-and-swap, so several identical processes writing the same repos
+  in one database can never fork them, and a restarted peer resumes its
+  firehose seq. What the store does not do: refresh one process's in-memory
+  repo from another's commits, or fan a commit out to subscribers connected
+  elsewhere; an app that runs several processes builds that on the head
+  store.
 
 ## Philosophy
 

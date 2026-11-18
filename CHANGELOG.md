@@ -16,6 +16,26 @@ To upgrade safely within one minor line, pin with `~=`, for example
 ## [Unreleased]
 
 ### Breaking
+- Garbage collection is per commit and per repo: a commit or import
+  deletes only the blocks it orphaned, never a sweep of the store, so a
+  block store shared between repos or between processes loses nothing
+  another head reaches. `collect_garbage()` is the sweep, for a store the
+  repo has to itself; blocks a crash left staged are no longer collected by
+  the next commit, only by the sweep.
+- Firehose bookkeeping is awaited: `PeerServer.register`, `unregister` and
+  `reap_expired`, `RepoHandle.emit_account`/`emit_identity`/`emit_sync`,
+  `expire` and `unregister`, and `PrivateChannel.close`. Each frame's seq
+  now comes from the repo's head store before the frame goes out, and a
+  dropped repo announces its deactivation before its subscribers are cut.
+  `PeerServer.create(peer, repo)` takes an existing repo as its second
+  argument (`repo_store=` is keyword-only); `PeerServer(peer, repo)` still
+  builds one, announced on its first emit or subscriber. An `Identity`
+  keeps its head in `blocks.sqlite` instead of a `repo_head` file (an old
+  file is folded in on first load).
+- `Repo.import_car` is awaited (it advances the head through the head
+  store), and `put_record`, `delete_record` and `apply_writes` may return
+  `None`: a concurrent writer on a shared head store already made exactly
+  that change, byte for byte, so there was nothing to commit.
 - `PeerServer.register(repo, owner_pull=...)` requires a frozen repo. A
   repo served back to its own pen is one whose pen lives elsewhere, so a host
   holding a pen for it is refused at registration with a `ValueError`.
@@ -62,6 +82,47 @@ To upgrade safely within one minor line, pin with `~=`, for example
   sysctl to fix when a kernel has IPv6 disabled on the interface.
 
 ### Added
+- Bring your own database, part three: `fastatp.Storage` is the one
+  decision, anything with `blocks`, `heads` and `blobs`. `SqliteStorage`
+  (the built-in: a directory, blocks and heads in one file) and
+  `MemoryStorage` ship. `Repo.create`/`Repo.open`, `Peer.create_repo`,
+  `PeerServer.create` and `Identity.bootstrap`/`adopt_web` take `storage=`;
+  an `Identity` given one keeps its repo, head and seq there and creates no
+  sqlite in its `state_dir`, which then holds only the identity's small
+  files: `identity.json`, the chain for a `did:web`, `signing.key` when the
+  pen is a software key, and `rotation.key` only with
+  `persist_rotation_key=True`. `Identity.storage` is the bundle; `Identity.store`
+  is its block store, as before. `docs/HOSTED-PEERS.md` "Bring your own
+  database" sketches the Postgres adapters and the doorman's cache table.
+- `TunnelIdentityResolver(lookup=...)`: a builder's cache in front of the
+  doorman's walk. The lookup maps an overlay address to `(DID, granting
+  repo)` from the builder's own store, sync or async; a hit is used only
+  after the doorman confirms the named repo still holds a live capability
+  for that DID whose key derives that address, and a miss or a failed
+  confirmation falls back to the walk over every hosted repo, which stays
+  the behaviour with no lookup. The cache is for speed, never authority: a
+  stale or wrong entry costs a lookup and cannot admit.
+- Bring your own database, part two: the firehose seq lives in the head
+  store. A commit's seq is the one its swap assigned (`CommitEvent.seq`);
+  every other frame takes the next through the same swap
+  (`Repo.advance_seq`), so with a durable store a restarted peer resumes
+  where its last delivered frame left off and followers' cursors keep
+  working instead of hitting `FutureCursor`. The genesis commit is seq 0,
+  the start of the stream, so a cursor of 0 misses nothing. An `Identity`
+  on a `state_dir` gets this with no new argument: its head and seq are in
+  the same sqlite file as its blocks.
+- Bring your own database, part one: `fastatp.repo.head.HeadStore`, the
+  per-repo write lock as a compare-and-swap. `Repo.create(...,
+  head_store=)` puts a repo's head and firehose seq in the app's store,
+  `await Repo.open(did, signing_key, store, head_store)` loads it, and
+  every commit and import writes its blocks first, then advances the head
+  only if it is still the one it was built on. A commit that loses the swap
+  reloads the new head and retries the write on it (bounded); contention
+  beyond that is `HeadMoved`, carrying the current head. An import that
+  loses it reloads and raises `HeadMoved` at once, since whether an older
+  checkpoint still applies is the caller's call. `MemoryHeadStore` (the default,
+  today's behaviour) and `SqliteHeadStore` ship; `CommitEvent.seq` is the
+  seq the swap assigned.
 - The signer seam: `fastatp.Signer` (a `public_key` and `async sign`) is
   what an app implements to sign with a key the process cannot hold (a TPM,
   an HSM, a secure element, a YubiKey); `fastatp.SoftwareSigner` is the

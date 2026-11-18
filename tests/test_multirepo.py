@@ -58,7 +58,7 @@ async def _recv(ws, timeout=5.0):
 async def test_getrepo_routes_by_did(running):
     srv, port, _resolver = running
     channel = await _did_key_repo()
-    handle = srv.register(channel, public=True)
+    handle = await srv.register(channel, public=True)
     await handle.put_record(Note.nsid, "a", _note("in-channel"))
 
     base = f"http://127.0.0.1:{port}{GET_REPO_PATH}"
@@ -82,7 +82,7 @@ async def test_per_repo_firehose_isolation_and_independent_seq(running):
     counts independently from 1."""
     srv, port, resolver = running
     channel = await _did_key_repo()
-    handle = srv.register(channel, public=True)
+    handle = await srv.register(channel, public=True)
 
     ws_base = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}"
     primary_mirror = RepoMirror(PRIMARY_DID, resolver=resolver)
@@ -128,7 +128,7 @@ async def test_per_repo_firehose_isolation_and_independent_seq(running):
 async def test_handle_only_writes_land_in_own_repo(running):
     srv, _port, _resolver = running
     channel = await _did_key_repo()
-    handle = srv.register(channel)
+    handle = await srv.register(channel)
     await handle.put_record(Note.nsid, "x", _note("channel-only"))
 
     # the record is in the channel repo, signed under the channel DID
@@ -143,25 +143,25 @@ async def test_handle_only_writes_land_in_own_repo(running):
 async def test_duplicate_register_and_primary_guard(running):
     srv, _port, _resolver = running
     channel = await _did_key_repo()
-    srv.register(channel)
+    await srv.register(channel)
     with pytest.raises(ValueError, match="already hosting"):
-        srv.register(channel)
+        await srv.register(channel)
     with pytest.raises(ValueError, match="primary"):
-        srv.unregister(srv.repo.did)
+        await srv.unregister(srv.repo.did)
     assert set(srv.hosts()) == {srv.repo.did, channel.did}
 
 
 async def test_unregister_cuts_subscribers(running):
     srv, port, _resolver = running
     channel = await _did_key_repo()
-    handle = srv.register(channel, public=True)
+    handle = await srv.register(channel, public=True)
     ws_base = f"ws://127.0.0.1:{port}{FIREHOSE_PATH}"
     async with websockets.connect(f"{ws_base}?did={channel.did}") as ws:
         await asyncio.sleep(0.05)
         await handle.put_record(Note.nsid, "a", _note("live"))
         _, body = await _recv(ws)
         assert body["seq"] == 3
-        srv.unregister(channel.did)
+        await srv.unregister(channel.did)
         # teardown announces the hosting change (#account active=false), then
         # the poisoned subscriber gets a ConsumerTooSlow error frame
         # (decode_frame surfaces error frames as RepoError) and the socket closes

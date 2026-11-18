@@ -212,7 +212,7 @@ async def test_discovery_routes(serve_app):
         srv = await PeerServer.create(peer)
         await srv.put_record(NSID, "rec1", _note(1))
         gated = await Repo.create("did:web:gated.example", crypto.generate_keypair("k256"))
-        srv.register(gated, public=False)
+        await srv.register(gated, public=False)
         async with serve_app(srv.app) as port:
             base = f"http://127.0.0.1:{port}"
             async with httpx.AsyncClient() as client:

@@ -24,10 +24,11 @@ A ``getRepo``-style HTTP route serves the same checkpoint on demand.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import contextlib
 import inspect
 import logging
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -46,6 +47,7 @@ from fastatp.crypto import decode_did_key
 from fastatp.exceptions import CryptoError, FastATPError, RepoError
 from fastatp.peer import Peer
 from fastatp.repo.repo import CommitEvent, RecordLike, Repo, WriteOp
+from fastatp.repo.storage import Storage
 from fastatp.repo.store import BlockStore
 from fastatp.repo.sync import (
     account_frame_body,
@@ -133,6 +135,13 @@ class _HostedRepo:
     numbers out of a sequence other followers still read. Every hosted repo
     owns its ``seq``, backfill window, and subscriber queue set; fan-out never
     crosses repos.
+
+    The seq is the repo's: a commit's comes from the head swap that landed it
+    (``CommitEvent.seq``), and every other frame takes the next one through
+    ``Repo.advance_seq``, so with a durable head store a restart resumes
+    where the last delivered frame left off and followers' cursors keep
+    working. A number is durable before its frame goes out; frames enter the
+    backfill in seq order whatever order their coroutines finish in.
     """
 
     def __init__(
@@ -149,31 +158,47 @@ class _HostedRepo:
         self.public = public
         self.owner_pull = owner_pull
         self.expires_at = expires_at
-        self.seq = 0
-        self._backfill: deque[tuple[int, bytes]] = deque(maxlen=backfill_window)
+        self._backfill: list[tuple[int, bytes]] = []
         self._queues: set[asyncio.Queue[tuple[int, bytes]]] = set()
-        # a host announces the account before its commits: relays ignore
-        # #commit/#sync events for accounts not known to be active (sync spec)
-        self.emit_identity()
-        self.emit_account(active=True)
+        self._announced = False
+        self._announce_lock = asyncio.Lock()
 
     @property
     def did(self) -> str:
         return self.repo.did
+
+    @property
+    def seq(self) -> int:
+        return self.repo.seq
+
+    async def announce(self) -> None:
+        """A host announces the account before its commits: relays ignore
+        #commit/#sync events for accounts not known to be active (sync spec).
+        Once per hosting; every emit and every write makes sure it happened
+        first. Concurrent callers wait for the one announcement in flight,
+        and it counts as done only once both frames have landed."""
+        if self._announced:
+            return
+        async with self._announce_lock:
+            if self._announced:
+                return
+            await self._identity_frame(handle=None)
+            await self._account_frame(active=True, status=None)
+            self._announced = True
 
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
             return False
         return self.expires_at <= (now or datetime.now(UTC))
 
-    def _emit_frame(self, build: Callable[[int], bytes]) -> None:
-        """Allocate the next seq, build the frame, backfill it, fan it out."""
-        self.seq += 1
-        frame = build(self.seq)
-        self._backfill.append((self.seq, frame))
+    def _emit_frame(self, seq: int, frame: bytes) -> None:
+        """Backfill a frame whose seq is already durable, in seq order, and
+        fan it out. No await in here: order is decided by the seq."""
+        bisect.insort(self._backfill, (seq, frame))
+        del self._backfill[: max(0, len(self._backfill) - self.backfill_window)]
         for queue in list(self._queues):
             try:
-                queue.put_nowait((self.seq, frame))
+                queue.put_nowait((seq, frame))
             except asyncio.QueueFull:
                 # slow consumer: evict rather than grow without bound
                 self._queues.discard(queue)
@@ -182,35 +207,47 @@ class _HostedRepo:
                 with contextlib.suppress(asyncio.QueueFull):
                     queue.put_nowait((_EVICTED, b""))
 
-    def emit(self, event: CommitEvent) -> CommitEvent:
-        self._emit_frame(
-            lambda seq: encode_frame("#commit", commit_frame_body(self.repo.did, seq, event))
-        )
+    async def emit(self, event: CommitEvent) -> CommitEvent:
+        """Announce a commit under the seq its head swap assigned."""
+        await self.announce()
+        frame = encode_frame("#commit", commit_frame_body(self.repo.did, event.seq, event))
+        self._emit_frame(event.seq, frame)
         return event
 
-    def emit_account(self, *, active: bool, status: str | None = None) -> None:
-        self._emit_frame(
-            lambda seq: encode_frame(
-                "#account",
-                account_frame_body(self.did, seq, _now_iso(), active=active, status=status),
-            )
-        )
+    async def emit_if(self, event: CommitEvent | None) -> CommitEvent | None:
+        """``emit``, unless the write turned out to be a no-op (``None``: a
+        concurrent writer already made exactly this change; its own frame
+        announced it)."""
+        return await self.emit(event) if event is not None else None
 
-    def emit_sync(self) -> None:
+    async def emit_account(self, *, active: bool, status: str | None = None) -> None:
+        await self.announce()
+        await self._account_frame(active=active, status=status)
+
+    async def _account_frame(self, *, active: bool, status: str | None) -> None:
+        seq = await self.repo.advance_seq()
+        body = account_frame_body(self.did, seq, _now_iso(), active=active, status=status)
+        self._emit_frame(seq, encode_frame("#account", body))
+
+    async def emit_sync(self) -> None:
         """Announce the current head as a ``#sync`` event: what a host does
         after a push lands in a frozen repo through ``import_car``, which
         commits nothing and so emits nothing by itself."""
+        await self.announce()
         rev, car = self.repo.rev, self.repo.commit_car()
+        seq = await self.repo.advance_seq()
         self._emit_frame(
-            lambda seq: encode_frame("#sync", sync_frame_body(self.did, seq, rev, car, _now_iso()))
+            seq, encode_frame("#sync", sync_frame_body(self.did, seq, rev, car, _now_iso()))
         )
 
-    def emit_identity(self, *, handle: str | None = None) -> None:
-        self._emit_frame(
-            lambda seq: encode_frame(
-                "#identity", identity_frame_body(self.did, seq, _now_iso(), handle=handle)
-            )
-        )
+    async def emit_identity(self, *, handle: str | None = None) -> None:
+        await self.announce()
+        await self._identity_frame(handle=handle)
+
+    async def _identity_frame(self, *, handle: str | None) -> None:
+        seq = await self.repo.advance_seq()
+        body = identity_frame_body(self.did, seq, _now_iso(), handle=handle)
+        self._emit_frame(seq, encode_frame("#identity", body))
 
     def sync_frame(self) -> bytes:
         # spec: a #sync carries the commit block ONLY; consumers that need the
@@ -226,11 +263,15 @@ class _HostedRepo:
         """Poison every live subscriber (whole-repo teardown / expiry)."""
         for queue in list(self._queues):
             self._queues.discard(queue)
+            if queue.full():  # make room: the marker must land, a frame may go
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait((_EVICTED, b""))
 
     async def catch_up(self, websocket: WebSocket, cursor: int | None) -> int | None:
         """Replay history for a cursor; returns the last seq sent (or None to stop)."""
+        await self.announce()  # a subscriber is the first thing some hosts hear
         if cursor is None:
             return self.seq  # live tail only
         if cursor > self.seq:
@@ -272,6 +313,20 @@ def _source_ip(conn: HTTPConnection) -> str | None:
     return conn.client.host if conn.client is not None else None
 
 
+AddressBinding = tuple[str, str]
+"""What the doorman learns from an overlay address: ``(DID, the DID of the
+repo whose capability granted the key)``."""
+
+AddressLookup = Callable[[str], "AddressBinding | Awaitable[AddressBinding | None] | None"]
+"""A builder's cache for the doorman: overlay address -> ``(DID, granting repo
+DID)``, or ``None`` for a miss. Sync or async. It lives in the builder's own
+store and is kept current as repo owners write and delete capabilities in the
+repos this host serves (the commit path sees both). It is for speed, never
+authority: a hit is checked against the capability currently in the named
+repo before it names anyone, so a wrong or stale entry costs a lookup and can
+never admit."""
+
+
 class TunnelIdentityResolver:
     """Default doorman identity: source tunnel IP -> DID via signed capabilities.
 
@@ -286,6 +341,13 @@ class TunnelIdentityResolver:
     ``source_address`` is the seam for where the address comes from (the
     connection's client address by default); another enforcement plane, or a
     test presenting a derived address, supplies its own.
+
+    ``lookup`` is the seam for scale: without one, every resolution walks
+    every hosted repo's live capabilities (right for a peer with a few repos).
+    With one, a hit is used after the doorman confirms the named repo still
+    holds a live capability for that DID whose key derives this very address,
+    and a miss or a failed confirmation falls back to the walk. So the cache
+    decides nothing: it only says where to look first.
     """
 
     def __init__(
@@ -293,15 +355,25 @@ class TunnelIdentityResolver:
         server: PeerServer,
         *,
         source_address: Callable[[HTTPConnection], str | None] | None = None,
+        lookup: AddressLookup | None = None,
     ) -> None:
         self._server = server
         self._source = source_address or _source_ip
+        self._lookup = lookup
 
-    def __call__(self, conn: HTTPConnection) -> ResolvedCaller | None:
+    async def __call__(self, conn: HTTPConnection) -> ResolvedCaller | None:
         ip = self._source(conn)
         if ip is None:
             return None
-        bound = self._server._ip_to_did().get(ip)
+        bound: AddressBinding | None = None
+        if self._lookup is not None:
+            hit = self._lookup(ip)
+            if inspect.isawaitable(hit):
+                hit = await hit
+            if hit is not None and self._server._binding_is_live(ip, hit[0], hit[1]):
+                bound = hit
+        if bound is None:
+            bound = self._server._ip_to_did().get(ip)  # the walk: authoritative, slow
         if bound is None:
             return None
         did, repo_did = bound
@@ -347,38 +419,43 @@ class RepoHandle:
     def expires_at(self) -> datetime | None:
         return self._host.expires_at
 
-    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._host.emit(await self._host.repo.put_record(collection, rkey, record))
+    async def put_record(
+        self, collection: str, rkey: str, record: RecordLike
+    ) -> CommitEvent | None:
+        await self._host.announce()  # before the commit takes its seq
+        return await self._host.emit_if(await self._host.repo.put_record(collection, rkey, record))
 
-    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._host.emit(await self._host.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
+        await self._host.announce()
+        return await self._host.emit_if(await self._host.repo.delete_record(collection, rkey))
 
-    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._host.emit(await self._host.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
+        await self._host.announce()
+        return await self._host.emit_if(await self._host.repo.apply_writes(writes))
 
-    def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
+    async def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
         """Re-announce this repo's hosting status (#account)."""
-        self._host.emit_account(active=active, status=status)
+        await self._host.emit_account(active=active, status=status)
 
-    def emit_identity(self, *, handle: str | None = None) -> None:
+    async def emit_identity(self, *, handle: str | None = None) -> None:
         """Prod subscribers to refresh this DID's identity (#identity)."""
-        self._host.emit_identity(handle=handle)
+        await self._host.emit_identity(handle=handle)
 
-    def emit_sync(self) -> None:
+    async def emit_sync(self) -> None:
         """Announce the head to subscribers after a push landed through
         ``repo.import_car`` (which emits nothing by itself)."""
-        self._host.emit_sync()
+        await self._host.emit_sync()
 
-    def expire(self) -> None:
+    async def expire(self) -> None:
         """Retire this repo now — the channel-owner's "TTL reached / done with
         it" intent. A semantic alias that **delegates** to :meth:`unregister`
         so the two can never drift; kept as the name a channel reads
         naturally."""
-        self.unregister()
+        await self.unregister()
 
-    def unregister(self) -> None:
+    async def unregister(self) -> None:
         """Stop hosting this repo and cut its live subscribers."""
-        self._server.unregister(self.did)
+        await self._server.unregister(self.did)
 
 
 class PeerServer:
@@ -409,6 +486,7 @@ class PeerServer:
         )
         self._primary = primary
         self._hosts: dict[str, _HostedRepo] = {primary.did: primary}
+        self._retiring: set[asyncio.Task[None]] = set()
         # the doorman: gated repos consult identity_resolver on read
         self.identity_resolver: CallerResolver = identity_resolver or TunnelIdentityResolver(self)
         self._warn_on_proxy = warn_on_proxy
@@ -435,15 +513,25 @@ class PeerServer:
     async def create(
         cls,
         peer: Peer,
+        repo: Repo | None = None,
+        *,
         repo_store: BlockStore | None = None,
+        storage: Storage | None = None,
         backfill_window: int = 512,
         **kwargs: Any,
     ) -> PeerServer:
-        """A server for ``peer`` over a fresh repo, its genesis signed by the
-        peer's signer. ``repo_store`` is where the repo's blocks go."""
-        return cls(peer, await peer.create_repo(store=repo_store), backfill_window, **kwargs)
+        """A server for ``peer``, announced on its firehose. Over ``repo`` if
+        given, else over a fresh one whose genesis the peer's signer signs, in
+        ``storage`` (one database for blocks, heads and blobs) or over a bare
+        ``repo_store`` for its blocks. ``PeerServer(peer, repo)`` builds one
+        without announcing; it announces on the first emit or subscriber."""
+        if repo is None:
+            repo = await peer.create_repo(store=repo_store, storage=storage)
+        server = cls(peer, repo, backfill_window, **kwargs)
+        await server._primary.announce()
+        return server
 
-    def register(
+    async def register(
         self,
         repo: Repo,
         *,
@@ -514,9 +602,10 @@ class PeerServer:
             expires_at=expires_at,
         )
         self._hosts[repo.did] = host
+        await host.announce()
         return RepoHandle(self, host)
 
-    def unregister(self, did: str) -> None:
+    async def unregister(self, did: str) -> None:
         """Stop hosting ``did``'s repo and poison its live subscribers.
 
         The primary repo cannot be unregistered (it is the peer's own repo).
@@ -527,7 +616,8 @@ class PeerServer:
             return
         if host is self._primary:
             raise ValueError("cannot unregister the primary repo")
-        self._drop(host)
+        self._hosts.pop(host.did, None)
+        await self._retire(host)
 
     def _drop(self, host: _HostedRepo) -> None:
         """Remove a hosted repo and cut its subscribers (the host, its repo, and
@@ -543,10 +633,24 @@ class PeerServer:
         matters), never a substrate feature.
         """
         self._hosts.pop(host.did, None)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # no loop: nobody to announce to
+            host.close_subscribers()
+            return
+        # a sync lookup found it expired: retire it off the request's back
+        task = loop.create_task(self._retire(host))
+        self._retiring.add(task)
+        task.add_done_callback(self._retiring.discard)
+
+    async def _retire(self, host: _HostedRepo) -> None:
         # tell still-connected subscribers the account is no longer hosted
-        # here before poisoning them (sync spec #account semantics)
-        host.emit_account(active=False, status="deactivated")
-        host.close_subscribers()
+        # here before poisoning them (sync spec #account semantics); the repo
+        # is already unrouted, so they are poisoned whatever the frame does
+        try:
+            await host.emit_account(active=False, status="deactivated")
+        finally:
+            host.close_subscribers()
 
     def _resolve_host(self, did: str | None) -> _HostedRepo | None:
         """Route to a live host, reaping it lazily if its TTL has passed."""
@@ -558,7 +662,7 @@ class PeerServer:
             return None
         return host
 
-    def reap_expired(self, now: datetime | None = None) -> list[str]:
+    async def reap_expired(self, now: datetime | None = None) -> list[str]:
         """Retire every expired hosted repo now; returns the reaped DIDs.
 
         Lazy reaping already keeps expired repos unroutable, but a long-lived
@@ -568,7 +672,8 @@ class PeerServer:
         moment = now or datetime.now(UTC)
         reaped = [h for h in self._hosts.values() if h.is_expired(moment)]
         for host in reaped:
-            self._drop(host)
+            self._hosts.pop(host.did, None)
+            await self._retire(host)
         return [h.did for h in reaped]
 
     def hosts(self) -> list[str]:
@@ -596,7 +701,7 @@ class PeerServer:
         return self._primary.seq
 
     @property
-    def _backfill(self) -> deque[tuple[int, bytes]]:
+    def _backfill(self) -> list[tuple[int, bytes]]:
         return self._primary._backfill
 
     @property
@@ -611,25 +716,33 @@ class PeerServer:
 
     # --- writes (broadcast on commit) ------------------------------------------
 
-    async def put_record(self, collection: str, rkey: str, record: RecordLike) -> CommitEvent:
-        return self._emit(await self.repo.put_record(collection, rkey, record))
+    async def put_record(
+        self, collection: str, rkey: str, record: RecordLike
+    ) -> CommitEvent | None:
+        await self._primary.announce()  # before the commit takes its seq
+        return await self._emit_if(await self.repo.put_record(collection, rkey, record))
 
-    async def delete_record(self, collection: str, rkey: str) -> CommitEvent:
-        return self._emit(await self.repo.delete_record(collection, rkey))
+    async def delete_record(self, collection: str, rkey: str) -> CommitEvent | None:
+        await self._primary.announce()
+        return await self._emit_if(await self.repo.delete_record(collection, rkey))
 
-    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent:
-        return self._emit(await self.repo.apply_writes(writes))
+    async def apply_writes(self, writes: list[WriteOp]) -> CommitEvent | None:
+        await self._primary.announce()
+        return await self._emit_if(await self.repo.apply_writes(writes))
 
-    def _emit(self, event: CommitEvent) -> CommitEvent:
-        return self._primary.emit(event)
+    async def _emit(self, event: CommitEvent) -> CommitEvent:
+        return await self._primary.emit(event)
 
-    def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
+    async def _emit_if(self, event: CommitEvent | None) -> CommitEvent | None:
+        return await self._emit(event) if event is not None else None
+
+    async def emit_account(self, *, active: bool = True, status: str | None = None) -> None:
         """Re-announce the primary repo's hosting status (#account)."""
-        self._primary.emit_account(active=active, status=status)
+        await self._primary.emit_account(active=active, status=status)
 
-    def emit_identity(self, *, handle: str | None = None) -> None:
+    async def emit_identity(self, *, handle: str | None = None) -> None:
         """Prod subscribers to refresh the primary DID's identity (#identity)."""
-        self._primary.emit_identity(handle=handle)
+        await self._primary.emit_identity(handle=handle)
 
     # --- the doorman (per-repo read gating) ------------------------------------
 
@@ -651,11 +764,10 @@ class PeerServer:
         WireGuard interface, and keeps "this address is this DID, granted in
         this repo" as a cache in its own database, updated as repo owners
         write and delete capabilities in the repos it hosts (the host never
-        writes one) — the bring-your-own-database work makes that the
-        natural place. Like any cache it is for speed, not authority: it only
-        points the doorman at a repo, and the doorman still admits by the
-        capability currently in that repo. The map stays a per-lookup walk
-        until then.
+        writes one), and hands it to :class:`TunnelIdentityResolver` as
+        ``lookup``. The walk is then the fallback, and every hit is checked
+        against the capability currently in the named repo
+        (:meth:`_binding_is_live`) before it names anyone.
         """
         mapping: dict[str, tuple[str, str]] = {}
         for host in self._hosts.values():
@@ -667,6 +779,22 @@ class PeerServer:
                         continue  # a malformed key grants nobody
                     mapping[address] = (subject, host.did)
         return mapping
+
+    def _binding_is_live(self, address: str, did: str, repo_did: str) -> bool:
+        """Is "``address`` is ``did``, granted in ``repo_did``" what that repo
+        says right now? The capability currently in the repo must name the
+        DID and carry a key that derives exactly this address: a cache entry
+        that survived a revocation or a key rotation fails here."""
+        host = self._hosts.get(repo_did)
+        if host is None:
+            return False
+        entry = live_capabilities(host.repo).get(did)
+        if entry is None or not entry[1].wg_public_key:
+            return False
+        try:
+            return overlay_address(entry[1].wg_public_key) == address
+        except FastATPError:
+            return False
 
     async def _resolve_caller(self, conn: HTTPConnection) -> ResolvedCaller | None:
         result = self.identity_resolver(conn)
@@ -1040,4 +1168,5 @@ class PeerServer:
         """
         import uvicorn
 
+        await self._primary.announce()
         await uvicorn.Server(uvicorn.Config(self.app, host=host, port=port, **kwargs)).serve()

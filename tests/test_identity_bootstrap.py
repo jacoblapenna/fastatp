@@ -8,7 +8,6 @@ rebirth, never a quiet substitution."""
 import pytest
 
 from fastatp import crypto
-from fastatp.cid import CID
 from fastatp.exceptions import DIDDocumentInvalid, IdentityError, RepoError
 from fastatp.identity import Identity
 from fastatp.repo.store import SqliteBlockStore
@@ -169,8 +168,13 @@ async def test_lost_state_is_a_visible_rebirth(tmp_path):
     assert first.chain.twin_did != reborn.chain.twin_did  # DIFFERENT twin/slug
 
 
-def _head_cid(sdir):
-    return CID.decode((sdir / "repo_head").read_text().strip())
+async def _head_cid(sdir):
+    """The durable head: in the state dir's sqlite, beside the blocks."""
+    from fastatp.repo.head import SqliteHeadStore
+
+    head = await SqliteHeadStore(sdir / "blocks.sqlite").load(f"did:web:{DOMAIN}")
+    assert head is not None
+    return head.cid
 
 
 async def test_repo_head_always_names_a_present_block(tmp_path):
@@ -178,12 +182,12 @@ async def test_repo_head_always_names_a_present_block(tmp_path):
     the persist-before-GC ordering guarantees it, even across a rotation."""
     sdir = tmp_path / "id"
     ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
-    assert ident.store.get(_head_cid(sdir)) is not None  # genesis head
+    assert ident.store.get(await _head_cid(sdir)) is not None  # genesis head
     await ident.repo.put_record("com.example.state", "s", _Rec.make("x"))
-    assert ident.store.get(_head_cid(sdir)) is not None  # after a write + GC
+    assert ident.store.get(await _head_cid(sdir)) is not None  # after a write + GC
     assert ident.rotation_private_key is not None
     await ident.rotate(crypto.generate_keypair("k256"), ident.rotation_private_key)
-    assert ident.store.get(_head_cid(sdir)) is not None  # after a rotation recommit
+    assert ident.store.get(await _head_cid(sdir)) is not None  # after a rotation recommit
 
 
 async def test_persisted_keys_are_not_world_readable(tmp_path):
@@ -200,7 +204,7 @@ async def test_persisted_keys_are_not_world_readable(tmp_path):
 async def test_load_fails_closed_on_corrupt_head_block(tmp_path):
     sdir = tmp_path / "id"
     ident = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
-    head = _head_cid(sdir)
+    head = await _head_cid(sdir)
     ident.store.put(head, b"\xde\xad\xbe\xef not a commit")  # corrupt under the same key
     assert isinstance(ident.store, SqliteBlockStore)
     ident.store.close()
@@ -276,7 +280,7 @@ async def test_adopted_repo_migrates_without_resigning(tmp_path):
 
     sdir = tmp_path / "id"
     ident = await Identity.adopt_web(DOMAIN, key, sdir)
-    ident.import_repo_car(car)  # verifies against the SAME key
+    await ident.import_repo_car(car)  # verifies against the SAME key
     assert ident.repo.commit_cid == old_head  # the identical signed commit
     assert ident.repo.get_record("com.example.state", "one")["text"] == "carried over"
 
@@ -294,12 +298,12 @@ async def test_import_repo_car_rejects_foreign_repo(tmp_path):
     # a CAR signed by a DIFFERENT key under the same DID must not import
     thief = await Repo.create(f"did:web:{DOMAIN}", crypto.generate_keypair())
     with pytest.raises(RepoError):
-        ident.import_repo_car(thief.export_car())
+        await ident.import_repo_car(thief.export_car())
 
     # a CAR for a different DID must not import either
     other = await Repo.create("did:web:other.example", key)
     with pytest.raises(RepoError, match="CAR is for"):
-        ident.import_repo_car(other.export_car())
+        await ident.import_repo_car(other.export_car())
 
 
 async def test_import_gc_false_preserves_old_head_until_collected(tmp_path):
@@ -314,17 +318,15 @@ async def test_import_gc_false_preserves_old_head_until_collected(tmp_path):
 
     target = await Repo.create(f"did:web:{DOMAIN}", key)
     genesis_head = target.commit_cid
-    target.import_car(car, verify_key=key.public_key(), gc=False)
+    await target.import_car(car, verify_key=key.public_key(), gc=False)
     assert target.store.get(genesis_head) is not None  # old head still loadable
     target.collect_garbage()
     assert target.store.get(genesis_head) is None  # now (and only now) dropped
 
 
 async def test_import_crash_before_head_write_keeps_identity_loadable(tmp_path, monkeypatch):
-    """A crash between the state swap and the repo_head write must leave the
-    OLD head loadable — never a repo_head naming a GC'd block."""
-    from pathlib import Path
-
+    """A crash between the blocks landing and the head swap must leave the
+    OLD head loadable — never a head naming a GC'd block."""
     from fastatp.repo.repo import Repo
 
     key = crypto.generate_keypair()
@@ -336,18 +338,18 @@ async def test_import_crash_before_head_write_keeps_identity_loadable(tmp_path, 
     ident = await Identity.adopt_web(DOMAIN, key, sdir)
     genesis_head = ident.repo.commit_cid
 
-    def crash(self, *args, **kwargs):
+    async def crash(*args, **kwargs):
         raise RuntimeError("simulated crash before head write")
 
-    monkeypatch.setattr(Path, "write_text", crash)
+    monkeypatch.setattr(ident.repo.head_store, "swap", crash)
     with pytest.raises(RuntimeError, match="simulated crash"):
-        ident.import_repo_car(car)
+        await ident.import_repo_car(car)
     monkeypatch.undo()
     assert isinstance(ident.store, SqliteBlockStore)
     ident.store.close()
 
-    # reload: repo_head still names the genesis head, whose block must exist
+    # reload: the stored head still names the genesis head, whose block must exist
     reloaded = await Identity.bootstrap(domain=DOMAIN, state_dir=sdir)
     assert reloaded.repo.commit_cid == genesis_head
-    reloaded.import_repo_car(car)  # the migration simply retries
+    await reloaded.import_repo_car(car)  # the migration simply retries
     assert reloaded.repo.get_record("com.example.state", "one")["text"] == "carried over"

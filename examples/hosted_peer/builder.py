@@ -124,7 +124,7 @@ async def make_builder(domain: str) -> ExampleBuilder:
         car = await request.body()
         repo = Repo(twin_did, None)  # frozen: this host never holds the pen
         try:
-            repo.import_car(car, verify_key=key)
+            await repo.import_car(car, verify_key=key)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
         try:
@@ -134,10 +134,12 @@ async def make_builder(domain: str) -> ExampleBuilder:
             # only one can register)
             # gated (the default) with owner pull: the chain head's pen, and
             # the identity through its delegations, read it back; nobody else
-            builder.handles[twin_did] = peers.register(repo, owner_pull=builder.owner_pen)
+            builder.handles[twin_did] = await peers.register(repo, owner_pull=builder.owner_pen)
         except ValueError:
             return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
-        builder.handles[twin_did].emit_sync()  # the first state, announced like every later one
+        await builder.handles[
+            twin_did
+        ].emit_sync()  # the first state, announced like every later one
         return JSONResponse({"hosting": twin_did}, status_code=201)
 
     async def push_car(request: Request) -> Response:
@@ -161,14 +163,14 @@ async def make_builder(domain: str) -> ExampleBuilder:
             if handle is None:
                 repo = Repo(did, None)  # frozen: the device keeps its pen
                 try:
-                    repo.import_car(car, verify_key=key)
+                    await repo.import_car(car, verify_key=key)
                 except FastATPError as exc:
                     return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
                 try:
-                    builder.handles[did] = peers.register(repo, owner_pull=True)
+                    builder.handles[did] = await peers.register(repo, owner_pull=True)
                 except ValueError:
                     return JSONResponse({"error": "AlreadyHosted"}, status_code=409)
-                builder.handles[did].emit_sync()  # announce the first state too
+                await builder.handles[did].emit_sync()  # announce the first state too
                 return JSONResponse({"hosting": did}, status_code=201)
         else:
             handle = builder.handles.get(did)
@@ -182,12 +184,12 @@ async def make_builder(domain: str) -> ExampleBuilder:
         # hosted state back. Revs rise strictly across commits, so the head
         # must move forward: one parse verifies, checks freshness, imports.
         try:
-            handle.repo.import_car(car, verify_key=key, newer_than=handle.repo.rev)
+            await handle.repo.import_car(car, verify_key=key, newer_than=handle.repo.rev)
         except StaleCheckpoint as exc:
             return JSONResponse({"error": "Stale", "message": str(exc)}, status_code=409)
         except FastATPError as exc:
             return JSONResponse({"error": "BadCar", "message": str(exc)}, status_code=400)
-        handle.emit_sync()  # subscribers learn the new head
+        await handle.emit_sync()  # subscribers learn the new head
         return JSONResponse({"accepted": handle.repo.rev})
 
     peers.app.router.routes.append(Route("/signup", signup, methods=["POST"]))

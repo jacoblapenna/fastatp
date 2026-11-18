@@ -9,7 +9,7 @@ gate the v0.4 integration test uses, minus real kernel WG).
 import asyncio
 import base64
 import socket
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import pytest
 import uvicorn
@@ -78,7 +78,7 @@ class GatedInProcessSource(FrameSource):
         self._follower_pubkey = follower_pubkey
         self._queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._seq = 0
-        self._original_emit: Callable[[CommitEvent], CommitEvent] | None = None
+        self._original_emit: Callable[[CommitEvent], Awaitable[CommitEvent]] | None = None
 
     def _admitted(self) -> bool:
         return self._follower_pubkey in self._interface.peers()
@@ -96,8 +96,8 @@ class GatedInProcessSource(FrameSource):
             self._queue.put_nowait(encode_frame("#sync", body))
         original = self._producer._emit
 
-        def hook(event: CommitEvent) -> CommitEvent:
-            result = original(event)
+        async def hook(event: CommitEvent) -> CommitEvent:
+            result = await original(event)
             if self._admitted():
                 self._seq += 1
                 frame = encode_frame(

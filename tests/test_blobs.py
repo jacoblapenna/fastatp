@@ -167,7 +167,7 @@ async def test_blob_record_commits_emits_exports_imports_and_serves(serve_app, t
         # exports/imports: the CAR round-trips the record (not the blob bytes)
         car = srv.repo.export_car()
         replica = await Repo.create(DID, key)
-        replica.import_car(car)
+        await replica.import_car(car)
         got = replica.get_record(NSID, "post1")
         assert got is not None and got["image"]["ref"]["$link"] == blob_cid.encode()
         assert blob_cid not in replica.store.cids()

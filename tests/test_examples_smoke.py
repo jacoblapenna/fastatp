@@ -170,6 +170,17 @@ def test_operator_runbook(tmp_path):
     _ok(_run_example(*post, "--state", restored, "--text", "after rotation", cwd=tmp_path), "post")
 
 
+def _stored_head(state, did: str) -> str:
+    """The identity's durable head: in its sqlite, beside the blocks."""
+    import asyncio
+
+    from fastatp.repo.head import SqliteHeadStore
+
+    head = asyncio.run(SqliteHeadStore(state / "blocks.sqlite").load(did))
+    assert head is not None
+    return head.cid.encode()
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -195,7 +206,7 @@ def test_peer_serves_the_repo(tmp_path):
         ),
         "bootstrap_identity",
     )
-    head = (state / "repo_head").read_text().strip()
+    head = _stored_head(state, f"did:web:{DOMAIN}")
 
     port = _free_port()
     proc = subprocess.Popen(

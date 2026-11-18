@@ -117,7 +117,7 @@ async def test_car_export_import_lossless(repo):
     }
 
     clone = await Repo.create(DID, key)
-    clone.import_car(car, verify_key=key.public_key)
+    await clone.import_car(car, verify_key=key.public_key)
     assert clone.rev == repo.rev
     assert clone.root == repo.root
     rec_r1 = clone.get_record("com.example.telemetry.reading", "r1")
@@ -256,7 +256,7 @@ async def test_restored_repo_writes_after_its_head_even_with_the_clock_behind(mo
 
     monkeypatch.setattr(time, "time_ns", lambda: 1_000_000)  # 1970-01-01, far behind the head
     restored = await Repo.create("did:web:clock.example", key, clock=TidClock())
-    restored.import_car(car, verify_key=key.public_key())
+    await restored.import_car(car, verify_key=key.public_key())
     await restored.put_record(
         "com.example.note", "n-2", {"$type": "com.example.note", "text": "late"}
     )
@@ -305,7 +305,7 @@ async def test_a_car_whose_head_rev_is_not_a_tid_is_refused_before_any_state_cha
     )
     before = (target.commit_cid, target.rev, dict(target._entries))
     with pytest.raises(RepoError, match="not a TID"):
-        target.import_car(car, verify_key=key.public_key())
+        await target.import_car(car, verify_key=key.public_key())
     assert (target.commit_cid, target.rev, dict(target._entries)) == before
     assert target.get_record("com.example.note", "mine") is not None
 
@@ -352,15 +352,15 @@ async def test_import_car_newer_than_refuses_a_replayed_or_older_checkpoint():
     host = await Repo.create("did:web:fresh.example", key)
     # first hosting (the signup shape): a fresh repo's own genesis rev is
     # newer than this checkpoint, so the first import is unconditional
-    host.import_car(older, verify_key=key.public_key())
+    await host.import_car(older, verify_key=key.public_key())
     assert host.rev == older_rev
     with pytest.raises(StaleCheckpoint):  # a replay: equal rev
-        host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
-    host.import_car(newer, verify_key=key.public_key(), newer_than=host.rev)
+        await host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
+    await host.import_car(newer, verify_key=key.public_key(), newer_than=host.rev)
     assert host.rev == source.rev
     before = (host.commit_cid, host.rev)
     with pytest.raises(StaleCheckpoint):  # older than the head now
-        host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
+        await host.import_car(older, verify_key=key.public_key(), newer_than=host.rev)
     assert (host.commit_cid, host.rev) == before
     assert host.get_record("com.example.note", "n-2") is not None
     assert issubclass(StaleCheckpoint, RepoError)

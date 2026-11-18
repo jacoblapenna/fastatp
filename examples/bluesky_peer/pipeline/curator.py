@@ -53,7 +53,7 @@ class Curator:
     async def create(cls, server: PeerServer, domain: str) -> Curator:
         curator = cls(server, domain)
         repo = await Repo.create(curator.did, curator.signing_key)
-        curator.handle = server.register(repo, public=False)  # gated
+        curator.handle = await server.register(repo, public=False)  # gated
         return curator
 
     def document(self) -> DIDDocument:

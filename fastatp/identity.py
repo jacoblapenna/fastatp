@@ -13,6 +13,14 @@ entry point that enforces the durability contract:
   Without a ``state_dir`` (and without ``ephemeral_ok=True`` for tests) bootstrap
   **fails loudly**; it never silently mints a genesis under a durable name.
 
+Where the repo lives is one decision. ``storage=`` takes the builder's own
+database (anything with ``blocks``, ``heads`` and ``blobs``, see
+:mod:`fastatp.repo.storage`); without it a ``state_dir`` means the built-in
+sqlite there, and neither means memory. The identity's small files (the
+document chain, the pen when it is a software key, ``identity.json``) always
+live in the ``state_dir``; the repo, its head and its firehose seq live in the
+storage.
+
 The signing pen may live in hardware. ``bootstrap(..., signer=)`` and
 ``adopt_web(domain, signer, ...)`` take any :class:`fastatp.Signer` (a TPM, an
 HSM, a secure element) in place of a key: nothing is minted, no key bytes are
@@ -34,7 +42,6 @@ from __future__ import annotations
 import json
 import os
 import warnings
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -54,8 +61,10 @@ from fastatp.crypto import (
 from fastatp.did.continuity import ContinuityChain, build_did_document, build_pretty
 from fastatp.did.document import DIDDocument
 from fastatp.exceptions import IdentityError
-from fastatp.repo.repo import CommitEvent, Repo
-from fastatp.repo.store import BlockStore, MemoryBlockStore, SqliteBlockStore
+from fastatp.repo.head import Head, HeadStore
+from fastatp.repo.repo import Repo
+from fastatp.repo.storage import MemoryStorage, SqliteStorage, Storage
+from fastatp.repo.store import BlockStore
 
 if TYPE_CHECKING:
     from fastatp.peer import Peer
@@ -65,8 +74,7 @@ _META = "identity.json"
 _SIGNING_KEY = "signing.key"
 _ROTATION_KEY = "rotation.key"
 _CHAIN = "chain.json"
-_HEAD = "repo_head"
-_BLOCKS = "blocks.sqlite"
+_HEAD = "repo_head"  # pre-0.3 head file, folded into the head store on first load
 
 
 def _key_bytes(key: PrivateKey) -> bytes:
@@ -105,11 +113,21 @@ def _write_secret(path: Path, raw: bytes) -> None:
     os.chmod(path, 0o600)  # tighten again in case the file pre-existed looser
 
 
-def _head_writer(state_dir: Path) -> Callable[[CommitEvent], None]:
-    def _persist(event: CommitEvent) -> None:
-        (state_dir / _HEAD).write_text(event.commit_cid.encode())
+def _storage_for(sdir: Path | None, storage: Storage | None) -> Storage:
+    """The one storage decision: the builder's own database, else the built-in
+    sqlite in the state dir, else memory (an ephemeral peer)."""
+    if storage is not None:
+        return storage
+    return SqliteStorage(sdir) if sdir is not None else MemoryStorage()
 
-    return _persist
+
+async def _fold_legacy_head(sdir: Path, did: str, heads: HeadStore) -> None:
+    """A ``repo_head`` file from before 0.3 is read once and folded into the
+    head store (its seq starts at 0: followers of that stream resync once,
+    never again)."""
+    legacy = sdir / _HEAD
+    if legacy.exists() and await heads.load(did) is None:
+        await heads.swap(did, None, Head(CID.decode(legacy.read_text().strip()), 0))
 
 
 @dataclass
@@ -121,7 +139,7 @@ class Identity:
     #: what this identity signs with: a SoftwareSigner over ``signing_key``,
     #: or the app's own Signer for a pen in hardware
     signer: Signer
-    store: BlockStore
+    storage: Storage
     repo: Repo
     #: the software private key, when the pen is one; None for a hardware pen
     signing_key: PrivateKey | None = None
@@ -132,6 +150,11 @@ class Identity:
     #: the freshly generated rotation PRIVATE key, returned exactly once at mint
     #: (store it cold — the recovery pen); None when supplied externally or loaded
     rotation_private_key: PrivateKey | None = field(default=None, repr=False)
+
+    @property
+    def store(self) -> BlockStore:
+        """The repo's block store (``storage.blocks``)."""
+        return self.storage.blocks
 
     # --- peers / servers ------------------------------------------------------
 
@@ -204,7 +227,7 @@ class Identity:
 
     # --- repo migration ---------------------------------------------------------
 
-    def import_repo_car(self, data: bytes, *, verify: bool = True) -> None:
+    async def import_repo_car(self, data: bytes, *, verify: bool = True) -> None:
         """Bring an existing repo's full CAR into this identity (checkpoint load).
 
         With ``verify=True`` (default) the CAR's head commit must verify
@@ -212,17 +235,9 @@ class Identity:
         same key, so the existing commit chain is already valid and nothing
         needs re-signing. Persists the new head so a reload resumes from it.
         """
-        # gc=False: the durable head pointer must be persisted while BOTH the
-        # old and imported states are still in the store — a crash anywhere in
-        # this sequence leaves repo_head naming a block that exists (old head
-        # pre-write, new head post-write). GC only after the pointer is durable.
-        self.repo.import_car(data, verify_key=self.signer.public_key if verify else None, gc=False)
-        if self.state_dir is not None:
-            # import_car is a checkpoint load, not a commit — it deliberately
-            # fires no on_commit (nothing to announce on a firehose), so the
-            # durable head pointer is written here instead
-            (self.state_dir / _HEAD).write_text(self.repo.commit_cid.encode())
-        self.repo.collect_garbage()
+        # the import writes its blocks, then swaps the head in the head store
+        # (durable before anything is collected), then garbage-collects
+        await self.repo.import_car(data, verify_key=self.signer.public_key if verify else None)
 
     # --- bootstrap ------------------------------------------------------------
 
@@ -235,6 +250,7 @@ class Identity:
         *,
         rotation_public_keys: list[str] | None = None,
         persist_rotation_key: bool = False,
+        storage: Storage | None = None,
     ) -> Identity:
         """Adopt an EXISTING did:web into FastATP: same DID, same signing key.
 
@@ -271,6 +287,7 @@ class Identity:
             persist_rotation_key,
             curve_name(as_signer(signing_key).public_key.curve),
             signing_key=signing_key,
+            storage=storage,
         )
 
     @classmethod
@@ -284,15 +301,19 @@ class Identity:
         persist_rotation_key: bool = False,
         curve: str = "k256",
         signer: Signer | None = None,
+        storage: Storage | None = None,
     ) -> Identity:
         """Stand up a durable peer: mint on the first call, load on every
         later one. ``signer`` puts the pen in hardware: it is used in place of
         a minted key, nothing secret is written, and it must be passed again
-        on every load (its public key is checked against the recorded one)."""
+        on every load (its public key is checked against the recorded one).
+        ``storage`` puts the repo in the builder's own database and must be
+        passed again on every load too; without it the repo lives in the
+        ``state_dir``'s sqlite."""
         sdir = Path(state_dir) if state_dir is not None else None
 
         if domain is None:
-            return await cls._bootstrap_did_key(sdir, curve, signer)
+            return await cls._bootstrap_did_key(sdir, curve, signer, storage)
 
         if sdir is None:
             if not ephemeral_ok:
@@ -304,47 +325,64 @@ class Identity:
                     "ephemeral_ok=True for tests only."
                 )
             return await cls._mint_did_web(
-                domain, None, rotation_public_keys, persist_rotation_key, curve, signing_key=signer
+                domain,
+                None,
+                rotation_public_keys,
+                persist_rotation_key,
+                curve,
+                signing_key=signer,
+                storage=storage,
             )
 
         if (sdir / _META).exists():
-            return cls._load(sdir, signer)
+            return await cls._load(sdir, signer, storage)
         sdir.mkdir(parents=True, exist_ok=True)
         return await cls._mint_did_web(
-            domain, sdir, rotation_public_keys, persist_rotation_key, curve, signing_key=signer
+            domain,
+            sdir,
+            rotation_public_keys,
+            persist_rotation_key,
+            curve,
+            signing_key=signer,
+            storage=storage,
         )
 
     # --- bootstrap internals --------------------------------------------------
 
     @classmethod
     async def _bootstrap_did_key(
-        cls, sdir: Path | None, curve: str, signer: Signer | None
+        cls, sdir: Path | None, curve: str, signer: Signer | None, storage: Storage | None
     ) -> Identity:
         if sdir is not None and (sdir / _META).exists():
-            return cls._load(sdir, signer)
+            return await cls._load(sdir, signer, storage)
         pen: PrivateKey | Signer = signer if signer is not None else generate_keypair(curve)
         signing = as_signer(pen)
         curve = curve_name(signing.public_key.curve)
         did = encode_did_key(signing.public_key)
+        kept = _storage_for(sdir, storage)
         if sdir is None:
-            store: BlockStore = MemoryBlockStore()
-            repo = await Repo.create(did, signing, store=store)
+            # no state_dir means no marker file: the storage itself says
+            # whether this pen's repo exists already (a hardware pen on a
+            # durable storage boots this way every time)
+            if await kept.heads.load(did) is not None:
+                repo = await Repo.open(did, signing, storage=kept)
+            else:
+                repo = await Repo.create(did, signing, storage=kept)
             return cls(
                 did=did,
                 signer=signing,
-                store=store,
+                storage=kept,
                 repo=repo,
                 signing_key=_software_key(pen),
                 curve=curve,
             )
         sdir.mkdir(parents=True, exist_ok=True)
-        store = SqliteBlockStore(sdir / _BLOCKS)
-        repo = await Repo.create(did, signing, store=store, on_commit=_head_writer(sdir))
+        repo = await Repo.create(did, signing, storage=kept)
         _write_pen(sdir, pen, {"kind": "did:key", "did": did, "domain": None, "curve": curve})
         return cls(
             did=did,
             signer=signing,
-            store=store,
+            storage=kept,
             repo=repo,
             signing_key=_software_key(pen),
             state_dir=sdir,
@@ -361,6 +399,7 @@ class Identity:
         curve: str,
         *,
         signing_key: PrivateKey | Signer | None = None,  # imported or hardware; else minted
+        storage: Storage | None = None,
     ) -> Identity:
         pen: PrivateKey | Signer = (
             signing_key if signing_key is not None else generate_keypair(curve)
@@ -377,13 +416,13 @@ class Identity:
         chain = ContinuityChain.create(domain, signing.public_key, rotation_dids)
         did = f"did:web:{domain}"
 
+        kept = _storage_for(sdir, storage)
         if sdir is None:  # ephemeral_ok test mode: mint in memory, persist nothing
-            store: BlockStore = MemoryBlockStore()
-            repo = await Repo.create(did, signing, store=store)
+            repo = await Repo.create(did, signing, storage=kept)
             return cls(
                 did=did,
                 signer=signing,
-                store=store,
+                storage=kept,
                 repo=repo,
                 signing_key=_software_key(pen),
                 domain=domain,
@@ -392,8 +431,7 @@ class Identity:
                 rotation_private_key=rotation_private,
             )
 
-        store = SqliteBlockStore(sdir / _BLOCKS)
-        repo = await Repo.create(did, signing, store=store, on_commit=_head_writer(sdir))
+        repo = await Repo.create(did, signing, storage=kept)
         (sdir / _CHAIN).write_text(json.dumps(chain.to_json()))
         if persist_rotation_key and rotation_private is not None:
             warnings.warn(
@@ -410,7 +448,7 @@ class Identity:
         return cls(
             did=did,
             signer=signing,
-            store=store,
+            storage=kept,
             repo=repo,
             signing_key=_software_key(pen),
             domain=domain,
@@ -421,7 +459,9 @@ class Identity:
         )
 
     @classmethod
-    def _load(cls, sdir: Path, signer: Signer | None = None) -> Identity:
+    async def _load(
+        cls, sdir: Path, signer: Signer | None = None, storage: Storage | None = None
+    ) -> Identity:
         meta = json.loads((sdir / _META).read_text())
         curve = meta.get("curve", "k256")
         did = meta["did"]
@@ -498,14 +538,13 @@ class Identity:
                 stacklevel=2,
             )
 
-        store = SqliteBlockStore(sdir / _BLOCKS)
-        head_text = (sdir / _HEAD).read_text().strip()
-        head_cid = CID.decode(head_text)
-        repo = Repo(did, signing, store=store, head_cid=head_cid, on_commit=_head_writer(sdir))
+        kept = _storage_for(sdir, storage)
+        await _fold_legacy_head(sdir, did, kept.heads)
+        repo = await Repo.open(did, signing, storage=kept)
         return cls(
             did=did,
             signer=signing,
-            store=store,
+            storage=kept,
             repo=repo,
             signing_key=signing_key,
             domain=meta.get("domain"),

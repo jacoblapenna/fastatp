@@ -3,9 +3,10 @@
 Both stores are WAL-mode SQLite: a plain ``cp``/``rsync`` from under a live
 writer copies a stale or torn database. This script uses SQLite's online
 backup API, which folds the WAL into one consistent file per database. That
-fixes per-file corruption — but ``repo_head`` must agree with the block store
-(and the store garbage-collects on every commit), so the whole snapshot is
-only coherent when nothing is writing. **Stop the peer first** — the same
+fixes per-file corruption — and the repo's head and seq live in the same
+file as its blocks (``blocks.sqlite``), so one consistent copy of that file is
+the whole repo. The store garbage-collects on every commit, so the snapshot
+is only coherent when nothing is writing. **Stop the peer first** — the same
 single-writer discipline as ``post.py``.
 
 ``--exclude-secrets`` omits ``signing.key`` (and ``rotation.key``, which
@@ -28,7 +29,7 @@ import sys
 from pathlib import Path
 
 SECRET_FILES = ("signing.key", "rotation.key")
-PLAIN_FILES = ("identity.json", "chain.json", "repo_head")
+PLAIN_FILES = ("identity.json", "chain.json", "repo_head")  # repo_head: pre-0.3 dirs only
 SQLITE_FILES = ("blocks.sqlite", "blobs.sqlite")
 
 
