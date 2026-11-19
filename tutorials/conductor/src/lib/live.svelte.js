@@ -4,6 +4,7 @@
 
 export const live = $state({
   connected: false,
+  did: null, // the conductor's DID: whose repo the pictures and files are in
   manifest: null,
   cursor: -1,
   mode: 'paused',
@@ -51,6 +52,7 @@ export function connect() {
   socket.onmessage = (m) => {
     const msg = JSON.parse(m.data);
     if (msg.type === 'hello') {
+      live.did = msg.did;
       live.manifest = msg.manifest;
       live.machines = {};
       live.wire = [];
@@ -96,6 +98,23 @@ function apply(ev, fresh) {
   } else if (ev.type === 'proc' && m.procs[ev.step]) {
     Object.assign(m.procs[ev.step], { running: false, code: ev.code, ended: fresh ? Date.now() : 1 });
   } else if (ev.type === 'out') m.procs[ev.step]?.lines.push(ev.line);
+}
+
+// --- the pictures, from the conductor's own repo ------------------------------
+
+const pictures = new Map(); // path -> the SVG's text, once fetched
+
+// A picture the guide shows, as a blob in the conductor's repo: fetched once
+// with getBlob and inlined, so the theme's colours apply to it.
+export async function picture(path) {
+  if (pictures.has(path)) return pictures.get(path);
+  const cid = live.manifest?.images?.[path]?.cid;
+  if (!cid || !live.did) return null;
+  const res = await fetch(`/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(live.did)}&cid=${cid}`);
+  if (!res.ok) return null;
+  const text = await res.text();
+  pictures.set(path, text);
+  return text;
 }
 
 // --- who is who, from what the machines published about themselves ---------

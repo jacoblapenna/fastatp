@@ -5,6 +5,20 @@
    Dark is the default; [data-theme='light'] overrides it, and the reader's
    system preference picks one until they choose. The same tokens are meant
    to carry over to fastatp.com.
+
+   The palette is Gander, taken from the goose: neck black, chinstrap white
+   and beak orange. Its rules:
+   - Running text is text, text-soft or text-muted, nothing else.
+   - Every text and color token reads on every surface (bg, surface,
+     surface-raised, terminal-bg) in both themes: 7:1 for text and
+     text-soft, 4.5:1 for text-muted, primary and the meaning colors.
+   - Orange is the brand, and it is one orange on every page: `mark` for the
+     goose, `primary` for the main button, borders and rings, `highlight`
+     for what a key concept points at. None of them reports a state, and
+     none of them is small text: where an accent is words (a kicker, a
+     prompt, a label), it is `accent-text`, which deepens on a light page
+     so it reads.
+   - The meaning colors only ever mean what their comments say.
    ========================================================================== */
 
 :root {
@@ -23,59 +37,63 @@
   --radius-xl: 14px;
 
   /* Surfaces */
-  --color-bg: #0d1117;
-  --color-surface: #151b23;
-  --color-surface-raised: #1c2430;
-  --color-terminal-bg: #0a0e14;
-  --color-border: #2a3441;
-  --color-border-subtle: #1a212b;
-  --color-text: #e6edf3;
-  --color-text-soft: #c5cfdb;
-  --color-text-muted: #8b98a8;
-  --color-code-bg: #0b1220;
-  --color-code-text: #c0caf5;
-  --color-code-border: #30405a;
-  --color-backdrop: rgba(5, 8, 12, 0.72);
+  --color-bg: #101214;
+  --color-surface: #171a1d;
+  --color-surface-raised: #20242a;
+  --color-terminal-bg: #0a0c0e;
+  --color-border: #333a42;
+  --color-border-subtle: #23282e;
+  --color-text: #eceef0;
+  --color-text-soft: #c9ced4;
+  --color-text-muted: #939ba5;
+  --color-code-bg: #0c0e10;
+  --color-code-text: #dfe3e7;
+  --color-code-border: #333a42;
+  --color-backdrop: rgba(6, 7, 8, 0.72);
   --shadow-strong: 0 20px 60px rgba(0, 0, 0, 0.66);
 
   /* Brand */
-  --color-primary: #7aa2f7;
-  --color-on-primary: #0d1117;
+  --color-mark: #ff9a3d; /* the goose's orange: the same on every page, never text */
+  --color-primary: #ff9a3d; /* the main button, borders and rings: a fill, not text */
+  --color-on-primary: #1a1005;
+  --color-accent-text: #ff9a3d; /* the accent as words: kickers, prompts, labels */
 
   /* What the demo means by color, everywhere */
-  --color-verified: #9ece6a; /* a signature checked out */
-  --color-sealed: #73daca; /* inside WireGuard: sizes and timing only */
-  --color-plaintext: #ff9e64; /* readable by anyone on the path */
-  --color-danger: #f7768e; /* refused, unreachable, failed */
-  --color-highlight: #e0af68; /* what a key concept points at */
+  --color-verified: #8fd16a; /* a signature checked out */
+  --color-sealed: #5fd4c4; /* inside WireGuard: sizes and timing only */
+  --color-plaintext: #f2d349; /* readable by anyone on the path */
+  --color-danger: #ff7a85; /* refused, unreachable, failed */
+  --color-highlight: #ff9a3d; /* what a key concept points at: the brand color */
 
   color-scheme: dark;
 }
 
 :root[data-theme='light'] {
-  --color-bg: #f6f8fa;
+  --color-bg: #f4f5f6;
   --color-surface: #ffffff;
-  --color-surface-raised: #eef1f5;
-  --color-terminal-bg: #f3f5f8;
-  --color-border: #d0d7de;
-  --color-border-subtle: #e6eaef;
-  --color-text: #1f2328;
-  --color-text-soft: #333b45;
-  --color-text-muted: #59636e;
-  --color-code-bg: #eaeef6;
-  --color-code-text: #1b3a8a;
-  --color-code-border: #cfd8e8;
-  --color-backdrop: rgba(246, 248, 250, 0.78);
-  --shadow-strong: 0 20px 60px rgba(31, 35, 40, 0.25);
+  --color-surface-raised: #eceef0;
+  --color-terminal-bg: #f0f1f3;
+  --color-border: #cdd2d8;
+  --color-border-subtle: #e2e5e9;
+  --color-text: #15181b;
+  --color-text-soft: #2f353b;
+  --color-text-muted: #58616b;
+  --color-code-bg: #eceef0;
+  --color-code-text: #15181b;
+  --color-code-border: #cdd2d8;
+  --color-backdrop: rgba(244, 245, 246, 0.78);
+  --shadow-strong: 0 20px 60px rgba(21, 24, 27, 0.25);
 
-  --color-primary: #2f5fd0;
-  --color-on-primary: #ffffff;
+  --color-mark: #ff9a3d; /* the same: a mark is one color */
+  --color-primary: #ff9a3d; /* the same orange: a fill reads by its shape */
+  --color-on-primary: #1a1005;
+  --color-accent-text: #a84300; /* deeper, so orange words read on a light page */
 
-  --color-verified: #2a7d1f;
-  --color-sealed: #0f7b70;
-  --color-plaintext: #b9520f;
-  --color-danger: #c4314b;
-  --color-highlight: #a86a00;
+  --color-verified: #256f1c;
+  --color-sealed: #0b6f66;
+  --color-plaintext: #735c00;
+  --color-danger: #b3243f;
+  --color-highlight: #ff9a3d;
 
   color-scheme: light;
 }

@@ -62,6 +62,19 @@ def test_getting_started_is_a_playable_score():
         "Admission and eviction",
     ]
     assert all(c["blurb"] and c["concepts"] and c["commands"] for c in score["chapters"])
+    # the pictures under the key concepts are the guide's own images, and exist
+    named = [s["sketch"] for s in score["steps"] if s["kind"] == "concept" and "sketch" in s]
+    assert len(named) >= 9 and len(set(named)) == len(named)
+    for path in named:
+        assert path in score["images"] and score["images"][path]["alt"]
+        assert (TUTORIALS / path).is_file()
+    # the opening caption and the two drawings in the prose are pictures too
+    captioned = [s["sketch"] for s in score["steps"] if s["kind"] == "say" and "sketch" in s]
+    assert "sketches/lan.svg" in captioned and "sketches/block-store.svg" in captioned
+    # no picture has text running past its edge
+    sketch_check = _tool("sketch_check")
+    for path in score["images"]:
+        assert sketch_check.overruns(str(TUTORIALS / path)) == []
     starts = [c["start"] for c in score["chapters"]] + [len(score["steps"])]
     for a, b in pairwise(starts):
         assert any(s["kind"] == "run" for s in score["steps"][a:b])
@@ -95,8 +108,10 @@ def test_getting_started_is_a_playable_score():
     assert {"peer.py", "follow.py", "tail.py", "verify.py", "blocks.py", "pair.py"} <= shown
     assert all(s["code"]["file"] in score["files"] for s in score["steps"] if s.get("code"))
     drop = next(s for s in score["steps"] if s["kind"] == "run" and "/drop" in s["cmd"])
-    assert drop["code"] == {"file": "peer.py", "focus": "async def drop("}
-    assert drop["code"]["focus"] in score["files"]["peer.py"]["text"]
+    assert drop["code"] == {"file": "peer.py", "focus": "async def drop("}  # the cue above it
+    for s in score["steps"]:
+        if s.get("code", {}).get("focus"):
+            assert s["code"]["focus"] in score["files"][s["code"]["file"]]["text"]
     # nothing a section says last is lost: its closing paragraph is a caption
     captions_list = [s["text"] for s in score["steps"] if s["kind"] == "say"]
     assert any(c.startswith("That is a conversation") for c in captions_list)
@@ -128,6 +143,7 @@ def test_a_cue_carries_its_whole_step():
         elif kind == "concept":
             assert cue.title == step["title"] and cue.text == step["body"]
             assert cue.style in ("key", "important", "tip")
+            assert cue.sketch == step.get("sketch", "")
         elif kind == "heading":
             assert cue.text == step["text"] and cue.level == step["level"]
         elif kind == "layout":
@@ -154,3 +170,10 @@ def test_a_cue_carries_its_whole_step():
         "open",
         "chapter",
     } <= seen
+
+
+def test_the_favicon_is_the_brand_goose():
+    """The tab icon is a static file, so it carries its own copy of the goose: the same path."""
+    brand = (TUTORIALS / "conductor" / "src" / "brand" / "brand.js").read_text()
+    goose = brand.split("export const goose =")[1].split("'")[1]
+    assert f'd="{goose}"' in (TUTORIALS / "conductor" / "public" / "favicon.svg").read_text()

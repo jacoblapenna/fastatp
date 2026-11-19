@@ -43,7 +43,7 @@
   .proc:first-child { margin-top: 0; }
   .proc.latest { opacity: 1; }
   .cmd { color: var(--color-text); word-break: break-all; }
-  .prompt { color: var(--color-primary); }
+  .prompt { color: var(--color-accent-text); }
   .out { color: var(--color-text-muted); white-space: pre-wrap; word-break: break-all; }
   .latest .out { color: var(--color-text-soft); }
   .out.good { color: var(--color-verified); }

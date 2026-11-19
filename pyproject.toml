@@ -102,8 +102,9 @@ packages = ["fastatp"]
 
 [tool.hatch.build.targets.sdist]
 # the tutorials (Docker lab, demo engine, conductor page) are the repo's, not
-# the package's: they run against the tree, never ship in a source archive
-exclude = ["tutorials/"]
+# the package's: they run against the tree, never ship in a source archive.
+# The brand folder (logo files and their generator) is the repo's too.
+exclude = ["tutorials/", "brand/"]
 
 [tool.ruff]
 line-length = 100

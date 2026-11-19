@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 import uvicorn
-from backstage import Control, Cue, File, Show, follow
+from backstage import Control, Cue, File, Image, Show, follow
 from dids import resolver
 from starlette.applications import Starlette
 from starlette.responses import FileResponse, JSONResponse
@@ -322,7 +322,9 @@ def jump(number: str) -> None:
 async def browser(ws: WebSocket) -> None:
     await ws.accept()
     browsers.add(ws)
-    await ws.send_text(json.dumps({"type": "hello", "manifest": score, "events": events, **state}))
+    await ws.send_text(
+        json.dumps({"type": "hello", "did": did, "manifest": score, "events": events, **state})
+    )
     try:
         while True:
             msg = json.loads(await ws.receive_text())
@@ -352,6 +354,15 @@ async def lifespan(app):
     )  # before any cue: "this is the show now"
     for name, lab_file in score.get("files", {}).items():  # the code a cue can put on show
         await server.put_record(File.nsid, name, File(show=SHOW, name=name, **lab_file))
+    for name, image in score.get("images", {}).items():  # the pictures, as blobs beside the repo
+        data = Path(name).read_bytes()
+        blob = server.repo.add_blob(data, "image/svg+xml" if name.endswith(".svg") else "image/png")
+        await server.put_record(
+            Image.nsid,
+            name.replace("/", "-"),
+            Image(show=SHOW, name=name, alt=image["alt"], image=blob),
+        )
+        image["cid"] = blob.ref.ref  # the page fetches it from this repo with getBlob
     tasks = [asyncio.create_task(director())]
     for machine in score["machines"]:
         tasks.append(

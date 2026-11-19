@@ -7,7 +7,8 @@ plays it. Most steps come straight from what the guide already says: a ```bash
 block whose lines read `./lab.sh <machine> <command>` is that machine's line,
 every ``### `name.py` `` section (its first paragraph and its first ```python
 block) is a lab file the screen knows, shown beside the machine whose command
-runs it, open at the part the command reaches,
+runs it, open at the part the command reaches, and every image is a picture the
+screen can show,
 a `> 🔑 **Key concept: ...**` blockquote (or `⚠️ **Important: ...**`, or
 `💡 **Did you know: ...**`) is a pause with a "Got it", and each
 paragraph of prose is a caption: one press of Next each, flushed before the
@@ -38,6 +39,14 @@ GitHub and fastatp.com do not render:
                                           open from here on, or fold it again
   <!-- @demo point alice.tunnel diagram --> right after a key concept or a paragraph: what it
                                           points at, outlined and opened while it is on
+  ![what it shows](sketches/private-repo.svg)
+                                          an image goes with the paragraph or key concept
+                                          above it; a concept with none takes the picture of
+                                          the caption just above it (one paragraph may sit
+                                          between); the conductor keeps every picture as a blob
+  <!-- @demo code peer.py "async def drop(" -->
+                                          the next block's commands reach this file, here;
+                                          a command that runs `python x.py` says so itself
   <!-- @demo terminal -->...<!-- @demo /terminal -->
                                           prose for the person at a terminal ("Ctrl-C it",
                                           "in a second terminal"), skipped on the screen,
@@ -54,21 +63,13 @@ import sys
 LAB = re.compile(r"^\./lab\.sh (\S+)(?: (.*))?$")
 CAPTURE = re.compile(r"^(\w+)=\$\((.*)\)$")
 FILE_HEADING = re.compile(r"^### `([\w.]+)`")  # a section that shows one lab file
-ROUTES = {"/drop": "drop", "/admit": "admit", "/evict": "evict", "/whoami": "whoami"}
+IMAGE = re.compile(r"^!\[(.*?)\]\((\S+)\)$")  # a picture, on a line of its own
 
 
 def code_for(cmd: str) -> dict | None:
-    """The lab file a command runs, and the line to open it at.
-
-    A script by name; a request to one of the peer's own routes, at that
-    route's handler; the peer's log, at its boot."""
+    """The lab file a command names, when it runs a script by name."""
     if m := re.search(r"python (\w+\.py)", cmd):
         return {"file": m.group(1), "focus": ""}
-    for route, handler in ROUTES.items():
-        if route in cmd:
-            return {"file": "peer.py", "focus": f"async def {handler}("}
-    if cmd == "cat /tmp/peer.log":
-        return {"file": "peer.py", "focus": "async def boot("}
     return None
 
 
@@ -130,14 +131,17 @@ def parse(text: str) -> dict:
     machines: list[str] = []
     steps: list[dict] = []
     active = False
-    say: list[str] = []  # prose since the last step: a caption per paragraph
+    say: list[dict] = []  # prose since the last step: a caption per paragraph
+    recent_image: list | None = None  # [path, paragraphs since]: a picture a concept may inherit
     replace_next_bash = False  # run directives just stood in for the next block
     skip_next_bash = False
     skip_next_para = False  # a terminal directive on its own line: the next paragraph is typing
     in_terminal = False  # inside a terminal span that started in an earlier paragraph
     last_block: list[dict] = []  # the run steps of the last bash block, for save
     files: dict[str, dict] = {}  # name -> {"gloss", "text"}: the lab files the guide shows
+    images: dict[str, dict] = {}  # path -> {"alt"}: the pictures the guide shows
     file_section: dict | None = None  # the `### `name.py`` section being read
+    code_cue: dict | None = None  # a code cue waiting for the next bash block
 
     def emit(step: dict) -> dict:
         step["id"] = len(steps)
@@ -145,8 +149,8 @@ def parse(text: str) -> dict:
         return step
 
     def emit_say() -> None:
-        for text in say:
-            emit({"kind": "say", "text": text})
+        for caption in say:
+            emit({"kind": "say", **caption})
         say.clear()
 
     def command(line: str) -> dict | None:
@@ -165,7 +169,6 @@ def parse(text: str) -> dict:
                 "cmd": "cat /tmp/peer.log",
                 "display": line,
                 "bg": False,
-                "code": code_for("cat /tmp/peer.log"),
             }
         if who == "restart" and rest in machines:
             return {"kind": "restart", "machine": rest, "display": line}
@@ -242,6 +245,9 @@ def parse(text: str) -> dict:
                 number, _, title = arg.partition(" ")
                 emit_say()
                 emit({"kind": "chapter", "number": int(number), "title": title.strip().strip('"')})
+            elif verb == "code":
+                name, _, focus = arg.partition(" ")
+                code_cue = {"file": name, "focus": focus.strip().strip('"')}
             elif verb == "blurb":
                 if steps and steps[-1]["kind"] == "chapter":
                     steps[-1]["blurb"] = arg
@@ -283,9 +289,13 @@ def parse(text: str) -> dict:
                 ]
                 if block:
                     emit_say()
+                    recent_image = None  # a command between them: not the concept's picture
                     for s in block:
+                        if code_cue and s["kind"] in ("run", "restart"):
+                            s["code"] = dict(code_cue)  # the cue above said where this reaches
                         emit(s)
                     last_block = [s for s in block if s["kind"] == "run"]
+                code_cue = None
             elif lang in ("text", "json") and last_block and steps and steps[-1] is last_block[-1]:
                 last_block[-1]["expect"] = "\n".join(body)  # what the guide says should come back
             replace_next_bash = False
@@ -298,22 +308,40 @@ def parse(text: str) -> dict:
                 i += 1
             if active and (m := CONCEPT.match(as_lines([q for q in quote if q]))):
                 emit_say()
-                emit(
-                    {
-                        "kind": "concept",
-                        "style": STYLES[m.group(1)],
-                        "title": m.group(2).rstrip("."),
-                        "body": m.group(3),
-                        "point": [],
-                    }
-                )
+                concept: dict = {
+                    "kind": "concept",
+                    "style": STYLES[m.group(1)],
+                    "title": m.group(2).rstrip("."),
+                    "body": m.group(3),
+                    "point": [],
+                }
+                if recent_image and recent_image[1] <= 1:  # the caption's picture, just above
+                    concept["sketch"] = recent_image[0]
+                recent_image = None
+                emit(concept)
             replace_next_bash = False
+            continue
+
+        if m := IMAGE.match(stripped):
+            alt, path = m.group(1), m.group(2)
+            images[path] = {"alt": alt}
+            recent_image = [path, 0]
+            if active:  # the picture goes with the words just above it
+                if say:
+                    say[-1]["sketch"] = path
+                elif steps and steps[-1]["kind"] == "say":
+                    steps[-1]["sketch"] = path
+                elif steps and steps[-1]["kind"] == "concept":
+                    steps[-1]["sketch"] = path
+                    recent_image = None  # a concept's own picture is nobody else's
+            i += 1
             continue
 
         if stripped.startswith("#"):
             level = len(stripped) - len(stripped.lstrip("#"))
             i += 1
             file_section = None
+            recent_image = None
             if m := FILE_HEADING.match(stripped):
                 file_section = files[m.group(1)] = {"gloss": "", "text": ""}
             if active:
@@ -340,13 +368,21 @@ def parse(text: str) -> dict:
             if file_section is not None and not file_section["gloss"] and not file_section["text"]:
                 file_section["gloss"] = text  # what the file is for, in a line
             if active and text and not skip_next_para:
-                say.append(text)
+                say.append({"text": text})
+                if recent_image:
+                    recent_image[1] += 1
             skip_next_para = False
             replace_next_bash = False
             continue
         i += 1
 
-    return {"machines": machines, "chapters": chapters(steps), "files": files, "steps": steps}
+    return {
+        "machines": machines,
+        "chapters": chapters(steps),
+        "files": files,
+        "images": images,
+        "steps": steps,
+    }
 
 
 def chapters(steps: list[dict]) -> list[dict]:

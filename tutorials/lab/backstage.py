@@ -15,6 +15,7 @@ import websockets
 from dids import resolver
 
 from fastatp import Lexicon, RepoMirror
+from fastatp.lex.types import Blob
 
 
 class Show(Lexicon):
@@ -34,6 +35,17 @@ class File(Lexicon):
     name: str
     gloss: str
     text: str
+
+
+class Image(Lexicon):
+    """The conductor, in its own repo, one per picture the guide shows: the
+    bytes ride as a blob beside the repo, fetched with ``getBlob``."""
+
+    nsid = "com.fastatp.demo.image"
+    show: str
+    name: str  # the path the guide uses, such as sketches/private-repo.svg
+    alt: str
+    image: Blob
 
 
 class Cue(Lexicon):
@@ -64,6 +76,7 @@ class Cue(Lexicon):
     style: str = ""  # a key concept's kind: key, important, tip
     level: int = 0  # a heading's depth
     targets: list[str] = []  # what the step points at or lays out: machines, sections, the wire
+    sketch: str = ""  # the picture a key concept's card carries: an Image record's name
     file: str = ""  # the lab file a command runs, shown beside its machine (a File record)...
     focus: str = ""  # ...open at the first line holding this
     wait_ms: int = 0  # a wait, in milliseconds: the data model has no floats
@@ -90,6 +103,7 @@ class Cue(Lexicon):
             style=step.get("style", ""),
             level=step.get("level", 0),
             targets=step.get("point") or step.get("targets") or step.get("machines") or [],
+            sketch=step.get("sketch", ""),
             file=code.get("file", ""),
             focus=code.get("focus", ""),
             wait_ms=int(step.get("seconds", 0) * 1000),

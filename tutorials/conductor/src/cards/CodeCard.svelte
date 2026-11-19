@@ -87,6 +87,6 @@
   .n { display: inline-block; width: 3.2em; color: var(--color-text-muted); opacity: 0.6; user-select: none; }
   pre :global(.cmt) { color: var(--color-verified); font-style: italic; }
   pre :global(.str) { color: var(--color-plaintext); }
-  pre :global(.kw) { color: var(--color-primary); }
+  pre :global(.kw) { color: var(--color-accent-text); }
   pre :global(.deco) { color: var(--color-sealed); }
 </style>

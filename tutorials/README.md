@@ -93,7 +93,18 @@ updates the guide.
   folded otherwise. A `<!-- @demo chapter N "Title" -->` starts or
   continues chapter N, and a `<!-- @demo blurb ... -->` under it is the
   sentence or two its card shows; the show plays chapters by number, so a
-  chapter can sit anywhere on the page. Every ``### `name.py` ``
+  chapter can sit anywhere on the page. A key concept's card leads with its
+  first sentence or two and keeps the rest a click away; an image right
+  under a concept, an SVG in `sketches/` drawn with the theme's variables
+  and light fallbacks, is the card's picture, on the page and on the screen.
+  Draw one for every concept that has a shape; a picture under a paragraph
+  is that caption's picture, and a concept takes the picture of the caption
+  just above it when it has none. `tools/sketch_check.py` reports text past
+  an edge and `tools/sketch_render.py` renders each picture to look at. A
+  `<!-- @demo code file "line" -->` above a command block says which lab
+  file the commands reach, and where to open it. The conductor keeps the
+  files as records and the pictures as blobs in its repo; the page fetches
+  them from there. Every ``### `name.py` ``
   section opens with one line on what the file is for: the screen heads
   the code with it when a command runs that file. `tools/md_manifest.py`
   lists every directive.

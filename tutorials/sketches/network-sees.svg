@@ -1,0 +1,19 @@
+<!-- what a network sees: the public side in full, the private side as sizes and timing -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="http rows the observer reads in full; WireGuard rows that are only endpoints, sizes and timing">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-plaintext: #735c00; --fb-sealed: #0b6f66; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; }
+    @media (prefers-color-scheme: dark) { :root { --fb-plaintext: #f2d349; --fb-sealed: #5fd4c4; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <text x="14" y="22" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))" letter-spacing="0.06em">THE PUBLIC SIDE, ON THE WIRE</text>
+  <rect x="14" y="30" width="292" height="22" rx="4" fill="var(--color-plaintext, var(--fb-plaintext, #735c00))" fill-opacity="0.14" stroke="var(--color-plaintext, var(--fb-plaintext, #735c00))" /><text x="22" y="45" font-size="8.5" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bob → alice · http · GET /.well-known/did.json · 318B</text>
+  <rect x="14" y="56" width="292" height="22" rx="4" fill="var(--color-plaintext, var(--fb-plaintext, #735c00))" fill-opacity="0.14" stroke="var(--color-plaintext, var(--fb-plaintext, #735c00))" /><text x="22" y="71" font-size="8.5" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bob → alice · http · GET …getRepo · "hello, LAN" inside</text>
+  <text x="160" y="94" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">every record, and who reads whom · nothing forgeable</text>
+  <text x="14" y="120" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))" letter-spacing="0.06em">THE PRIVATE SIDE, ON THE WIRE</text>
+  <rect x="14" y="128" width="292" height="22" rx="4" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))" fill-opacity="0.14" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" /><text x="22" y="143" font-size="8.5" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">bob → alice · WireGuard · handshake initiation · 148B</text>
+  <rect x="14" y="154" width="292" height="22" rx="4" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))" fill-opacity="0.14" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" /><text x="22" y="169" font-size="8.5" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">alice → bob · WireGuard · transport data · 1424B</text>
+  <text x="160" y="187" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">endpoints, sizes and timing;</text>
+  <text x="160" y="198" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">no DID, no route, no text, not even that the channel exists</text>
+</svg>

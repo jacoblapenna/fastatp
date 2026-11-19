@@ -1,8 +1,16 @@
 <script>
   // The guide's own words for what is happening now.
   import { md } from '../lib/md.js';
+  import { picture } from '../lib/live.svelte.js';
 
   let { script, back = 0 } = $props();
+  let svg = $state(null); // the caption's picture, from the conductor's repo
+
+  $effect(() => {
+    const path = script.step?.kind === 'say' ? script.step.sketch : null;
+    svg = null;
+    if (path) picture(path).then((text) => (svg = text));
+  });
 </script>
 
 <div class="caption" class:reading={script.step?.kind === 'say'} class:back class:opening={script.step?.kind === 'chapter'}>
@@ -14,7 +22,12 @@
   {#if script.step?.kind === 'chapter'}
     <h1>{script.step.title}</h1>
   {/if}
-  {#if script.say}<div class="text">{@html md(script.say)}</div>{/if}
+  <div class="row">
+    <div class="words">
+      {#if script.say}<div class="text">{@html md(script.say)}</div>{/if}
+    </div>
+    {#if svg}<div class="picture">{@html svg}</div>{/if}
+  </div>
   {#if script.step?.kind === 'run' || script.step?.kind === 'restart'}
     <div class="now"><span>{script.step.machine}</span> {script.step.display}</div>
   {:else if script.step?.kind === 'stop'}
@@ -26,13 +39,17 @@
   .caption { padding: 10px 16px; border-bottom: 1px solid var(--color-border); min-height: 86px; transition: background 0.3s; }
   .caption.reading { background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface)); }
   .caption.reading .text { font-size: 15.5px; color: var(--color-text); }
-  .where { color: var(--color-primary); font-weight: 600; font-size: 13px; }
+  .where { color: var(--color-accent-text); font-weight: 600; font-size: 13px; }
   .caption.back { background: color-mix(in srgb, var(--color-highlight) 8%, var(--color-surface)); }
   .caption.opening { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)); }
   .chapter { color: var(--color-text-muted); font-weight: 500; margin-right: 10px; }
   h1 { margin: 6px 0 2px; font-size: 26px; line-height: 1.2; }
-  .looking { margin-left: 12px; color: var(--color-highlight); font-weight: 500; }
+  .looking { margin-left: 12px; color: var(--color-accent-text); font-weight: 500; }
   .sep { color: var(--color-text-muted); margin: 0 6px; }
+  .row { display: flex; gap: 18px; align-items: flex-start; }
+  .words { flex: 1 1 0; min-width: 0; }
+  .picture { flex: 0 0 auto; width: min(420px, 38%); max-height: 190px; background: var(--color-terminal-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; }
+  .picture :global(svg) { width: 100%; height: auto; max-height: 176px; display: block; }
   .text { margin: 4px 0 0; max-width: 110ch; color: var(--color-text); }
   .text :global(ul), .text :global(ol) { margin: 4px 0 0; padding-left: 20px; }
   .text :global(li) { margin: 2px 0; }

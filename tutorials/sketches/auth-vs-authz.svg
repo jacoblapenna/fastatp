@@ -1,0 +1,25 @@
+<!-- authentication is a signature, authorization is a record: two questions, two answers, no shared secret in either -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="who said this is answered by a signature checked against the DID document; who may read this by a capability record enforced by the tunnel">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-sealed: #0b6f66; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-sealed: #5fd4c4; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <rect x="12" y="14" width="142" height="172" rx="10" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="83" y="36" text-anchor="middle" font-weight="600" font-size="12" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">"who said this?"</text>
+  <rect x="20" y="50" width="126" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" /><text x="83" y="69" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">signed record</text>
+  <path d="M83 80 V96" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" marker-end="url(#z)" />
+  <rect x="20" y="100" width="126" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" /><text x="83" y="119" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">DID document</text>
+  <text x="83" y="150" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">any reader checks it alone</text>
+  <text x="83" y="172" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">no login, no token, no server</text>
+  <rect x="166" y="14" width="142" height="172" rx="10" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="237" y="36" text-anchor="middle" font-weight="600" font-size="12" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">"who may read this?"</text>
+  <rect x="174" y="50" width="126" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" /><text x="237" y="69" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">capability record</text>
+  <path d="M237 80 V96" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" marker-end="url(#z)" />
+  <rect x="174" y="100" width="126" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="2" /><text x="237" y="119" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">the tunnel enforces</text>
+  <text x="237" y="150" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">presence admits, absence revokes</text>
+  <text x="237" y="172" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">no password, no API key</text>
+  <defs><marker id="z" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke" /></marker></defs>
+</svg>

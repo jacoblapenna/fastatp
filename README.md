@@ -1,4 +1,9 @@
-# FastATP
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jacoblapenna/fastatp/main/brand/lockup-dark.svg">
+    <img src="https://raw.githubusercontent.com/jacoblapenna/fastatp/main/brand/lockup-light.svg" alt="FastATP" width="420">
+  </picture>
+</h1>
 
 **Signed mail for machines, not remote procedure calls with a login.**
 

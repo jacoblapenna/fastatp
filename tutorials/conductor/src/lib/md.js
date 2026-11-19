@@ -33,3 +33,17 @@ export function md(text = '') {
   if (list) out += `</${list}>`;
   return out;
 }
+
+// A key concept's words, split for the card: the first sentence or two as
+// the claim, the rest a click away. A body with a list is all claim.
+export function lead(body = '') {
+  if (body.includes('\n')) return { lead: body, rest: '' };
+  const sentences = body.split(/(?<=[.!?])\s+(?=[A-Z`*"(])/);
+  let lead = '';
+  let i = 0;
+  while (i < sentences.length && lead.split(/\s+/).filter(Boolean).length < 22) {
+    lead += (lead ? ' ' : '') + sentences[i];
+    i += 1;
+  }
+  return { lead, rest: sentences.slice(i).join(' ') };
+}

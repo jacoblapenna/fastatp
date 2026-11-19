@@ -3,6 +3,7 @@
   // it covers and the key concepts it carries. Choosing one opens it; a
   // chapter builds on the ones before it, so choosing ahead plays them first,
   // fast and without stops, then opens the one chosen.
+  import BrandMark from '../brand/BrandMark.svelte';
   import { live, send } from '../lib/live.svelte.js';
 
   let { chapters, current, onClose } = $props();
@@ -36,7 +37,8 @@
 
 <div class="overlay">
   <div class="head">
-    <div>
+    <div class="skein"><BrandMark variant="skein" size="84px" /></div>
+    <div class="title">
       <h1>{live.manifest?.source?.replace('.md', '').replaceAll('_', ' ').toLowerCase() ?? 'the show'}, in {chapters.length} chapters</h1>
       <p>Each chapter builds on the one before. Choose one; the machines play their way to it.</p>
     </div>
@@ -72,7 +74,9 @@
     position: fixed; inset: 0; z-index: 20; background: var(--color-bg);
     display: flex; flex-direction: column; padding: 28px 36px; gap: 20px;
   }
-  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  .head { display: flex; align-items: center; gap: 20px; }
+  .title { flex: 1; min-width: 0; }
+  .close { align-self: flex-start; }
   h1 { margin: 0; font-size: 26px; }
   .head p { margin: 6px 0 0; color: var(--color-text-muted); }
   .close { padding: 4px 10px; }
@@ -86,7 +90,7 @@
   .card:disabled { cursor: default; opacity: 0.7; }
   .card.now { border-color: var(--color-highlight); box-shadow: 0 0 0 1px var(--color-highlight); }
   .card.done { opacity: 0.8; }
-  .meta { font: 12px var(--font-mono); color: var(--color-primary); }
+  .meta { font: 12px var(--font-mono); color: var(--color-accent-text); }
   h2 { margin: 0; font-size: 21px; line-height: 1.2; }
   .blurb { margin: 0; font-size: 15px; line-height: 1.5; color: var(--color-text-soft); }
   .concepts { margin-top: auto; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--color-text-muted); }

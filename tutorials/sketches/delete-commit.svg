@@ -1,0 +1,31 @@
+<!-- a delete is a commit: the path from the leaf to the root is rebuilt and re-signed; the other leaves keep their hashes -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 200" role="img" aria-label="before and after a delete: a new root and a new tree node, two records unchanged, one gone">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-danger: #b3243f; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-danger: #ff7a85; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="340" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <text x="78" y="20" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">before</text>
+  <rect x="38" y="28" width="80" height="24" rx="5" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" /><text x="78" y="44" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">commit</text>
+  <rect x="38" y="66" width="80" height="24" rx="5" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" /><text x="78" y="82" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">tree node</text>
+  <path d="M78 52 V64" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="1.5" />
+  <path d="M78 90 V104 M36 104 H120 M36 104 V114 M78 104 V114 M120 104 V114" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="1.5" />
+  <rect x="18" y="116" width="36" height="22" rx="4" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" /><text x="36" y="131" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">note 1</text>
+  <rect x="60" y="116" width="36" height="22" rx="4" fill="none" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-dasharray="3 3" /><text x="78" y="131" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">note 2</text>
+  <rect x="102" y="116" width="36" height="22" rx="4" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" /><text x="120" y="131" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">note 3</text>
+  <path d="M150 100 H170" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" marker-end="url(#d)" />
+  <text x="242" y="20" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">after the delete</text>
+  <rect x="202" y="28" width="80" height="24" rx="5" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" /><text x="242" y="44" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">commit</text>
+  <text x="286" y="44" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">new, signed</text>
+  <rect x="202" y="66" width="80" height="24" rx="5" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" /><text x="242" y="82" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">tree node</text>
+  <text x="286" y="82" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">new</text>
+  <path d="M242 52 V64" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="1.5" />
+  <path d="M242 90 V104 M212 104 H272 M212 104 V114 M272 104 V114" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="1.5" />
+  <rect x="194" y="116" width="36" height="22" rx="4" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" /><text x="212" y="131" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">note 1</text>
+  <rect x="254" y="116" width="36" height="22" rx="4" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" /><text x="272" y="131" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">note 3</text>
+  <text x="242" y="158" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">same bytes, same hashes</text>
+  <text x="170" y="186" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">a follower checks that "delete this path" reproduces the new signed root</text>
+  <defs><marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke" /></marker></defs>
+</svg>

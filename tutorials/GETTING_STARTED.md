@@ -21,30 +21,16 @@ between the commands; they are the point.
 
 ## What you are building
 
-```text
-                         the LAN  192.168.77.0/24
-           (a private network inside Docker; your computer is its router)
-  ════════════╤═════════════════════════╤═════════════════════════╤════════
-              │                         │                         │
-      ┌───────┴────────┐        ┌───────┴────────┐        ┌───────┴────────┐
-      │   alice.lan    │        │    bob.lan     │        │    eve.lan     │
-      │  192.168.77.11 │        │  192.168.77.12 │        │  192.168.77.13 │
-      │    peer.py     │        │    peer.py     │        │    peer.py     │
-      │ wg0 fd5a:…:8f31│        │ wg0 fd5a:…:d7c │        │ wg0 fd5a:…:21a4│
-      └───────┬────────┘        └───────┬────────┘        └───────┬────────┘
-              │                         │                         │
-              └──── WireGuard tunnel ───┘                         ╳
-                 opened by admission                      never handshakes
-
-        (each wg0 address is derived from that machine's WireGuard key)
-```
-
 <!-- @demo machines alice bob eve -->
 <!-- @demo start -->
 <!-- @demo chapter 1 "A sovereign peer" -->
 <!-- @demo blurb Three machines boot and mint identities. Alice's DID document, read from bob; one drop, one verify, and what the repo actually holds. -->
 
-Three machines on one LAN, alice, bob and eve, each running the same peer.
+Three machines share one LAN, alice, bob and eve, each running the same
+peer:
+
+![alice, bob and eve on one LAN, each with its own peer and tunnel interface; a WireGuard tunnel between alice and bob opened by admission; eve's never handshakes](sketches/lan.svg)
+
 In four parts:
 
 1. **alice** publishes signed records to their own repo. Anyone on the LAN
@@ -1052,6 +1038,7 @@ cd lab
 All three machines booted and all three minted an identity. Look at
 alice's:
 
+<!-- @demo code peer.py "async def boot(" -->
 ```bash
 ./lab.sh logs alice
 ```
@@ -1138,6 +1125,8 @@ with alice, and pairing grants nothing.
 > reach your tunnel, is in that one file. `.lan` names work here because
 > the lab provides DNS for them.
 
+![did:web:alice.lan is a fetch of one document: a public key, the repo endpoint and the tunnel key](sketches/did-hostname.svg)
+
 <!-- @demo point bob.terminal diagram -->
 
 > 🔑 **Key concept: taking over a FastATP identity needs the domain *and* the
@@ -1164,6 +1153,7 @@ with alice, and pairing grants nothing.
 Drop the first record. `/drop` only answers on alice's own loopback, so the
 command runs *on alice's machine*:
 
+<!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' \
   -d '{"repo":"public","text":"hello, LAN"}'
@@ -1201,6 +1191,7 @@ sequence number 3. The `uri` is the record's permanent address.
 
 Prove that the route really is local. The same call from bob's machine:
 
+<!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh bob curl -s -X POST alice.lan/drop -H 'content-type: application/json' -d '{"repo":"public","text":"nope"}'
 ```
@@ -1215,6 +1206,8 @@ Prove that the route really is local. The same call from bob's machine:
 > and the answer is "this machine", enforced by listening on loopback. In
 > production you reach it over your own VPN or from the box itself. There
 > is no login because there is nothing to log in to.
+
+![the signing key and the peer inside alice's machine; /drop answers loopback only, and bob's call is refused](sketches/write-path.svg)
 
 <!-- @demo point alice.terminal bob.terminal -->
 
@@ -1243,24 +1236,10 @@ the raw bytes still read `hello, LAN`. The tree node is a leaf of the
 Merkle search tree that maps the record's path to the record's hash. The
 commit names the tree's root hash, the revision, the DID, and carries the
 signature. Each block's address is the hash of its bytes, and the commit's
-address is the CID you saw in the drop response. <!-- @demo terminal -->Drawn as what points to
-what, with every arrow a hash:<!-- @demo /terminal -->
+address is the CID you saw in the drop response. Drawn as what points to
+what, with every arrow a hash:
 
-```text
-signing.key ──signs──▶ ┌────────────────────────────────────────────┐
-                       │ commit      bafyreia6nbnicxz...            │
-                       │ did:web:alice.lan, rev 3mz2b56hcz64m, sig  │
-                       │ data: hash of the root node ───────────────┼──┐
-                       └────────────────────────────────────────────┘  │
-                       ┌────────────────────────────────────────────┐◀─┘
-                       │ tree node   bafyreigygxirlnn...            │
-                       │ note/3mz2b56gzgpqz: hash of the record ────┼──┐
-                       └────────────────────────────────────────────┘  │
-                       ┌────────────────────────────────────────────┐◀─┘
-                       │ record      bafyreibm5yhvrug...            │
-                       │ {"text": "hello, LAN", "$type": ...}       │
-                       └────────────────────────────────────────────┘
-```
+![a signed commit points at a tree node by hash, which points at a record by hash](sketches/block-store.svg)
 
 Follow the hashes from the record up. The record's bytes determine its CID. The tree node
 contains that CID, so the node's bytes, and its CID, depend on the record.
@@ -1391,6 +1370,7 @@ optimization, it is the protocol. <!-- @demo terminal -->Leave bob's follow runn
 
 Drop two more notes as alice<!-- @demo terminal -->, in a second terminal<!-- @demo /terminal -->:
 
+<!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' -d '{"repo":"public","text":"second note"}'
 ./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' -d '{"repo":"public","text":"third note"}'
@@ -1419,6 +1399,7 @@ the listings here, because every one of them is a timestamp.<!-- @demo /terminal
 Now the other direction. Bob answers in *their own* repo; a reply is a record
 that names what it answers. Use the `uri` of the third note:
 
+<!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh bob curl -s -X POST localhost/drop -H 'content-type: application/json' \
   -d '{"repo":"public","to":"at://did:web:alice.lan/com.example.tutorial.note/3mz23hzl5mgmd","text":"bob here"}'
@@ -1454,6 +1435,7 @@ running in another terminal<!-- @demo /terminal -->:
 ./lab.sh bob python follow.py did:web:alice.lan alice.lan
 ```
 
+<!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' \
   -d '{"repo":"public","delete":"com.example.tutorial.note/3mz2b56vjjiqz"}'
@@ -1504,15 +1486,7 @@ same URI again returns a 500 and alice's log says
 
 <!-- @demo point alice.repo -->
 
-```text
-before the delete                              after the delete
-
-commit  bafyreibmn4bnr2x...  rev 3mz2b56z6py4m    commit  bafyreif32p4eyum...  rev 3mz2b5d2k4m4m   NEW
-└─ tree node, 3 entries                           └─ tree node  bafyreihgibuqnfk..., 2 entries     NEW
-   ├─ note/3mz2b56gzgpqz  bafyreibm5yhvrug...        ├─ note/3mz2b56gzgpqz  bafyreibm5yhvrug...   same block
-   ├─ note/3mz2b56vjjiqz  "second note"              │
-   └─ note/3mz2b56z4spqz  bafyreieper5pbqn...        └─ note/3mz2b56z4spqz  bafyreieper5pbqn...   same block
-```
+![before and after a delete: a new root and a new tree node, two records unchanged, one gone](sketches/delete-commit.svg)
 
 The two surviving records kept their CIDs, because their bytes did not
 change. Everything on the path from the removed leaf to the root was
@@ -1540,6 +1514,7 @@ every database and has nothing to do with the protocol.<!-- @demo /terminal -->
 
 ### Reboot alice
 
+<!-- @demo code peer.py "async def boot(" -->
 ```bash
 ./lab.sh restart alice
 ./lab.sh logs alice
@@ -1618,6 +1593,7 @@ a record. <!-- @demo terminal -->Ctrl-C it.<!-- @demo /terminal -->
 `public=False`: the channel, with a fresh `did:key` identity, hosted by the
 same process. Find its DID:
 
+<!-- @demo code peer.py "async def whoami(" -->
 ```bash
 ./lab.sh alice curl -s localhost/whoami
 ```
@@ -1658,6 +1634,8 @@ is through WireGuard.
 > no private flag on a record. Privacy is a second repo, registered with
 > `public=False`, whose doorman only trusts a source address that WireGuard
 > bound to a key. Outside a tunnel every caller is nobody.
+
+![the public repo read by anyone; the channel read only through a tunnel, and absent over the LAN](sketches/private-repo.svg)
 
 <!-- @demo point bob.terminal eve.terminal -->
 
@@ -1744,6 +1722,7 @@ exist on the network as far as bob can tell.
 
 Admission is one call with one argument, on alice's machine:
 
+<!-- @demo code peer.py "async def admit(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/admit -H 'content-type: application/json' -d '{"did":"did:web:bob.lan"}'
 ./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' \
@@ -1886,6 +1865,7 @@ runs.
 
 Bob's follow from earlier is still running in its terminal. <!-- @demo terminal -->In another:<!-- @demo /terminal -->
 
+<!-- @demo code peer.py "async def evict(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/evict -H 'content-type: application/json' -d '{"did":"did:web:bob.lan"}'
 ./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' -d '{"repo":"channel","text":"after eviction"}'
@@ -1932,6 +1912,8 @@ it rode on is gone.
 > record first and then closes it. If the two ever disagree, the record
 > wins and the kernel is brought back in line, which is the job
 > `WireGuardReconciler` does for you in production.
+
+![admit: a capability record, then a kernel peer entry; evict: both removed, record first](sketches/record-kernel.svg)
 
 <!-- @demo point alice.tunnel diagram -->
 <!-- @demo end -->
@@ -2048,6 +2030,8 @@ with `hello, LAN` readable inside it.
 > anyway. The protocol's promise for public data is authenticity, not
 > confidentiality.
 
+![a public record: the observer reads it, cannot change a byte, and the reader checks the signature](sketches/signed-not-secret.svg)
+
 <!-- @demo point wire -->
 
 The DID document deserves one more word, because it is the exception:
@@ -2091,6 +2075,8 @@ alice is not answering, a fact eve only learns from the silence.
 > everything is on the wire, by design, and the protection is that none of
 > it can be forged.
 
+![http rows the observer reads in full; WireGuard rows that are endpoints, sizes and timing](sketches/network-sees.svg)
+
 <!-- @demo point wire diagram -->
 
 | Flow | The observer sees | The observer cannot |
@@ -2132,6 +2118,8 @@ and FastATP answers them separately:
 > though then you are trusting that gateway, which is exactly the third
 > party this design avoids by default. Authentication does not change with
 > any of them: records are still signed and still checked by the reader.
+
+![who said this is a signature checked against the DID document; who may read this is a capability record the tunnel enforces](sketches/auth-vs-authz.svg)
 
 <!-- @demo point diagram -->
 

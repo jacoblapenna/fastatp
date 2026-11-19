@@ -1,0 +1,32 @@
+<!-- three machines on one LAN, each with its own peer and tunnel interface; a tunnel opens by admission, and eve's never handshakes -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 250" role="img" aria-label="alice, bob and eve on one LAN; a WireGuard tunnel between alice and bob opened by admission; eve's tunnel never handshakes">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-danger: #b3243f; --fb-sealed: #0b6f66; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-danger: #ff7a85; --fb-sealed: #5fd4c4; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; } }
+  </style>
+  <rect x="0" y="0" width="640" height="250" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <text x="320" y="22" text-anchor="middle" font-size="12" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">the LAN · 192.168.77.0/24</text>
+  <text x="320" y="38" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">a private network inside Docker; your computer is its router</text>
+  <path d="M30 56 H610" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="4" />
+  <path d="M110 56 V84 M320 56 V84 M530 56 V84" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="2" />
+  <rect x="40" y="84" width="140" height="80" rx="10" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="110" y="106" text-anchor="middle" font-size="13" font-weight="600" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">alice.lan</text>
+  <text x="110" y="124" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">192.168.77.11 · peer.py</text>
+  <text x="110" y="142" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">wg0 fd5a:…:8f31</text>
+  <rect x="250" y="84" width="140" height="80" rx="10" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="320" y="106" text-anchor="middle" font-size="13" font-weight="600" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">bob.lan</text>
+  <text x="320" y="124" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">192.168.77.12 · peer.py</text>
+  <text x="320" y="142" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">wg0 fd5a:…:d7c</text>
+  <rect x="460" y="84" width="140" height="80" rx="10" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="530" y="106" text-anchor="middle" font-size="13" font-weight="600" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">eve.lan</text>
+  <text x="530" y="124" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">192.168.77.13 · peer.py</text>
+  <text x="530" y="142" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">wg0 fd5a:…:21a4</text>
+  <path d="M110 164 V196 H320 V164" fill="none" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="4" />
+  <text x="215" y="212" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">WireGuard tunnel · opened by admission</text>
+  <path d="M530 164 V190" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" stroke-dasharray="4 4" />
+  <path d="M522 190 L538 206 M538 190 L522 206" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-width="2" />
+  <text x="530" y="222" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">never handshakes</text>
+  <text x="320" y="244" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">each wg0 address is derived from that machine's WireGuard key</text>
+</svg>
