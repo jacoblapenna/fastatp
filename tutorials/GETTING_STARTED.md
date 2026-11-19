@@ -946,7 +946,10 @@ document. Anyone can run it, later, with no connection to the author.
 
 ```python
 """Fetch one record with its proof and verify it offline-style:
-python verify.py <did> <host> <collection> <rkey>
+python verify.py <did> <host> <collection> <rkey> [--tamper]
+
+With --tamper, one byte of the record is changed after the fetch and before
+the check, to show what a verifier does with bytes that are not what was signed.
 """
 
 import asyncio
@@ -957,8 +960,10 @@ import lexicons  # noqa: F401  (registers Note/Reply so the verified record come
 from dids import resolver
 
 from fastatp import Peer
+from fastatp.exceptions import VerificationError
 
 did, host, collection, rkey = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+tamper = "--tamper" in sys.argv
 
 
 async def main() -> None:
@@ -972,7 +977,19 @@ async def main() -> None:
     # signature, walks the hashes down to the record, and raises if any step
     # fails or if the signer is not the DID we expected. The host we fetched
     # from plays no part in the trust. It could be a stranger's cache.
-    record = await Peer(resolver=resolver()).verify(proof, expected_signer=did)
+    if tamper:
+        # Change one byte, as a failing disk or a dishonest mirror might. The record
+        # is the last block in the slice, so the slice's last byte is the record's.
+        changed = bytearray(proof)
+        changed[-1] ^= 0x01
+        print(f"changed one byte of the record: {proof[-9:]!r} -> {bytes(changed[-9:])!r}")
+        proof = bytes(changed)
+    try:
+        record = await Peer(resolver=resolver()).verify(proof, expected_signer=did)
+    except VerificationError as error:
+        # Nothing is returned for bytes that fail: there is no "mostly valid" record.
+        print(f"refused: {error}")
+        sys.exit(0 if tamper else 1)
     print(f"verified, signed by {did}: {record!r}")
 
 
@@ -1268,27 +1285,23 @@ Three blocks, and there are only ever three kinds. The record is your
 uses, which is why the decoded block is exactly the JSON you dropped into the repo and
 the raw bytes still read `hello, LAN`.
 
-The tree node is a leaf of the
-Merkle search tree that maps the record's path to the record's hash. The
-commit names the tree's root hash, the revision, the DID, and carries the
-signature.
+The tree node is the repo's index: it maps the record's path to the
+record's CID. The commit holds the tree node's CID, the revision and the
+DID, and carries the signature.
 
-Each block's address is the hash of its bytes, and the commit's
-address is the CID you saw in the commit response. Drawn as what points to
-what, with every arrow a hash:
+A CID is the hash of one block's bytes and nothing more. The commit's CID
+is the one you saw in the commit response. Drawn as what holds what:
 
-![a signed commit points at a tree node by hash, which points at a record by hash](sketches/block-store.svg)
+![a signed commit holds the tree node's CID, and the tree node holds the record's CID](sketches/block-store.svg)
 
-Follow the hashes from the record up. The record's bytes determine its CID. The tree node
-contains that CID, so the node's bytes, and its CID, depend on the record.
-The commit contains the root node's CID and is signed.
+A CID covers one block, but each block holds the CIDs of the blocks under
+it. So the tree node's bytes depend on the record, and the commit's bytes
+depend on the tree node.
 
-Change one byte of
-the record and all three addresses change, and the signature no longer
-matches. That is the whole trick, and every record you add is one more
-leaf under the same root.
-
-<!-- @demo ask If one byte of the note's bytes changed on alice's disk, what would a reader notice? -->
+The commit is the only block that is signed, and that one signature
+covers everything under it. Change one byte of the record and its hash is
+no longer the CID the tree node holds. That is all of the tree you need
+to know here, and you will see it refuse a changed byte in a moment.
 
 > 🔑 **Key concept: the repo is a content-addressed block store, and none
 > of it is encrypted.** Every record sits in `blocks.sqlite` as readable
@@ -1349,6 +1362,32 @@ machine resolved alice's DID document over the LAN, took the public key out of
 it, and checked the signature. Anyone holding those bytes plus that
 document can do the same with no connection to alice, now or in ten years.
 That is a proof slice, and it can ride any transport.
+
+Now change one byte. Run the same check with `--tamper`, and `verify.py`
+flips one byte of the record after fetching it, as a failing disk or a
+dishonest mirror might:
+
+<!-- @demo ask If one byte of the note changed on its way from alice to bob, what would bob's check say? -->
+
+```bash
+./lab.sh bob python verify.py did:web:alice.lan alice.lan com.example.tutorial.note 3mz23h6bv4dmd --tamper
+```
+
+```text
+proof slice: 534 bytes (signed commit + MST path + record)
+changed one byte of the record: b'9.303514Z' -> b'9.303514['
+refused: malformed proof: CAR block does not hash to its CID (bafyreidf3vy5xl...)
+```
+
+One byte, and the record no longer hashes to the CID the tree node holds
+for it, so the check refuses the whole slice. Bob needed nothing from
+alice to notice.
+
+![one byte of the record changed: its hash no longer matches the CID the tree node holds, and the check refuses it](sketches/tamper.svg)
+
+To get a changed record past that check, a forger would have to put its
+new CID in the tree node, put the tree node's new CID in the commit, and
+then sign that commit. Signing it takes alice's signing key.
 
 Now the wire itself, unverified, replayed from the beginning:
 
