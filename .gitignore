@@ -19,3 +19,7 @@ fastatp/browser/static/
 # minted identity state (contains signing.key) + emitted publish trees
 examples/**/state/
 examples/**/static/
+# the tutorials' lab: machine state (keys, repos) and the conductor page's build
+tutorials/lab/state/
+tutorials/conductor/node_modules/
+tutorials/conductor/dist/

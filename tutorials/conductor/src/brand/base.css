@@ -1,0 +1,33 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-base)/1.45 var(--font-sans);
+}
+
+#app { height: 100%; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--color-code-text);
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+button {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--color-primary); }

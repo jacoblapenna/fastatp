@@ -257,6 +257,14 @@ peer ships pre-built). Running the full suite — browser/WASM, WireGuard, and
 cross-implementation tests — is covered in
 [`docs/TESTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/docs/TESTING.md).
 
+The runnable tutorials live in
+[`tutorials/`](https://github.com/jacoblapenna/fastatp/tree/main/tutorials),
+a series that starts with
+[`GETTING_STARTED.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/GETTING_STARTED.md):
+three peers on a private LAN inside Docker, read along, watched on one
+screen, or played headless against the fastatp in the tree, so a tutorial
+breaks in the same change as the code it teaches.
+
 See [`CONTRIBUTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/CONTRIBUTING.md)
 before opening a pull request, and
 [`SECURITY.md`](https://github.com/jacoblapenna/fastatp/blob/main/SECURITY.md)

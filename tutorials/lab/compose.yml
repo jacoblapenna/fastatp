@@ -1,0 +1,60 @@
+# Three machines on one LAN. `./lab.sh` drives this; you never need to run docker yourself.
+name: fastatp-lab
+
+x-machine: &machine
+  build: {context: ../.., dockerfile: tutorials/lab/Dockerfile, target: machine}   # the repo root: the image installs this tree's fastatp
+  image: fastatp-lab
+  cap_add: [NET_ADMIN]        # a machine may configure its own WireGuard interface
+  sysctls: {net.ipv6.conf.all.disable_ipv6: 0}   # the tunnel's addresses are IPv6; Docker turns it off by default
+  init: true
+
+services:
+  alice:
+    <<: *machine
+    hostname: alice.lan
+    command: [alice.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}"}
+    networks: {lan: {ipv4_address: 192.168.77.11, aliases: [alice.lan]}, stage: {aliases: [alice.stage]}}
+    volumes: ["./state/alice.lan:/srv/alice.lan", "./state/backstage/alice.stage:/srv/backstage"]
+  bob:
+    <<: *machine
+    hostname: bob.lan
+    command: [bob.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}"}
+    networks: {lan: {ipv4_address: 192.168.77.12, aliases: [bob.lan]}, stage: {aliases: [bob.stage]}}
+    volumes: ["./state/bob.lan:/srv/bob.lan", "./state/backstage/bob.stage:/srv/backstage"]
+  eve:
+    <<: *machine
+    hostname: eve.lan
+    command: [eve.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}"}
+    networks: {lan: {ipv4_address: 192.168.77.13, aliases: [eve.lan]}, stage: {aliases: [eve.stage]}}
+    volumes: ["./state/eve.lan:/srv/eve.lan", "./state/backstage/eve.stage:/srv/backstage"]
+
+  # Part 4: the conductor. Backstage: not on the LAN; it cues the machines' players over `stage`.
+  conductor:
+    build: {context: ../.., dockerfile: tutorials/lab/Dockerfile, target: conductor}
+    image: fastatp-lab-conductor
+    profiles: [conductor]
+    hostname: conductor.stage
+    init: true
+    environment: {SCORE: "${SCORE:-GETTING_STARTED}"}
+    networks: {stage: {aliases: [conductor.stage]}}
+    volumes: ["./state/backstage/conductor.stage:/srv/backstage"]
+    ports: ["127.0.0.1:8080:80"]
+
+  # Optional: a passive tap on the LAN. Not a machine on it; it sees every frame.
+  tap:
+    <<: *machine
+    profiles: [tap]
+    network_mode: host
+    cap_add: [NET_RAW, NET_ADMIN]
+    entrypoint: [tcpdump, -i, fastatp-lan, -nn, -U, -Z, root]
+    volumes: ["./state:/state"]
+
+networks:
+  lan:
+    driver: bridge
+    driver_opts: {com.docker.network.bridge.name: fastatp-lan}
+    ipam: {config: [{subnet: 192.168.77.0/24}]}
+  stage: {}                   # backstage: the demo engine's own wire, so the LAN carries only the guide's traffic
