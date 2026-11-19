@@ -71,6 +71,21 @@ def test_getting_started_is_a_playable_score():
     # the opening caption and the two drawings in the prose are pictures too
     captioned = [s["sketch"] for s in score["steps"] if s["kind"] == "say" and "sketch" in s]
     assert "sketches/lan.svg" in captioned and "sketches/block-store.svg" in captioned
+    # a question every handful of presses, answered by what is shown next: a
+    # command or a key concept, never told by a caption
+    asks = [i for i, s in enumerate(score["steps"]) if s["kind"] == "ask"]
+    assert len(asks) >= 20
+    presses = [i for i, s in enumerate(score["steps"]) if s["kind"] in md_manifest.VISIBLE]
+    gaps = [presses.index(b) - presses.index(a) for a, b in pairwise(asks)]
+    assert max(gaps) <= 14, gaps
+    for i in asks:
+        assert "?" in score["steps"][i]["text"]
+        following = next(
+            s
+            for s in score["steps"][i + 1 :]
+            if s["kind"] in ("run", "restart", "say", "concept", "ask")
+        )
+        assert following["kind"] in ("run", "restart", "concept"), score["steps"][i]["text"]
     # no picture has text running past its edge
     sketch_check = _tool("sketch_check")
     for path in score["images"]:
@@ -138,7 +153,7 @@ def test_a_cue_carries_its_whole_step():
         )
         kind = step["kind"]
         seen.add(cue.action)
-        if kind == "say":
+        if kind in ("say", "ask"):
             assert cue.text == step["text"]
         elif kind == "concept":
             assert cue.title == step["title"] and cue.text == step["body"]
@@ -169,6 +184,7 @@ def test_a_cue_carries_its_whole_step():
         "collapse",
         "open",
         "chapter",
+        "ask",
     } <= seen
 
 

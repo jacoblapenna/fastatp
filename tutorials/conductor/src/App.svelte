@@ -108,7 +108,7 @@
   </div>
 
   {#if concept && !menu}
-    <KeyConcept step={concept} onGotIt={gotIt} />
+    <KeyConcept step={concept} ask={script.ask} onGotIt={gotIt} />
   {/if}
   {#if menu}
     <ChapterMenu {chapters} current={chapter?.number ?? null} onClose={() => (menu = false)} />

@@ -25,6 +25,12 @@
   <div class="row">
     <div class="words">
       {#if script.say}<div class="text">{@html md(script.say)}</div>{/if}
+      {#if script.ask}
+        <div class="ask" class:fresh={script.step?.kind === 'ask'}>
+          <span class="before">{script.step?.kind === 'ask' ? 'before you press Next' : 'the question was'}</span>
+          <span>{@html md(script.ask)}</span>
+        </div>
+      {/if}
     </div>
     {#if svg}<div class="picture">{@html svg}</div>{/if}
   </div>
@@ -51,6 +57,13 @@
   .picture { flex: 0 0 auto; width: min(420px, 38%); max-height: 190px; background: var(--color-terminal-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; }
   .picture :global(svg) { width: 100%; height: auto; max-height: 176px; display: block; }
   .text { margin: 4px 0 0; max-width: 110ch; color: var(--color-text); }
+  .ask {
+    margin: 8px 0 2px; display: flex; gap: 12px; align-items: baseline; max-width: 110ch;
+    background: var(--color-terminal-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 7px 12px;
+    font-size: 15px; color: var(--color-text-soft);
+  }
+  .ask.fresh { border-color: var(--color-highlight); color: var(--color-text); font-size: 15.5px; }
+  .before { flex: none; color: var(--color-accent-text); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
   .text :global(ul), .text :global(ol) { margin: 4px 0 0; padding-left: 20px; }
   .text :global(li) { margin: 2px 0; }
   .now { margin-top: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); }

@@ -6,7 +6,7 @@
   import { md, lead } from '../lib/md.js';
   import { picture } from '../lib/live.svelte.js';
 
-  let { step, onGotIt } = $props();
+  let { step, ask = '', onGotIt } = $props();
   let rings = $state([]);
   let top = $state(false); // the card sits wherever it hides the least of what it points at
   let more = $state(false);
@@ -60,6 +60,7 @@
       <div class="picture">{#if svg}{@html svg}{/if}</div>
     {/if}
     <div class="words">
+      {#if ask}<div class="asked"><span class="before">you were asked</span> {@html md(ask)}</div>{/if}
       <div class="kicker">{{ key: '🔑 Key concept', important: '⚠️ Important', tip: '💡 Did you know' }[step.style]}</div>
       <h2>{@html md(step.title)}</h2>
       <div class="lead">{@html md(split.lead)}</div>
@@ -98,6 +99,8 @@
   }
   .picture :global(svg) { width: 100%; height: 100%; }
   .words { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .asked { font-size: 13.5px; color: var(--color-text-soft); background: var(--color-surface-raised); border-radius: 8px; padding: 6px 10px; }
+  .before { color: var(--color-accent-text); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-right: 6px; }
   .kicker { color: var(--color-accent-text); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; }
   .important .kicker { color: var(--color-plaintext); }
   .tip .kicker { color: var(--color-sealed); }

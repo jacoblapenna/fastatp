@@ -63,7 +63,7 @@ class Cue(Lexicon):
     to: str  # the player's DID; empty for steps no machine performs (a caption, a key concept)
     step: int  # the step's position in the score
     action: (
-        str  # run, stop, restart; say, concept, heading, wait; expand, collapse, focus, open, close
+        str  # run, stop, restart; say, ask, concept, heading, chapter, wait; and the layout verbs
     )
     command: str = (
         ""  # exactly what the player will run, after the conductor filled in this run's values
@@ -71,7 +71,7 @@ class Cue(Lexicon):
     env: dict[str, str] = {}  # values captured earlier in the show, such as CH
     display: str = ""  # the line as the guide prints it
     bg: bool = False  # left running, like a second terminal
-    text: str = ""  # a caption, a key concept's body, or a heading
+    text: str = ""  # a caption, a question, a key concept's body, or a heading
     title: str = ""  # a key concept's title
     style: str = ""  # a key concept's kind: key, important, tip
     level: int = 0  # a heading's depth

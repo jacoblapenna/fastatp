@@ -44,6 +44,9 @@ GitHub and fastatp.com do not render:
                                           above it; a concept with none takes the picture of
                                           the caption just above it (one paragraph may sit
                                           between); the conductor keeps every picture as a blob
+  <!-- @demo ask Will eve's ping get an answer? ... -->
+                                          a question before a command, for the viewer to
+                                          answer in their head; the next press shows
   <!-- @demo code peer.py "async def drop(" -->
                                           the next block's commands reach this file, here;
                                           a command that runs `python x.py` says so itself
@@ -123,7 +126,7 @@ def without_terminal(text: str, inside: bool) -> tuple[str, bool]:
     return "\n".join(" ".join(line.split()) for line in text.split("\n")).strip(), inside
 
 
-VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter")  # one press of Next each
+VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter", "ask")  # one press of Next each
 LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until they give up
 
 
@@ -245,6 +248,9 @@ def parse(text: str) -> dict:
                 number, _, title = arg.partition(" ")
                 emit_say()
                 emit({"kind": "chapter", "number": int(number), "title": title.strip().strip('"')})
+            elif verb == "ask":
+                emit_say()
+                emit({"kind": "ask", "text": arg})
             elif verb == "code":
                 name, _, focus = arg.partition(" ")
                 code_cue = {"file": name, "focus": focus.strip().strip('"')}

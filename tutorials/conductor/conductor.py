@@ -210,7 +210,7 @@ async def cue(step: dict, command: str = "") -> int:
 # these. A key concept waits for Got it, and Got it is also Next: the step
 # the concept set up follows without another press. Play (auto) paces
 # everything by the speed instead.
-VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter")
+VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter", "ask")
 PAUSES = tuple(k for k in VISIBLE if k != "concept")
 
 
@@ -257,7 +257,7 @@ async def perform(step: dict) -> None:
     await cue(step)  # the rest of the score is in the repo too: the show is a record
     if kind == "heading":
         await asyncio.sleep(1.5 * pace)
-    elif kind == "say":
+    elif kind in ("say", "ask"):
         await asyncio.sleep(
             min(max(len(step["text"].split()) / 4, 3), 14) * pace
         )  # about reading speed

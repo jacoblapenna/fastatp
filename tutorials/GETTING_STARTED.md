@@ -1076,6 +1076,8 @@ leaves the machine. Nothing else in the directory is one.
 Now read alice's DID document the way any verifier would, from a different
 machine, over the LAN:
 
+<!-- @demo ask Bob has never spoken to alice. What does bob need from alice to check anything alice signs, and what is deliberately not in it? -->
+
 ```bash
 ./lab.sh bob sh -c 'curl -s alice.lan/.well-known/did.json | python -m json.tool'
 ```
@@ -1128,6 +1130,8 @@ with alice, and pairing grants nothing.
 ![did:web:alice.lan is a fetch of one document: a public key, the repo endpoint and the tunnel key](sketches/did-hostname.svg)
 
 <!-- @demo point bob.terminal diagram -->
+
+<!-- @demo ask Whoever controls alice.lan can publish a new public key. What stops that from passing as alice rotating on purpose? -->
 
 > 🔑 **Key concept: taking over a FastATP identity needs the domain *and* the
 > pen.** Plain did:web has one weakness: whoever controls `alice.lan` can
@@ -1191,6 +1195,7 @@ sequence number 3. The `uri` is the record's permanent address.
 
 Prove that the route really is local. The same call from bob's machine:
 
+<!-- @demo ask Will alice's peer take a drop from bob's machine? Bob has the route, the port and the same JSON. -->
 <!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh bob curl -s -X POST alice.lan/drop -H 'content-type: application/json' -d '{"repo":"public","text":"nope"}'
@@ -1216,6 +1221,8 @@ Prove that the route really is local. The same call from bob's machine:
 `ls -la` showed the repo as one SQLite file. It is not a folder of JSON
 files, and it is worth seeing what it is instead. `blocks.py` opens the
 file read-only and decodes every block in it:
+
+<!-- @demo ask `ls` showed the repo as one SQLite file. How many kinds of block does it hold? -->
 
 ```bash
 ./lab.sh alice python blocks.py alice.lan
@@ -1247,6 +1254,8 @@ The commit contains the root node's CID and is signed. Change one byte of
 the record and all three addresses change, and the signature no longer
 matches. That is the whole trick, and every record you add is one more
 leaf under the same root.
+
+<!-- @demo ask If one byte of the note's bytes changed on alice's disk, what would a reader notice? -->
 
 > 🔑 **Key concept: the repo is a content-addressed block store, and none
 > of it is encrypted.** Every record sits in `blocks.sqlite` as readable
@@ -1288,6 +1297,8 @@ reads as `at://<did>/<collection>/<rkey>`:
 <!-- @demo terminal -->Your rkey will differ, because it is a timestamp. Copy it from your own
 drop response:<!-- @demo /terminal -->
 
+<!-- @demo ask Bob holds a few hundred bytes and alice's DID document. Can bob verify the note with alice switched off? -->
+
 ```bash
 ./lab.sh bob python verify.py did:web:alice.lan alice.lan com.example.tutorial.note 3mz23h6bv4dmd
 ```
@@ -1305,6 +1316,8 @@ document can do the same with no connection to alice, now or in ten years.
 That is a proof slice, and it can ride any transport.
 
 Now the wire itself, unverified, replayed from the beginning:
+
+<!-- @demo ask The firehose replays from the beginning. Which frame carries the note, and what do the frames before it carry? -->
 
 ```bash
 ./lab.sh bob python tail.py alice.lan --cursor 0
@@ -1341,6 +1354,8 @@ build on it. <!-- @demo terminal -->Ctrl-C it.<!-- @demo /terminal -->
 Bob is a second, independent machine with their own key, repo, and DID
 document. Have bob follow alice over the LAN. The second argument is the
 *wire* to use: `alice.lan` is alice's LAN address.
+
+<!-- @demo ask A follower could just subscribe to the live stream. Why does `follow.py` fetch the whole repo first? -->
 
 ```bash
 ./lab.sh bob python follow.py did:web:alice.lan alice.lan
@@ -1399,6 +1414,8 @@ the listings here, because every one of them is a timestamp.<!-- @demo /terminal
 Now the other direction. Bob answers in *their own* repo; a reply is a record
 that names what it answers. Use the `uri` of the third note:
 
+<!-- @demo ask Bob answers alice. Where does the reply live: in alice's repo, or in bob's own? -->
+
 <!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh bob curl -s -X POST localhost/drop -H 'content-type: application/json' \
@@ -1434,6 +1451,8 @@ running in another terminal<!-- @demo /terminal -->:
 ```bash
 ./lab.sh bob python follow.py did:web:alice.lan alice.lan
 ```
+
+<!-- @demo ask Deleting a record removes its bytes. What else in the repo has to change, and who has to sign it? -->
 
 <!-- @demo code peer.py "async def drop(" -->
 ```bash
@@ -1514,6 +1533,8 @@ every database and has nothing to do with the protocol.<!-- @demo /terminal -->
 
 ### Reboot alice
 
+<!-- @demo ask Alice reboots. What does bob's running follow see, and which carries on where it was: the rev, the seq, or both? -->
+
 <!-- @demo code peer.py "async def boot(" -->
 ```bash
 ./lab.sh restart alice
@@ -1566,6 +1587,8 @@ been verified before.
 
 Eve is just another machine. First, confirm what "public" means:
 
+<!-- @demo ask Eve was never admitted to anything. Can eve read alice's public repo? -->
+
 ```bash
 ./lab.sh eve python follow.py did:web:alice.lan alice.lan
 ```
@@ -1610,6 +1633,7 @@ every time alice boots<!-- @demo terminal -->, so re-run this after any restart 
 with the channel DID in `$CH` and alice's tunnel address in `$AT`, try to
 read the channel over the LAN, as bob and as eve:
 
+<!-- @demo ask Will bob see the channel over the LAN? Bob has its DID, and alice's LAN address serves the public repo. -->
 ```bash
 CH=$(./lab.sh alice curl -s localhost/whoami | sed 's/.*"channel":"\([^"]*\)".*/\1/')
 AT=$(./lab.sh alice curl -s localhost/whoami | sed 's/.*"tunnel_ip":"\([^"]*\)".*/\1/')
@@ -1663,6 +1687,8 @@ That gate is the only thing FastATP adds to what atproto already is:
 
 Bob points their tunnel at alice. Everything bob needs is in alice's DID document:
 
+<!-- @demo ask Bob points its tunnel at alice. Does alice learn that it happened? -->
+
 ```bash
 ./lab.sh bob python pair.py did:web:alice.lan
 ./lab.sh bob wg show wg0
@@ -1701,6 +1727,8 @@ no route to fd5a:7a7f:9c3e:0:5c0e:7a19:2bd4:8f31: ConnectTimeout (is there a tun
 Not refused: unreachable. Before admission, alice's private side does not
 exist on the network as far as bob can tell.
 
+<!-- @demo ask FastATP ships no way for bob to ask alice to be admitted. Is that a gap, or a choice? -->
+
 > 🔑 **Key concept: the subscriber's side is yours to build.** FastATP
 > ships no pairing method for the reader and no protocol for asking to be
 > admitted. That is deliberate, for now. The library owns the hub's half,
@@ -1721,6 +1749,8 @@ exist on the network as far as bob can tell.
 ### Alice admits bob
 
 Admission is one call with one argument, on alice's machine:
+
+<!-- @demo ask Admission is one call with one argument. What does alice need to know about bob, and where does it come from? -->
 
 <!-- @demo code peer.py "async def admit(" -->
 ```bash
@@ -1768,6 +1798,8 @@ source address is an identity inside the tunnel, and why nobody had to
 agree on the address: it was never chosen.
 
 <!-- @demo point alice.tunnel -->
+
+<!-- @demo ask Alice's kernel now lists bob. If the machine rebooted and lost that list, what would put it back? -->
 
 > 🔑 **Key concept: authorization in FastATP is declarative.** Who may read
 > the channel is not a setting in the process or a rule in a config file. It
@@ -1841,6 +1873,7 @@ tunnel.
 
 Eve can pair exactly as bob did, because alice's document is public:
 
+<!-- @demo ask Will eve's ping get an answer? Eve has alice's tunnel key and alice's tunnel address, the same as bob had. -->
 ```bash
 ./lab.sh eve python pair.py did:web:alice.lan
 ./lab.sh eve ping -c1 -W3 "$AT"
@@ -1865,6 +1898,7 @@ runs.
 
 Bob's follow from earlier is still running in its terminal. <!-- @demo terminal -->In another:<!-- @demo /terminal -->
 
+<!-- @demo ask After alice evicts bob and drops one more private note, will bob's follow print it? Bob's WebSocket is still open. -->
 <!-- @demo code peer.py "async def evict(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/evict -H 'content-type: application/json' -d '{"did":"did:web:bob.lan"}'
@@ -1901,6 +1935,8 @@ Presence of the record was admission. Absence is revocation. There is no
 token to expire and no session to invalidate, because neither ever
 existed, and there is no live connection to hunt down, because the tunnel
 it rode on is gone.
+
+<!-- @demo ask Alice evicted bob by deleting one record. Did the record stop the packets, or did something else? -->
 
 > 🔑 **Key concept: the record decides, the kernel enforces.** The
 > capability record is signed data in the channel's own repo, so every
@@ -2019,6 +2055,8 @@ with `hello, LAN` readable inside it.
 
 <!-- @demo point wire -->
 
+<!-- @demo ask Everything bob verified crossed the LAN in the clear. Could the observer read the note? Could it change it? -->
+
 > 🔑 **Key concept: signed is not secret.** The public repo is signed so that
 > anyone can check *who wrote it* and that *nobody changed it*. It is not
 > encrypted, because it is public. The observer can read every record, and
@@ -2066,6 +2104,8 @@ alice is not answering, a fact eve only learns from the silence.
 
 <!-- @demo point wire -->
 
+<!-- @demo ask Bob read the channel through the tunnel. What could the observer on the LAN learn about that read? -->
+
 > 🔑 **Key concept: what a network sees.** For the private side, the observer
 > gets the endpoints, the fact that it is WireGuard, when a session began,
 > and the sizes and timing of what crossed. A patient observer could guess
@@ -2088,6 +2128,8 @@ alice is not answering, a fact eve only learns from the silence.
 
 Those are two different questions, who wrote this and who may read it,
 and FastATP answers them separately:
+
+<!-- @demo ask In this whole show, where was a password, a token or a session used? -->
 
 > 🔑 **Key concept: authentication is a signature, authorization is a
 > record, and neither needs a shared secret.** *Authentication* asks "who
@@ -2124,6 +2166,8 @@ and FastATP answers them separately:
 <!-- @demo point diagram -->
 
 None of this is free, and the price is worth stating plainly:
+
+<!-- @demo ask What did every party here have to run that a user of a login-based app does not? -->
 
 > 🔑 **Key concept: the price is software on every end.** Every party in
 > this guide ran a symmetric peer: a process holding a signing key to say

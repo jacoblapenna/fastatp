@@ -17,7 +17,7 @@ export const live = $state({
 });
 
 // What one press of Next shows; what Back looks at again.
-export const VISIBLE = ['run', 'restart', 'stop', 'say', 'concept', 'chapter'];
+export const VISIBLE = ['run', 'restart', 'stop', 'say', 'concept', 'chapter', 'ask'];
 
 // Looking back: how many visible steps behind the conductor the page is
 // showing. The machines stay where they are, because every step really ran;
@@ -133,7 +133,7 @@ export function nameOf({ key, ip, did }) {
 // --- where the script is ------------------------------------------------------
 
 export function scriptState(manifest, cursor) {
-  const s = { part: '', section: '', say: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null };
+  const s = { part: '', section: '', say: '', ask: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null };
   if (!manifest) return s;
   for (const name of manifest.machines) s.layout[name] = 'open';
   for (const step of manifest.steps.slice(0, cursor + 1)) {
@@ -143,7 +143,8 @@ export function scriptState(manifest, cursor) {
     if (step.kind === 'heading') [s.say, s.code] = ['', null];
     // a command shows the file it runs, beside its machine, until the next command
     if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
-    if (step.kind === 'say') s.say = step.text;
+    if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];
+    if (step.kind === 'ask') s.ask = step.text; // stays up through the command it asks about
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
     if (step.kind === 'layout' && (step.action === 'open' || step.action === 'close')) {
       for (const target of step.targets) step.action === 'open' ? s.open.add(target) : s.open.delete(target);

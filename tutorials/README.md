@@ -104,7 +104,9 @@ updates the guide.
   `<!-- @demo code file "line" -->` above a command block says which lab
   file the commands reach, and where to open it. The conductor keeps the
   files as records and the pictures as blobs in its repo; the page fetches
-  them from there. Every ``### `name.py` ``
+  them from there. A `<!-- @demo ask ... -->` above a command block or a
+  key concept is a question for the viewer to answer before the next press
+  shows the answer: one every handful of presses, before most concepts. Every ``### `name.py` ``
   section opens with one line on what the file is for: the screen heads
   the code with it when a command runs that file. `tools/md_manifest.py`
   lists every directive.
