@@ -1625,9 +1625,17 @@ every database and has nothing to do with the protocol.<!-- @demo /terminal -->
 <!-- @demo wait 5 -->
 
 ```json
+[alice.lan] minted did:web:alice.lan
+[alice.lan] ROTATION PEN (shown once; a throwaway here, cold storage for real):
+[alice.lan]   d2375303b9c1c96d2c4f346bd876496b811318e225e169550aaf60e92e62c297
+[alice.lan] serving on http://alice.lan (LAN) and http://[fd5a:7a7f:9c3e:0:5c0e:7a19:2bd4:8f31] (tunnel)
 [alice.lan] reloaded did:web:alice.lan
 [alice.lan] serving on http://alice.lan (LAN) and http://[fd5a:7a7f:9c3e:0:5c0e:7a19:2bd4:8f31] (tunnel)
 ```
+
+The log holds both boots. The first four lines are the first boot, the
+ones you saw at the start: it minted the identity and printed the pen.
+The last two are this boot, and it says `reloaded`, not `minted`.
 
 No new pen, same DID, same WireGuard key, and the repo is where it was:
 bob's follow, still running, lost its connection when alice went down and
