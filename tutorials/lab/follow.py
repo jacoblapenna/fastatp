@@ -4,7 +4,7 @@ python follow.py <did> <host>
 <host> is the wire to use: alice.lan reaches alice over the LAN, alice's tunnel
 address reaches alice through the WireGuard tunnel. Both come from alice's DID
 document: the first is its PDS endpoint, the second is derived from the
-WireGuard key in its service entry. Nobody has to be told either one.
+WireGuard public key in its service entry. Nobody has to be told either one.
 """
 
 import argparse

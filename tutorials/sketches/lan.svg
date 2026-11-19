@@ -28,5 +28,5 @@
   <path d="M530 164 V190" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" stroke-dasharray="4 4" />
   <path d="M522 190 L538 206 M538 190 L522 206" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-width="2" />
   <text x="530" y="222" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">never handshakes</text>
-  <text x="320" y="244" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">each wg0 address is derived from that machine's WireGuard key</text>
+  <text x="320" y="244" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">each wg0 address is derived from that machine's WireGuard public key</text>
 </svg>

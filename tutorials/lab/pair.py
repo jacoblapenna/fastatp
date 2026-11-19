@@ -58,7 +58,7 @@ async def main() -> None:
     print(
         f"tunnel peer set: {hub} is {info.public_key} at {info.endpoint}, tunnel ip {info.tunnel_ip}"
     )
-    # WireGuard is silent to strangers. Until the hub adds our key on its side,
+    # WireGuard is silent to strangers. Until the hub adds our public key on its side,
     # our knocks get no reply at all, not even a refusal.
     print("nothing will handshake until the hub admits this machine")
 

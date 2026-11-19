@@ -2,7 +2,7 @@
 
 Mints (or reloads) did:web:<domain> in ./<domain>/, serves its DID document on
 port 80, hosts its repo on the atproto sync surface, and takes local drops on
-/drop. Its WireGuard key is published in the DID document, and admitting a
+/drop. Its WireGuard public key is published in the DID document, and admitting a
 peer to the gated channel opens that peer's tunnel.
 """
 

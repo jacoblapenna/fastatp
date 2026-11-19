@@ -284,7 +284,7 @@ admissions and evictions on loopback-only routes.
 
 Mints (or reloads) did:web:<domain> in ./<domain>/, serves its DID document on
 port 80, hosts its repo on the atproto sync surface, and takes local drops on
-/drop. Its WireGuard key is published in the DID document, and admitting a
+/drop. Its WireGuard public key is published in the DID document, and admitting a
 peer to the gated channel opens that peer's tunnel.
 """
 
@@ -613,7 +613,7 @@ because the process *is* the keyholder.
 `/admit` is worth a second look. It takes a DID and nothing else. It
 resolves that DID's document, reads the `WireGuardFirehose` service out of
 it, writes one `Capability` record into the channel naming the DID and its
-tunnel key, and tells the kernel to accept that key at the one address the
+public tunnel key, and tells the kernel to accept that key at the one address the
 key derives.
 `/evict` deletes the record and removes the kernel peer. The record is the
 decision, signed and kept; the kernel peer is the enforcement, and it is
@@ -686,7 +686,7 @@ async def main() -> None:
     print(
         f"tunnel peer set: {hub} is {info.public_key} at {info.endpoint}, tunnel ip {info.tunnel_ip}"
     )
-    # WireGuard is silent to strangers. Until the hub adds our key on its side,
+    # WireGuard is silent to strangers. Until the hub adds our public key on its side,
     # our knocks get no reply at all, not even a refusal.
     print("nothing will handshake until the hub admits this machine")
 
@@ -699,7 +699,7 @@ alice's tunnel is and which WireGuard public key answers there. Both are in
 alice's DID document.
 `pair.py` configures this machine's `wg0` with that one peer. It does not
 ask alice for anything, and alice does not learn that it happened. No
-handshake can complete until alice adds this machine's key on alice's side,
+handshake can complete until alice adds this machine's public key on alice's side,
 which is what `/admit` does.
 
 ### `follow.py`: a verified reader
@@ -716,7 +716,7 @@ python follow.py <did> <host>
 <host> is the wire to use: alice.lan reaches alice over the LAN, alice's tunnel
 address reaches alice through the WireGuard tunnel. Both come from alice's DID
 document: the first is its PDS endpoint, the second is derived from the
-WireGuard key in its service entry. Nobody has to be told either one.
+WireGuard public key in its service entry. Nobody has to be told either one.
 """
 
 import argparse
@@ -1117,7 +1117,7 @@ key in Multikey form. `alsoKnownAs` names the twin. The first service is where a
 is alice's tunnel: the public WireGuard key and the address it answers on.
 
 The address alice uses *inside* the tunnel is not in the document, because
-anyone who has the key can derive it, and the kernel on both ends does.
+anyone who has the public key can derive it, and the kernel on both ends does.
 Publishing the WireGuard *public* key is the point; it lets anyone pair
 with alice, and pairing grants nothing.
 
@@ -1129,7 +1129,7 @@ with alice, and pairing grants nothing.
 > reach your tunnel, is in that one file. `.lan` names work here because
 > the lab provides DNS for them.
 
-![did:web:alice.lan is a fetch of one document: a public key, the repo endpoint and the tunnel key](sketches/did-hostname.svg)
+![did:web:alice.lan is a fetch of one document: the public signing key, the repo endpoint and the public tunnel key](sketches/did-hostname.svg)
 
 <!-- @demo point bob.terminal diagram -->
 
@@ -1736,7 +1736,7 @@ peer: Xz4BX2dBPJSHACFSjvNabZY57FhQjafxm5hIeWy0YwA=
   persistent keepalive: every 5 seconds
 ```
 
-The `allowed ips` line is the address bob derived from alice's key, the
+The `allowed ips` line is the address bob derived from alice's public key, the
 same one alice put on `wg0` at boot and the same one `$AT` holds. Bob is
 sending handshake initiations every few seconds and alice is dropping them
 on the floor, because alice's `wg0` has no peers. Try the tunnel:
@@ -1793,7 +1793,7 @@ Admission is one call with one argument, on alice's machine:
 
 Alice resolved `did:web:bob.lan`, read bob's tunnel identity out of *bob's*
 DID document, wrote a capability record into the channel, and added bob's
-key to alice's kernel interface. Look at both ends. Give it five seconds for
+public key to alice's kernel interface. Look at both ends. Give it five seconds for
 bob's next keepalive to complete the handshake:
 
 <!-- @demo point alice.tunnel bob.tunnel -->
@@ -1900,7 +1900,7 @@ tunnel.
 
 Eve can pair exactly as bob did, because alice's document is public:
 
-<!-- @demo ask Will eve's ping get an answer? Eve has alice's tunnel key and alice's tunnel address, the same as bob had. -->
+<!-- @demo ask Will eve's ping get an answer? Eve has alice's public tunnel key and alice's tunnel address, the same as bob had. -->
 ```bash
 ./lab.sh eve python pair.py did:web:alice.lan
 ./lab.sh eve ping -c1 -W3 "$AT"
@@ -2008,7 +2008,7 @@ and `tests/test_wireguard_rootless_netns.py` proves it against a real
 kernel interface.
 
 `/admit` writes the same record the reconciler's `grant` writes: the
-subject and the WireGuard key it was admitted with, read once from its DID
+subject and the WireGuard public key it was admitted with, read once from its DID
 document, and nothing else. The doorman derives the address from that key
 on every read, so there is no address anywhere that could go stale or lie.
 If bob ever rotates the WireGuard key, bob is a stranger until alice admits
