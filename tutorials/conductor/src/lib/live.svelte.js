@@ -2,6 +2,8 @@
 // score, where the conductor is in it, and what each player published.
 // Nothing here is guessed; every card renders from this one object.
 
+import { setGlossary } from './md.js';
+
 export const live = $state({
   connected: false,
   did: null, // the conductor's DID: whose repo the pictures and files are in
@@ -53,6 +55,7 @@ export function connect() {
     const msg = JSON.parse(m.data);
     if (msg.type === 'hello') {
       live.did = msg.did;
+      setGlossary(msg.manifest.glossary);
       live.manifest = msg.manifest;
       live.machines = {};
       live.wire = [];

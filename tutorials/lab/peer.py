@@ -1,8 +1,8 @@
 """One sovereign peer, one machine: python peer.py <domain>
 
 Mints (or reloads) did:web:<domain> in ./<domain>/, serves its DID document on
-port 80, hosts its repo on the atproto sync surface, and takes local drops into
-the repo on /drop. Its WireGuard public key is published in the DID document, and admitting a
+port 80, hosts its repo on the atproto sync surface, and takes local commits on
+/commit. Its WireGuard public key is published in the DID document, and admitting a
 peer to the gated channel opens that peer's tunnel.
 """
 
@@ -115,7 +115,7 @@ async def boot() -> Starlette:
             # Four routes of our own, then two sets the library ships. One process,
             # one port, serving the DID document and the repo side by side.
             Route("/whoami", whoami),
-            Route("/drop", drop, methods=["POST"]),
+            Route("/commit", commit, methods=["POST"]),
             Route("/admit", admit, methods=["POST"]),
             Route("/evict", evict, methods=["POST"]),
             *server.app.routes,  # /xrpc/com.atproto.sync.*: the standard atproto sync surface
@@ -184,7 +184,7 @@ def is_loopback(host: str) -> bool:
     return address.is_loopback or (mapped is not None and mapped.is_loopback)
 
 
-async def drop(request: Request) -> JSONResponse:
+async def commit(request: Request) -> JSONResponse:
     """Write one signed commit to one repo. Only this machine may call it.
 
     {"repo": "public" | "channel", "text": "..."}        create a note

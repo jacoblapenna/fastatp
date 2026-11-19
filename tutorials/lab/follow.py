@@ -63,7 +63,7 @@ async def checkpoint(mirror: RepoMirror) -> int:
             ) from None
     if resp.status_code == 404:
         # The host answered, but serves no repo by that DID to us. A typo, a
-        # channel DID from before the hub rebooted (the lab's channel is new
+        # channel DID from before that peer rebooted (the lab's channel is new
         # each boot), or a gated repo and a wire the doorman does not admit:
         # the doorman answers exactly as if the repo did not exist, so a
         # stranger cannot even learn that it does.

@@ -10,7 +10,60 @@ function inline(text) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 }
 
+// The words the guide's key concepts define, from the score. A caption that
+// uses one gets it marked, the first time in that caption, and the word's
+// line shows on hover or focus. The definitions live in the markdown only.
+let terms = null;
+
+export function setGlossary(glossary = []) {
+  const plain = (s) => s.replace(/[`*]/g, '');
+  const entries = glossary.map((g) => ({ word: g.word, text: plain(g.text) }));
+  if (!entries.length) return (terms = null);
+  // longest first, so "DID document" wins over "DID"; a word in capitals
+  // (DID, CID) matches only in capitals, so the verb "did" is left alone
+  const one = (w) => {
+    const body = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const any = w === w.toUpperCase() ? body : [...body].map((c) => (/[a-z]/i.test(c) ? `[${c.toLowerCase()}${c.toUpperCase()}]` : c)).join('');
+    return /y$/i.test(w) ? `${any.slice(0, -4)}(?:y|ies)` : `${any}s?`;
+  };
+  const sorted = [...entries].sort((a, b) => b.word.length - a.word.length);
+  terms = {
+    pattern: new RegExp(`\\b(?:${sorted.map((e) => `(${one(e.word)})`).join('|')})\\b`, 'g'),
+    entries: sorted,
+  };
+}
+
+// Mark glossary words in rendered html: only in running text, never inside
+// code, bold (a word being defined) or a tag.
+function mark(html) {
+  if (!terms) return html;
+  const seen = new Set();
+  let shut = 0;
+  return html
+    .split(/(<[^>]+>)/)
+    .map((part) => {
+      if (part.startsWith('<')) {
+        if (/^<(code|strong)\b/.test(part)) shut += 1;
+        else if (/^<\/(code|strong)>/.test(part)) shut -= 1;
+        return part;
+      }
+      if (shut) return part;
+      return part.replace(terms.pattern, (hit, ...groups) => {
+        const i = groups.findIndex((g, n) => n < terms.entries.length && g !== undefined);
+        if (i < 0 || seen.has(i)) return hit;
+        seen.add(i);
+        const text = terms.entries[i].text.replace(/"/g, '&quot;');
+        return `<abbr class="term" tabindex="0" data-def="${text}">${hit}</abbr>`;
+      });
+    })
+    .join('');
+}
+
 export function md(text = '') {
+  return mark(render(text));
+}
+
+function render(text = '') {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   let out = '';
   let list = null;

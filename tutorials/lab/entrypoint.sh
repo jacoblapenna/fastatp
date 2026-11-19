@@ -22,7 +22,7 @@ print(overlay_address(sys.argv[1]))' "$(wg pubkey < "/srv/$DOMAIN/wg.key")")
 ip -6 address replace "$TUNNEL_IP/64" dev wg0
 wg set wg0 private-key "/srv/$DOMAIN/wg.key" listen-port 51820   # the UDP port peers knock on
 ip link set wg0 up
-# No peers yet. The peer process adds them as it admits DIDs (hub side) or
+# No peers yet. The peer process adds them as it admits DIDs (the admitting side) or
 # as pair.py is run (reader side). Until then wg0 is a locked door.
 # Part 4 (`./lab.sh conductor`): this machine's player starts peer.py and takes the demo's cues.
 [ -n "$CONDUCTOR" ] && exec python player.py "$DOMAIN"

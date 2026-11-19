@@ -63,36 +63,61 @@ you type.
 >   document at `alice.lan/.well-known/did.json`".
 > - **DID document**: public key plus service endpoints. What verifiers fetch.
 >   Here it also carries the machine's WireGuard identity.
-> - **Twin**: a second DID beside the main one, `did:web:alice.lan:<slug>`,
->   that serves the identity's key history. Only FastATP peers keep one.
-> - **Pen**: the rotation secret, printed once when an identity is minted
->   and kept off the machine. It alone can move the identity to a new
->   signing key.
 > - **Repo**: one signed tree of records per DID. Present state only.
-> - **Commit**: the signed root of that tree, with a revision `rev`. Every
->   change is one: a create, an update, or a delete.
 > - **Record**: one typed object in the repo, addressed as
 >   `at://<did>/<collection>/<rkey>`. The *collection* is the record's
 >   lexicon name, and the *rkey* (record key) is the part that is unique
 >   within it. Together they are the record's path in the repo.
-> - **CID**: the hash of a block's bytes, which is also its address. A
->   record, a tree node and a commit are each one block.
-> - **Drop**: this guide's word for one write dropped into the repo, creating
->   a record or deleting one, which is one signed commit. Not a protocol term; `/drop` is a route in
->   `peer.py`.
-> - **Lexicon**: the schema language. You write your own; FastATP ships none.
-> - **Firehose**: the WebSocket stream of commits (`subscribeRepos`). Each
->   frame on it is numbered by `seq`.
-> - **Checkpoint**: the whole repo as one CAR file (`getRepo`).
-> - **Mirror**: a verified local copy of someone else's repo (`RepoMirror`).
-> - **Tunnel**: a WireGuard link. Inside it, the source address *is* the
->   caller's identity, because the kernel bound that address to a key.
+> - **Commit**: the signed root of that tree, with a revision `rev`. Every
+>   change is one: a create, an update, or a delete.
+
+<!-- @demo glossary -->
+The rest of the guide's words, each one line. On the conductor's screen a
+dotted word shows its line when you hover it.
+
+- **Identity**: a DID and the keys behind it.
+- **Signature**: bytes that only the holder of a private key could have
+  made over some data. Anyone with the matching public key can check them.
+- **Twin**: a second DID beside the main one, `did:web:alice.lan:<slug>`,
+  that serves the identity's key history. Only FastATP peers keep one.
+- **Pen**: the rotation secret, printed once when an identity is minted
+  and kept off the machine. It alone can move the identity to a new
+  signing key.
+- **Tree**: the repo's sorted index, from each record's path to its CID.
+  The commit signs the tree's root, so one signature covers every record.
+- **Block**: one piece of stored bytes, named by its hash.
+- **CID**: the hash of a block's bytes, which is also its address. A
+  record, a tree node and a commit are each one block.
+- **Op**: one change inside a commit: a create, an update or a delete of
+  one path.
+- **Lexicon**: the schema language. You write your own; FastATP ships none.
+- **atproto**: the AT Protocol, the open protocol FastATP uses for DIDs,
+  signed repos and lexicons.
+- **Firehose**: the WebSocket stream of commits (`subscribeRepos`). Each
+  frame on it is numbered by `seq`.
+- **Frame**: one message on the firehose. Here each one carries one commit.
+- **Checkpoint**: the whole repo as one CAR file (`getRepo`).
+- **CAR**: a file format that holds a set of blocks. A whole repo travels
+  as one CAR file.
+- **Mirror**: a verified local copy of someone else's repo (`RepoMirror`).
+- **Loopback**: the address a machine uses to talk to itself
+  (`localhost`). Nothing outside the machine can reach it.
+- **WireGuard**: the VPN built into the Linux kernel. It makes the
+  tunnels, and it answers only the public keys it has been told about.
+- **Kernel**: the core of the operating system. Here it runs WireGuard,
+  so it is what lets a packet in or discards it.
+- **Handshake**: the first exchange between two WireGuard keys. Until it
+  completes, no tunnel exists.
+- **Tunnel**: a WireGuard link. Inside it, the source address *is* the
+  caller's identity, because the kernel bound that address to a key.
+- **Wire**: what a request arrived on: the plain LAN, or one peer's tunnel.
+<!-- @demo /glossary -->
 
 Each machine runs one symmetric `peer.py`, which is a complete personal data server:
 it mints or reloads an identity, serves that identity's DID document on
 port 80, hosts its signed repo on the atproto sync surface
-(`/xrpc/com.atproto.sync.*`), and takes local drops into the repo on a
-loopback-only `/drop` route.
+(`/xrpc/com.atproto.sync.*`), and takes new commits on a loopback-only
+`/commit` route.
 
 That is the same shape as the peer you would run on your own domain, with
 `alice.lan` standing in for the public hostname.
@@ -142,7 +167,7 @@ fastatp/                     the fastatp repository; the lab installs the packag
         ├── lexicons.py      your record types
         ├── dids.py          how this LAN resolves did:web
         ├── peer.py          one sovereign peer
-        ├── pair.py          point a machine's tunnel at a hub
+        ├── pair.py          point a machine's tunnel at another peer
         ├── follow.py        a verified reader
         ├── tail.py          the raw wire
         ├── verify.py        anyone, later, offline
@@ -276,15 +301,15 @@ first read.
 ### `peer.py`: one sovereign peer
 
 `peer.py` is the whole peer: it mints or reloads an identity, serves the
-DID document, hosts the public repo and a gated channel, and takes drops into its
-repos, admissions and evictions on loopback-only routes.
+DID document, hosts the public repo and a gated channel, and takes commits,
+admissions and evictions on loopback-only routes.
 
 ```python
 """One sovereign peer, one machine: python peer.py <domain>
 
 Mints (or reloads) did:web:<domain> in ./<domain>/, serves its DID document on
-port 80, hosts its repo on the atproto sync surface, and takes local drops into
-the repo on /drop. Its WireGuard public key is published in the DID document, and admitting a
+port 80, hosts its repo on the atproto sync surface, and takes local commits on
+/commit. Its WireGuard public key is published in the DID document, and admitting a
 peer to the gated channel opens that peer's tunnel.
 """
 
@@ -397,7 +422,7 @@ async def boot() -> Starlette:
             # Four routes of our own, then two sets the library ships. One process,
             # one port, serving the DID document and the repo side by side.
             Route("/whoami", whoami),
-            Route("/drop", drop, methods=["POST"]),
+            Route("/commit", commit, methods=["POST"]),
             Route("/admit", admit, methods=["POST"]),
             Route("/evict", evict, methods=["POST"]),
             *server.app.routes,  # /xrpc/com.atproto.sync.*: the standard atproto sync surface
@@ -466,7 +491,7 @@ def is_loopback(host: str) -> bool:
     return address.is_loopback or (mapped is not None and mapped.is_loopback)
 
 
-async def drop(request: Request) -> JSONResponse:
+async def commit(request: Request) -> JSONResponse:
     """Write one signed commit to one repo. Only this machine may call it.
 
     {"repo": "public" | "channel", "text": "..."}        create a note
@@ -620,20 +645,20 @@ decision, signed and kept; the kernel peer is the enforcement, and it is
 the only thing that lets a packet through. The two are written in that
 order.
 
-### `pair.py`: point a machine's tunnel at a hub
+### `pair.py`: point a machine's tunnel at another peer
 
-`pair.py` points this machine's tunnel at a hub, using nothing but the
-hub's DID document.
+`pair.py` points this machine's tunnel at another peer, using nothing but
+that peer's DID document.
 
 ```python
-"""Point this machine's tunnel at a hub, using nothing but the hub's DID document:
-python pair.py <hub-did>
+"""Point this machine's tunnel at another peer, using nothing but that peer's DID document:
+python pair.py <peer-did>
 
 This is not a request and not a subscribe. It changes this machine's own
-kernel and sends nothing the hub will answer. The ask ("admit my DID") happens
-out of band; the hub's /admit is the other half; follow.py through the tunnel
-is the subscribe. FastATP's WireGuard helpers cover the hub's half
-(add_peer, remove_peer, the reconciler) and the DID-document service. The hub
+kernel and sends nothing the other peer will answer. The ask ("admit my DID") happens
+out of band; that peer's /admit is the other half; follow.py through the tunnel
+is the subscribe. FastATP's WireGuard helpers cover the admitting half
+(add_peer, remove_peer, the reconciler) and the DID-document service. The admitting peer
 needs no endpoint, because WireGuard learns a peer's address from its
 handshake. The reader is the asymmetric side: it must know where to send the
 first packet and must keep knocking, so this one `wg set` is plain WireGuard.
@@ -647,18 +672,18 @@ from dids import resolver
 
 from fastatp.authz.wireguard import parse_wireguard_service
 
-hub = sys.argv[
+target = sys.argv[
     1
 ]  # a DID such as did:web:alice.lan, not an address; the address comes from the document
 
 
 async def main() -> None:
-    # Fetch the hub's DID document, the same request anyone on the LAN can make,
+    # Fetch the other peer's DID document, the same request anyone on the LAN can make,
     # and read the WireGuard service out of it: the public key that answers and
     # the UDP endpoint to send to. The tunnel address that key is allowed to use
     # is not in the document: it is derived from the key, here, by the same
-    # function the hub used to put it on its own interface.
-    info = parse_wireguard_service(await resolver()(hub))
+    # function that peer used to put it on its own interface.
+    info = parse_wireguard_service(await resolver()(target))
     # Hand those to the kernel. This is the whole "client side" of a WireGuard
     # tunnel, four facts:
     #   peer <key>                trust this key
@@ -666,7 +691,7 @@ async def main() -> None:
     #   allowed-ips <addr>/128    packets from this key may only claim the one
     #                             address its key derives
     #   persistent-keepalive 5    knock every 5 s, so the tunnel comes up on its
-    #                             own the moment the hub admits us
+    #                             own the moment that peer admits us
     subprocess.run(
         [
             "wg",
@@ -684,11 +709,11 @@ async def main() -> None:
         check=True,
     )
     print(
-        f"tunnel peer set: {hub} is {info.public_key} at {info.endpoint}, tunnel ip {info.tunnel_ip}"
+        f"tunnel peer set: {target} is {info.public_key} at {info.endpoint}, tunnel ip {info.tunnel_ip}"
     )
-    # WireGuard is silent to strangers. Until the hub adds our public key on its side,
+    # WireGuard is silent to strangers. Until the other peer adds our public key on its side,
     # our knocks get no reply at all, not even a refusal.
-    print("nothing will handshake until the hub admits this machine")
+    print("nothing will handshake until that peer admits this machine")
 
 
 asyncio.run(main())
@@ -775,7 +800,7 @@ async def checkpoint(mirror: RepoMirror) -> int:
             ) from None
     if resp.status_code == 404:
         # The host answered, but serves no repo by that DID to us. A typo, a
-        # channel DID from before the hub rebooted (the lab's channel is new
+        # channel DID from before that peer rebooted (the lab's channel is new
         # each boot), or a gated repo and a wire the doorman does not admit:
         # the doorman answers exactly as if the repo did not exist, so a
         # stranger cannot even learn that it does.
@@ -1156,12 +1181,12 @@ with alice, and pairing grants nothing.
 
 <!-- @demo point bob.terminal -->
 
-Drop the first record into alice's repo. `/drop` only answers on alice's own loopback, so the
+Drop the first record into alice's repo. `/commit` only answers on alice's own loopback, so the
 command runs *on alice's machine*:
 
-<!-- @demo code peer.py "async def drop(" -->
+<!-- @demo code peer.py "async def commit(" -->
 ```bash
-./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' \
+./lab.sh alice curl -s -X POST localhost/commit -H 'content-type: application/json' \
   -d '{"repo":"public","text":"hello, LAN"}'
 ```
 
@@ -1197,10 +1222,10 @@ sequence number 3. The `uri` is the record's permanent address.
 
 Prove that the route really is local. The same call from bob's machine:
 
-<!-- @demo ask Will alice's peer take a drop into alice's repo from bob's machine? Bob has the route, the port and the same JSON. -->
-<!-- @demo code peer.py "async def drop(" -->
+<!-- @demo ask Will alice's peer take a record for alice's repo from bob's machine? Bob has the route, the port and the same JSON. -->
+<!-- @demo code peer.py "async def commit(" -->
 ```bash
-./lab.sh bob curl -s -X POST alice.lan/drop -H 'content-type: application/json' -d '{"repo":"public","text":"nope"}'
+./lab.sh bob curl -s -X POST alice.lan/commit -H 'content-type: application/json' -d '{"repo":"public","text":"nope"}'
 ```
 
 ```json
@@ -1209,12 +1234,12 @@ Prove that the route really is local. The same call from bob's machine:
 
 > 🔑 **Key concept: the write path is the key.** The private signing key is a
 > file on alice's machine and nothing else can produce a valid commit. So
-> the only thing `/drop` protects is *who may ask alice's process to sign*,
+> the only thing `/commit` protects is *who may ask alice's process to sign*,
 > and the answer is "this machine", enforced by listening on loopback. In
 > production you reach it over your own VPN or from the box itself. There
 > is no login because there is nothing to log in to.
 
-![the signing key and the peer inside alice's machine; /drop answers loopback only, and bob's call is refused](sketches/write-path.svg)
+![the signing key and the peer inside alice's machine; /commit answers loopback only, and bob's call is refused](sketches/write-path.svg)
 
 <!-- @demo point alice.terminal bob.terminal -->
 
@@ -1249,7 +1274,7 @@ commit names the tree's root hash, the revision, the DID, and carries the
 signature.
 
 Each block's address is the hash of its bytes, and the commit's
-address is the CID you saw in the drop response. Drawn as what points to
+address is the CID you saw in the commit response. Drawn as what points to
 what, with every arrow a hash:
 
 ![a signed commit points at a tree node by hash, which points at a record by hash](sketches/block-store.svg)
@@ -1291,7 +1316,7 @@ server that mirrors many repos) would:
 
 Fetch one record *with its proof* and verify it as a stranger would, on
 bob's machine. `verify.py` takes four arguments, and three of them are the
-parts of the record's URI. The drop response above returned
+parts of the record's URI. The commit response above returned
 `at://did:web:alice.lan/com.example.tutorial.note/3mz23h6bv4dmd`, which
 reads as `at://<did>/<collection>/<rkey>`:
 
@@ -1303,7 +1328,7 @@ reads as `at://<did>/<collection>/<rkey>`:
 | `3mz23h6bv4dmd` | the rkey, unique within that collection | `<rkey>` |
 
 <!-- @demo terminal -->Your rkey will differ, because it is a timestamp. Copy it from your own
-drop response:<!-- @demo /terminal -->
+commit response:<!-- @demo /terminal -->
 
 <!-- @demo ask Bob holds a few hundred bytes and alice's DID document. Can bob verify the note with alice switched off? -->
 
@@ -1398,10 +1423,10 @@ optimization, it is the protocol. <!-- @demo terminal -->Leave bob's follow runn
 
 Drop two more notes into the repo as alice<!-- @demo terminal -->, in a second terminal<!-- @demo /terminal -->:
 
-<!-- @demo code peer.py "async def drop(" -->
+<!-- @demo code peer.py "async def commit(" -->
 ```bash
-./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' -d '{"repo":"public","text":"second note"}'
-./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' -d '{"repo":"public","text":"third note"}'
+./lab.sh alice curl -s -X POST localhost/commit -H 'content-type: application/json' -d '{"repo":"public","text":"second note"}'
+./lab.sh alice curl -s -X POST localhost/commit -H 'content-type: application/json' -d '{"repo":"public","text":"third note"}'
 ```
 
 <!-- @demo save rkey 3mz2b56vjjiqz from 1 -->
@@ -1429,9 +1454,9 @@ that names what it answers. Use the `uri` of the third note:
 
 <!-- @demo ask Bob answers alice. Where does the reply live: in alice's repo, or in bob's own? -->
 
-<!-- @demo code peer.py "async def drop(" -->
+<!-- @demo code peer.py "async def commit(" -->
 ```bash
-./lab.sh bob curl -s -X POST localhost/drop -H 'content-type: application/json' \
+./lab.sh bob curl -s -X POST localhost/commit -H 'content-type: application/json' \
   -d '{"repo":"public","to":"at://did:web:alice.lan/com.example.tutorial.note/3mz23hzl5mgmd","text":"bob here"}'
 ```
 
@@ -1467,9 +1492,9 @@ running in another terminal<!-- @demo /terminal -->:
 
 <!-- @demo ask Deleting a record removes its bytes. What else in the repo has to change, and who has to sign it? -->
 
-<!-- @demo code peer.py "async def drop(" -->
+<!-- @demo code peer.py "async def commit(" -->
 ```bash
-./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' \
+./lab.sh alice curl -s -X POST localhost/commit -H 'content-type: application/json' \
   -d '{"repo":"public","delete":"com.example.tutorial.note/3mz2b56vjjiqz"}'
 ```
 
@@ -1630,10 +1655,10 @@ a record. <!-- @demo terminal -->Ctrl-C it.<!-- @demo /terminal -->
 > - **Channel**: this guide's name for alice's private repo: a second repo
 >   with its own `did:key` identity, hosted by the same process.
 > - **Gated repo**: a repo registered with `public=False`. It is served
->   only inside a tunnel, and to everyone else it does not exist.
+>   only inside a tunnel, and to everyone else it does not exist. The
+>   peer that hosts it decides who may read it.
 > - **Doorman**: the check a gated repo runs on every caller: which wire
 >   did this connection arrive on, and whose key does that wire belong to.
-> - **Hub**: the peer that hosts a gated repo and decides who may read it.
 > - **Capability**: a signed record in the gated repo that says who may
 >   read it. Writing one is admission; deleting it is eviction.
 
@@ -1723,7 +1748,7 @@ Bob points their tunnel at alice. Everything bob needs is in alice's DID documen
 
 ```text
 tunnel peer set: did:web:alice.lan is Xz4BX2dBPJSHACFSjvNabZY57FhQjafxm5hIeWy0YwA= at alice.lan:51820, tunnel ip fd5a:7a7f:9c3e:0:5c0e:7a19:2bd4:8f31
-nothing will handshake until the hub admits this machine
+nothing will handshake until that peer admits this machine
 
 interface: wg0
   public key: X3BOLJ7vKtSJJEXDlr7Cl2tr9Sgxae5x0hsF+D7bY18=
@@ -1758,13 +1783,14 @@ exist on the network as far as bob can tell.
 
 > 🔑 **Key concept: the subscriber's side is yours to build.** FastATP
 > ships no pairing method for the reader and no protocol for asking to be
-> admitted. That is deliberate, for now. The library owns the hub's half,
-> where enforcement lives, and leaves how a reader finds a hub, asks for
+> admitted. That is deliberate, for now. The library owns the admitting
+> peer's half, where enforcement lives, and leaves how a reader finds a
+> peer to read from, asks for
 > access, and gets an answer to the app builder. A bulletin board of DIDs,
 > an invite link that carries one, a form on a website, a message in some
 > other app: any of these works, because the whole ask is one sentence
 > said outside the protocol, "I am knocking at your tunnel, and this is my
-> DID." Everything the hub needs to answer is already published under that
+> DID." Everything that peer needs to answer is already published under that
 > DID, and answering is writing one record. The market for that layer is
 > meant to emerge, not be fixed by the library.
 
@@ -1782,7 +1808,7 @@ Admission is one call with one argument, on alice's machine:
 <!-- @demo code peer.py "async def admit(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/admit -H 'content-type: application/json' -d '{"did":"did:web:bob.lan"}'
-./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' \
+./lab.sh alice curl -s -X POST localhost/commit -H 'content-type: application/json' \
   -d '{"repo":"channel","text":"bob, this one is just for you"}'
 ```
 
@@ -1848,7 +1874,7 @@ agree on the address: it was never chosen.
 <!-- @demo point alice.repo alice.tunnel -->
 
 > ⚠️ **Important: for private repos to work in production, three things
-> must be true on the hub's host.** First, WireGuard's UDP port (51820 here) must be
+> must be true on the machine that hosts them.** First, WireGuard's UDP port (51820 here) must be
 > reachable by the peers you admit: open it in the host firewall, forward
 > it through NAT if there is one, and publish the reachable address in the
 > `wg://` endpoint of your DID document. Second, the peer process must be
@@ -1929,7 +1955,7 @@ Bob's follow from earlier is still running in its terminal. <!-- @demo terminal 
 <!-- @demo code peer.py "async def evict(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/evict -H 'content-type: application/json' -d '{"did":"did:web:bob.lan"}'
-./lab.sh alice curl -s -X POST localhost/drop -H 'content-type: application/json' -d '{"repo":"channel","text":"after eviction"}'
+./lab.sh alice curl -s -X POST localhost/commit -H 'content-type: application/json' -d '{"repo":"channel","text":"after eviction"}'
 ```
 
 ```json
@@ -2264,7 +2290,7 @@ support host networking.
 | `peer.py` on `alice.lan` | Your PDS on your hostname. Same routes. |
 | `state/alice.lan/` | The state dir on your peer box. Back it up, keep the pen cold. |
 | `alice.lan/.well-known/did.json` | A static file on `https://<your domain>/`. |
-| `/drop` | Your posting UI, whatever it is. Loopback or VPN only. |
+| `/commit` | Your posting UI, whatever it is. Loopback or VPN only. |
 | `follow.py` | What a relay does to you, and what your browser does to everyone you follow. |
 | `tail.py` | Roughly what Jetstream shows you: the wire, unverified. |
 | `verify.py` | Anyone, anywhere, checking one of your records against your DID document. |
@@ -2273,7 +2299,7 @@ support host networking.
 
 ## Things to try before moving on
 
-- Drop a note longer than 300 graphemes into the repo. The `/drop` call returns a 500,
+- Drop a note longer than 300 graphemes into the repo. The `/commit` call returns a 500,
   `./lab.sh logs alice` shows `string exceeds 300 graphemes`, and
   `getLatestCommit` shows the `rev` did not move. The constraint is
   enforced before anything is signed.

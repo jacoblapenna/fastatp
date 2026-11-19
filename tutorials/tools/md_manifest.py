@@ -31,6 +31,11 @@ GitHub and fastatp.com do not render:
   <!-- @demo save rkey <literal> [from N] -->
                                           the Nth command of the last block returned a uri;
                                           later commands get its rkey wherever <literal> appears
+  <!-- @demo glossary --> ... <!-- @demo /glossary -->
+                                          a list of `- **Word**: one line` the show never
+                                          says: with the words the key concepts list the
+                                          same way, it is the glossary the page marks in
+                                          captions and shows on hover
   <!-- @demo stop bob -->                 Ctrl-C whatever bob left running
   <!-- @demo wait 5 -->                   let time pass
   <!-- @demo expand eve -->  collapse  focus
@@ -47,7 +52,7 @@ GitHub and fastatp.com do not render:
   <!-- @demo ask Will eve's ping get an answer? ... -->
                                           a question before a command, for the viewer to
                                           answer in their head; the next press shows
-  <!-- @demo code peer.py "async def drop(" -->
+  <!-- @demo code peer.py "async def commit(" -->
                                           the next block's commands reach this file, here;
                                           a command that runs `python x.py` says so itself
   <!-- @demo terminal -->...<!-- @demo /terminal -->
@@ -88,6 +93,7 @@ FULL_COMMENT = re.compile(
 )  # a terminal span on a line of its own is prose, not this
 TERMINAL_OPEN, TERMINAL_CLOSE = "<!-- @demo terminal -->", "<!-- @demo /terminal -->"
 ITEM = re.compile(r"^(- |\d+\. )")  # a list item starts a line of its own in a caption
+TERM = re.compile(r"^- \*\*(.+?)\*\*: (.+)$")  # a word a key concept defines, one line each
 
 
 def as_lines(lines: list[str]) -> str:
@@ -135,6 +141,7 @@ def parse(text: str) -> dict:
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
+    glossary: list[dict] = []  # the words the key concepts define, in the guide's order
     recent_image: list | None = None  # [path, paragraphs since]: a picture a concept may inherit
     replace_next_bash = False  # run directives just stood in for the next block
     skip_next_bash = False
@@ -206,6 +213,17 @@ def parse(text: str) -> dict:
             elif verb == "end":
                 emit_say()
                 active = False
+            elif verb == "glossary":
+                # words defined for hovering only: a list the page reads and the show
+                # never says. Everything up to the closing cue is the list.
+                listed = []
+                while i < len(lines) and lines[i].strip() != "<!-- @demo /glossary -->":
+                    listed.append(lines[i].strip())
+                    i += 1
+                i += 1
+                for entry in as_lines([x for x in listed if x]).split("\n"):
+                    if term := TERM.match(entry):
+                        glossary.append({"word": term.group(1), "text": term.group(2)})
             elif not active:
                 continue
             elif verb == "run":
@@ -325,6 +343,11 @@ def parse(text: str) -> dict:
                     concept["sketch"] = recent_image[0]
                 recent_image = None
                 emit(concept)
+                # a concept that lists words defines them for the whole show: the page
+                # marks each where a caption uses it and shows its line on hover
+                for line in concept["body"].split("\n"):
+                    if term := TERM.match(line):
+                        glossary.append({"word": term.group(1), "text": term.group(2)})
             replace_next_bash = False
             continue
 
@@ -387,6 +410,7 @@ def parse(text: str) -> dict:
         "chapters": chapters(steps),
         "files": files,
         "images": images,
+        "glossary": glossary,
         "steps": steps,
     }
 

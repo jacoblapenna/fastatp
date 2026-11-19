@@ -49,11 +49,12 @@ def test_getting_started_is_a_playable_score():
     assert "Ctrl-C" not in captions and "second terminal" not in captions
     assert "<!--" not in captions and "Your rkey will differ" not in captions
     assert not any("\n\n" in s["text"] for s in score["steps"] if s["kind"] == "say")
-    # the words come first: a viewer who only pressed Start meets the
-    # vocabulary before any command uses it, and lists keep their lines
+    # the words come first: a viewer who only pressed Start meets the handful
+    # the first chapter needs before any command uses them, and lists keep
+    # their lines; every other word is in the glossary, a hover away
     concepts = [s for s in score["steps"] if s["kind"] == "concept"]
     assert concepts[0]["title"].startswith("the words in this guide")
-    assert concepts[0]["body"].count("\n- **") >= 12
+    assert 4 <= concepts[0]["body"].count("\n- **") + 1 <= 8
     assert kinds.index("concept") < kinds.index("run")
     # four chapters, played by number, each with commands in it
     assert [c["number"] for c in score["chapters"]] == [1, 2, 3, 4]
@@ -96,15 +97,15 @@ def test_getting_started_is_a_playable_score():
     assert score["steps"][0]["kind"] == "chapter" and score["steps"][0]["number"] == 1
     # the Setup key concepts play where the thing they explain happens
     titles = [s["title"] for s in score["steps"] if s["kind"] == "concept"]
-    first_drop = next(
-        i for i, s in enumerate(score["steps"]) if s["kind"] == "run" and "/drop" in s["cmd"]
+    first_commit = next(
+        i for i, s in enumerate(score["steps"]) if s["kind"] == "run" and "/commit" in s["cmd"]
     )
     lexicon = next(
         s["id"]
         for s in score["steps"]
         if s["kind"] == "concept" and s["title"].startswith("a lexicon")
     )
-    assert first_drop < lexicon < starts[1]
+    assert first_commit < lexicon < starts[1]
     assert any(t.startswith("authorization in FastATP is declarative") for t in titles)
     # every lab file is known, with the guide's line on what it is for, and a
     # command shows the file it runs beside its machine
@@ -122,8 +123,8 @@ def test_getting_started_is_a_playable_score():
     shown = {s["code"]["file"] for s in score["steps"] if s["kind"] == "run" and "code" in s}
     assert {"peer.py", "follow.py", "tail.py", "verify.py", "blocks.py", "pair.py"} <= shown
     assert all(s["code"]["file"] in score["files"] for s in score["steps"] if s.get("code"))
-    drop = next(s for s in score["steps"] if s["kind"] == "run" and "/drop" in s["cmd"])
-    assert drop["code"] == {"file": "peer.py", "focus": "async def drop("}  # the cue above it
+    write = next(s for s in score["steps"] if s["kind"] == "run" and "/commit" in s["cmd"])
+    assert write["code"] == {"file": "peer.py", "focus": "async def commit("}  # the cue above it
     for s in score["steps"]:
         if s.get("code", {}).get("focus"):
             assert s["code"]["focus"] in score["files"][s["code"]["file"]]["text"]
@@ -186,6 +187,22 @@ def test_a_cue_carries_its_whole_step():
         "chapter",
         "ask",
     } <= seen
+
+
+def test_the_words_a_concept_defines_are_the_shows_glossary():
+    """A key concept that lists words, one `- **Word**: line` each, defines them for the
+    whole show, and so does a glossary region the show never says: the page marks each
+    word where a caption uses it and shows its line on hover."""
+    md_manifest = _tool("md_manifest")
+    score = md_manifest.parse((TUTORIALS / "GETTING_STARTED.md").read_text())
+    words = {g["word"]: g["text"] for g in score["glossary"]}
+    assert {"Peer", "DID document", "Commit", "Channel", "Doorman"} <= set(words)  # concepts
+    assert {"Pen", "Tunnel", "Kernel", "Loopback"} <= set(words)  # the glossary region
+    assert not {"Drop", "Hub"} & set(words)  # a drop is a commit; the host of a channel is a peer
+    assert len(words) == len(score["glossary"])  # no word defined twice
+    captions = " ".join(s["text"] for s in score["steps"] if s["kind"] == "say")
+    assert "dotted word" not in captions  # the glossary is never said
+    assert all(text and "\n" not in text for text in words.values())
 
 
 def test_the_favicon_is_the_brand_goose():
