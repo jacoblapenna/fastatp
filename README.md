@@ -25,9 +25,51 @@ are the same kind of peer here: identity and signed records for **agents,
 workloads, and IoT**, not an AI SDK. The signing core is transport-agnostic — it
 turns typed records into signed bytes and back, and never opens a socket itself.
 
+Run as a server, a FastATP peer is a **personal data server (PDS)** you run as a
+library: it serves its own DID document, hosts signed repos, and speaks the
+atproto firehose and sync routes, so relays, mirrors and the `atproto` SDK read
+it like any other host. It is a PDS at the sync level, by design — no sessions,
+no login routes, no `app.bsky` — because the wire is the contract, and a login
+is the thing the wire replaces.
+
 > **[`PHILOSOPHY.md`](https://github.com/jacoblapenna/fastatp/blob/main/PHILOSOPHY.md)
 > is the canonical statement of what this is and what it forbids.** This README
 > is its front door.
+
+## Tutorials
+
+Runnable guides, one per pull request, each building on the one before it.
+Every guide runs against the fastatp in the tree: three machines on a private
+LAN inside Docker, each a personal data server of its own, read along and
+typed, watched as a show in the browser, or played headless, so a guide breaks
+in the same change as the code it teaches. You need Docker with the compose
+plugin, nothing else.
+
+| # | Guide | What it shows | Status |
+| --- | --- | --- | --- |
+| 1 | [`GETTING_STARTED.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/GETTING_STARTED.md) | Three sovereign peers on a private LAN: a PDS on each machine, signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
+| 2 | The demo engine | The conductor that plays guide 1, taken apart: workloads orchestrated with signed records, no model in the way yet | next |
+| 3 | Hoot | Agents with models and tools, a verified chain of custody | after 2 |
+| 4 | The browser app | A person accessing an app from a browser tab with no secret on the wire | after 3 |
+
+To watch the first one as a show, with every machine's terminal, the network
+diagram and the wire on one screen:
+
+```bash
+cd tutorials/lab
+./lab.sh clean               # start from the first minted identity
+./lab.sh conductor           # boots alice, bob and eve with the demo engine
+```
+
+Open <http://localhost:8080>, pick a chapter and press **Next**. The show is
+four chapters of a few minutes each; a question every handful of presses,
+answered by what the next press shows; a key concept stops the show until
+**Got it**. Every step really runs on the machines, and the engine playing it
+is FastATP too: the score, the code and the pictures are records and blobs in
+the conductor's own repo. `./lab.sh test` plays the same show with nobody
+watching and exits 0 when the whole guide played.
+[`tutorials/README.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/README.md)
+has the three ways to run a guide and how to write one.
 
 ## How it compares
 
@@ -74,7 +116,8 @@ ecosystem's standard for AT Protocol — production-grade, battle-tested
 against the live network, and the right choice for building on Bluesky or
 talking to existing PDS hosts. FastATP and the SDK are **complementary
 halves of one wire**: the SDK is a superb *client of hosts*; FastATP is a
-way to *be* a host — a sovereign peer. An SDK application can read a
+way to *be* a host — a personal data server (PDS) as a library, a sovereign
+peer. An SDK application can read a
 FastATP-hosted repo today (see
 [`examples/sensorthings_interop`](https://github.com/jacoblapenna/fastatp/tree/main/examples/sensorthings_interop),
 where an independent SDK-based package flattens a FastATP CAR export unmodified),
@@ -82,13 +125,13 @@ and a FastATP peer serves SDK users like any other host.
 
 | Dimension | `atproto` SDK | **FastATP** |
 | --- | --- | --- |
-| What it is | Client library for AT Protocol services | **Library for being an AT Protocol peer** |
+| What it is | Client library for AT Protocol services | **Library for being an AT Protocol peer: your own personal data server (PDS)** |
 | Primary use case | Build on Bluesky; talk to PDS hosts; consume the network | **Host your own signed repos; agent↔agent and user↔agent workflows** |
 | Auth model | Sessions / OAuth against a host (as the network's services expect) | **No login surface: keys sign, capability records authorize, absence is revocation** |
 | Lexicon approach | Generated models from the official corpus — batteries included | **User-defined: author any conforming lexicon in Pydantic; export valid lexicon JSON** |
 | Firehose role | Consume (production-hardened client) | **Emit AND consume, with full verification (signatures + MST inversion)** |
 | Repo role | Read via host APIs | **Sign, host, prove, serve: MST repo, commits, CAR, `prove()` record proofs** |
-| Hosting | n/a (clients have hosts) | **Peer-as-a-library: firehose + sync routes on your own box** |
+| Hosting | n/a (clients have hosts) | **PDS-as-a-library: firehose + sync routes on your own box** |
 | Choose it when… | You're building an app or bot on the existing network — it's mature, complete, and maintained by the ecosystem's standard-bearer | **You need to be your own host: no trusted third party, secure SaaS without a login wall, sovereign agents** |
 
 The sharpest way to see the difference: with FastATP, **a secure
@@ -216,7 +259,8 @@ exchange a private reply, end to end).
 - **Canonical records & repos** — atproto-identical DAG-CBOR + CIDs (checked
   against the interop vectors); `Repo` keeps a signed Merkle Search Tree of the
   current state (per-commit GC, no history accretion) with CAR export/import.
-- **Firehose** — `PeerServer` hosts one or many repos (routed by DID) behind a
+- **Hosting and firehose** — `PeerServer` is the personal data server: it
+  hosts one or many repos (routed by DID) behind a
   `com.atproto.sync.subscribeRepos`-shaped WebSocket with cursor resume;
   `RepoMirror` verifies every commit against the producer's DID. A repo whose
   pen lives elsewhere is hosted **frozen**: the host serves it and takes the
@@ -262,13 +306,10 @@ peer ships pre-built). Running the full suite — browser/WASM, WireGuard, and
 cross-implementation tests — is covered in
 [`docs/TESTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/docs/TESTING.md).
 
-The runnable tutorials live in
-[`tutorials/`](https://github.com/jacoblapenna/fastatp/tree/main/tutorials),
-a series that starts with
-[`GETTING_STARTED.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/GETTING_STARTED.md):
-three peers on a private LAN inside Docker, read along, watched on one
-screen, or played headless against the fastatp in the tree, so a tutorial
-breaks in the same change as the code it teaches.
+The [tutorials](#tutorials) are tests too: `cd tutorials/lab && ./lab.sh test`
+plays `GETTING_STARTED.md` headless against the fastatp in the tree, and
+`uv run pytest` fails when a guide's quoted files drift from the files
+themselves.
 
 See [`CONTRIBUTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/CONTRIBUTING.md)
 before opening a pull request, and
