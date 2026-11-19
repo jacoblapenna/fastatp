@@ -24,7 +24,7 @@ between the commands; they are the point.
 <!-- @demo machines alice bob eve -->
 <!-- @demo start -->
 <!-- @demo chapter 1 "A sovereign peer" -->
-<!-- @demo blurb Three machines boot and mint identities. Alice's DID document, read from bob; one drop, one verify, and what the repo actually holds. -->
+<!-- @demo blurb Three machines boot and mint identities. Alice's DID document, read from bob; one note dropped into the repo, one verify, and what the repo actually holds. -->
 
 Three machines share one LAN, alice, bob and eve, each running the same
 peer:
@@ -77,8 +77,8 @@ you type.
 >   within it. Together they are the record's path in the repo.
 > - **CID**: the hash of a block's bytes, which is also its address. A
 >   record, a tree node and a commit are each one block.
-> - **Drop**: this guide's word for one write, creating a record or deleting
->   one, which is one signed commit. Not a protocol term; `/drop` is a route in
+> - **Drop**: this guide's word for one write dropped into the repo, creating
+>   a record or deleting one, which is one signed commit. Not a protocol term; `/drop` is a route in
 >   `peer.py`.
 > - **Lexicon**: the schema language. You write your own; FastATP ships none.
 > - **Firehose**: the WebSocket stream of commits (`subscribeRepos`). Each
@@ -91,8 +91,8 @@ you type.
 Each machine runs one symmetric `peer.py`, which is a complete personal data server:
 it mints or reloads an identity, serves that identity's DID document on
 port 80, hosts its signed repo on the atproto sync surface
-(`/xrpc/com.atproto.sync.*`), and takes local drops on a loopback-only
-`/drop` route.
+(`/xrpc/com.atproto.sync.*`), and takes local drops into the repo on a
+loopback-only `/drop` route.
 
 That is the same shape as the peer you would run on your own domain, with
 `alice.lan` standing in for the public hostname.
@@ -276,15 +276,15 @@ first read.
 ### `peer.py`: one sovereign peer
 
 `peer.py` is the whole peer: it mints or reloads an identity, serves the
-DID document, hosts the public repo and a gated channel, and takes drops,
-admissions and evictions on loopback-only routes.
+DID document, hosts the public repo and a gated channel, and takes drops into its
+repos, admissions and evictions on loopback-only routes.
 
 ```python
 """One sovereign peer, one machine: python peer.py <domain>
 
 Mints (or reloads) did:web:<domain> in ./<domain>/, serves its DID document on
-port 80, hosts its repo on the atproto sync surface, and takes local drops on
-/drop. Its WireGuard public key is published in the DID document, and admitting a
+port 80, hosts its repo on the atproto sync surface, and takes local drops into
+the repo on /drop. Its WireGuard public key is published in the DID document, and admitting a
 peer to the gated channel opens that peer's tunnel.
 """
 
@@ -1156,7 +1156,7 @@ with alice, and pairing grants nothing.
 
 <!-- @demo point bob.terminal -->
 
-Drop the first record. `/drop` only answers on alice's own loopback, so the
+Drop the first record into alice's repo. `/drop` only answers on alice's own loopback, so the
 command runs *on alice's machine*:
 
 <!-- @demo code peer.py "async def drop(" -->
@@ -1197,7 +1197,7 @@ sequence number 3. The `uri` is the record's permanent address.
 
 Prove that the route really is local. The same call from bob's machine:
 
-<!-- @demo ask Will alice's peer take a drop from bob's machine? Bob has the route, the port and the same JSON. -->
+<!-- @demo ask Will alice's peer take a drop into alice's repo from bob's machine? Bob has the route, the port and the same JSON. -->
 <!-- @demo code peer.py "async def drop(" -->
 ```bash
 ./lab.sh bob curl -s -X POST alice.lan/drop -H 'content-type: application/json' -d '{"repo":"public","text":"nope"}'
@@ -1240,7 +1240,7 @@ one record, as stored: b'\xa3dtextjhello, LANe$typex\x19com.example.tutorial.not
 
 Three blocks, and there are only ever three kinds. The record is your
 `Note`, encoded as DAG-CBOR: a binary form of the same data model JSON
-uses, which is why the decoded block is exactly the JSON you dropped and
+uses, which is why the decoded block is exactly the JSON you dropped into the repo and
 the raw bytes still read `hello, LAN`.
 
 The tree node is a leaf of the
@@ -1353,7 +1353,7 @@ The frame is long<!-- @demo terminal -->, so the listing above elides the
 rest<!-- @demo /terminal -->: `commit` is the new commit's CID, `prevData` is the tree root before
 this write, `blobs` is empty because notes carry no media, and `rebase` and
 `tooBig` are always false here. <!-- @demo terminal -->Leave `tail.py` running in this terminal,
-open a second one, and drop another note as alice; it appears live.<!-- @demo /terminal -->
+open a second one, and drop another note into the repo as alice; it appears live.<!-- @demo /terminal -->
 
 `tail.py` verifies nothing. It shows you the bytes and trusts them. Never
 build on it. <!-- @demo terminal -->Ctrl-C it.<!-- @demo /terminal -->
@@ -1396,7 +1396,7 @@ A mirror cannot start from the live stream alone. A commit's ops only make
 sense against the state before it, so checkpoint first is not an
 optimization, it is the protocol. <!-- @demo terminal -->Leave bob's follow running.<!-- @demo /terminal -->
 
-Drop two more notes as alice<!-- @demo terminal -->, in a second terminal<!-- @demo /terminal -->:
+Drop two more notes into the repo as alice<!-- @demo terminal -->, in a second terminal<!-- @demo /terminal -->:
 
 <!-- @demo code peer.py "async def drop(" -->
 ```bash
@@ -1491,7 +1491,7 @@ seq 6: #commit rev=3mz2b5d2k4m4m verified
 
 The deletion arrived as a commit like any other: a new `rev`, a new
 sequence number, a signature bob verified, and an op that names the path
-that is gone and carries no record. Bob's mirror dropped the record. Now
+that is gone and carries no record. Bob's mirror removed the record. Now
 look at alice's store again:
 
 <!-- @demo point bob.terminal alice.repo -->
@@ -1704,7 +1704,7 @@ That gate is the only thing FastATP adds to what atproto already is:
 > VPN's own access rules, and invisible to the rest of the world. That is
 > this lab with the LAN replaced by your VPN. What `peer.py` adds in this
 > part, opening a tunnel per admission, is the same idea with the VPN
-> built in; drop the `wg.add_peer` line and the record alone is the gate.
+> built in; remove the `wg.add_peer` line and the record alone is the gate.
 
 <!-- @demo point diagram -->
 
@@ -1925,7 +1925,7 @@ runs.
 
 Bob's follow from earlier is still running in its terminal. <!-- @demo terminal -->In another:<!-- @demo /terminal -->
 
-<!-- @demo ask After alice evicts bob and drops one more private note, will bob's follow print it? Bob's WebSocket is still open. -->
+<!-- @demo ask After alice evicts bob and drops one more private note into the channel, will bob's follow print it? Bob's WebSocket is still open. -->
 <!-- @demo code peer.py "async def evict(" -->
 ```bash
 ./lab.sh alice curl -s -X POST localhost/evict -H 'content-type: application/json' -d '{"did":"did:web:bob.lan"}'
@@ -2273,7 +2273,7 @@ support host networking.
 
 ## Things to try before moving on
 
-- Drop a note longer than 300 graphemes. The `/drop` call returns a 500,
+- Drop a note longer than 300 graphemes into the repo. The `/drop` call returns a 500,
   `./lab.sh logs alice` shows `string exceeds 300 graphemes`, and
   `getLatestCommit` shows the `rev` did not move. The constraint is
   enforced before anything is signed.
@@ -2284,7 +2284,7 @@ support host networking.
   its author, and the check is against the key in the author's DID
   document.
 - Admit eve as well (`{"did":"did:web:eve.lan"}`), drop a second private
-  note, read the channel from both machines through the tunnel, then evict
+  note into the channel, read the channel from both machines through the tunnel, then evict
   both. Watch `wg show wg0` on alice as the peer list follows the
   capability records.
 - Change `Note` to add a required field, `./lab.sh up` to rebuild, and
