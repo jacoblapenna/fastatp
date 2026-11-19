@@ -3,6 +3,7 @@ conductor plays the guides as scores. Both must hold without Docker."""
 
 import importlib.util
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -54,17 +55,48 @@ def test_getting_started_is_a_playable_score():
     assert concepts[0]["title"].startswith("the words in this guide")
     assert concepts[0]["body"].count("\n- **") >= 12
     assert kinds.index("concept") < kinds.index("run")
-    # the app's own code is glossed before anything boots: the Setup key
-    # concepts and one caption per lab file play before the first command
-    titles = [s["title"] for s in score["steps"][: kinds.index("run")] if s["kind"] == "concept"]
-    assert any(t.startswith("a lexicon is a contract") for t in titles)
+    # four chapters, played by number, each with commands in it
+    assert [c["number"] for c in score["chapters"]] == [1, 2, 3, 4]
+    assert [c["title"] for c in score["chapters"]][2:] == [
+        "The private side",
+        "Admission and eviction",
+    ]
+    assert all(c["blurb"] and c["concepts"] and c["commands"] for c in score["chapters"])
+    starts = [c["start"] for c in score["chapters"]] + [len(score["steps"])]
+    for a, b in pairwise(starts):
+        assert any(s["kind"] == "run" for s in score["steps"][a:b])
+    assert score["steps"][0]["kind"] == "chapter" and score["steps"][0]["number"] == 1
+    # the Setup key concepts play where the thing they explain happens
+    titles = [s["title"] for s in score["steps"] if s["kind"] == "concept"]
+    first_drop = next(
+        i for i, s in enumerate(score["steps"]) if s["kind"] == "run" and "/drop" in s["cmd"]
+    )
+    lexicon = next(
+        s["id"]
+        for s in score["steps"]
+        if s["kind"] == "concept" and s["title"].startswith("a lexicon")
+    )
+    assert first_drop < lexicon < starts[1]
     assert any(t.startswith("authorization in FastATP is declarative") for t in titles)
-    early = " ".join(s["text"] for s in score["steps"][: kinds.index("run")] if s["kind"] == "say")
-    for name in ("follow.py", "tail.py", "verify.py", "blocks.py", "pair.py"):
-        assert f"`{name}`" in early
-    # a file's section carries the file, so the screen shows it beside the words
-    shown = {s["code"]["name"] for s in score["steps"] if s["kind"] == "heading" and "code" in s}
-    assert {"lexicons.py", "peer.py", "follow.py", "blocks.py"} <= shown
+    # every lab file is known, with the guide's line on what it is for, and a
+    # command shows the file it runs beside its machine
+    assert set(score["files"]) >= {
+        "lexicons.py",
+        "dids.py",
+        "peer.py",
+        "pair.py",
+        "follow.py",
+        "tail.py",
+        "verify.py",
+        "blocks.py",
+    }
+    assert all(f["gloss"] and f["text"] for f in score["files"].values())
+    shown = {s["code"]["file"] for s in score["steps"] if s["kind"] == "run" and "code" in s}
+    assert {"peer.py", "follow.py", "tail.py", "verify.py", "blocks.py", "pair.py"} <= shown
+    assert all(s["code"]["file"] in score["files"] for s in score["steps"] if s.get("code"))
+    drop = next(s for s in score["steps"] if s["kind"] == "run" and "/drop" in s["cmd"])
+    assert drop["code"] == {"file": "peer.py", "focus": "async def drop("}
+    assert drop["code"]["focus"] in score["files"]["peer.py"]["text"]
     # nothing a section says last is lost: its closing paragraph is a caption
     captions_list = [s["text"] for s in score["steps"] if s["kind"] == "say"]
     assert any(c.startswith("That is a conversation") for c in captions_list)
@@ -98,14 +130,16 @@ def test_a_cue_carries_its_whole_step():
             assert cue.style in ("key", "important", "tip")
         elif kind == "heading":
             assert cue.text == step["text"] and cue.level == step["level"]
-            if "code" in step:
-                assert cue.file == step["code"]["name"] and cue.code == step["code"]["text"]
         elif kind == "layout":
             assert cue.action == step["action"] and cue.targets
         elif kind == "wait":
             assert cue.wait_ms == int(step["seconds"] * 1000)
+        elif kind == "chapter":
+            assert cue.chapter == step["number"] and cue.title == step["title"]
         elif kind == "run":
             assert cue.env == {"CH": "x"} and cue.display == step["display"]
+            if "code" in step:
+                assert cue.file == step["code"]["file"] and cue.focus == step["code"]["focus"]
         if step.get("point"):
             assert cue.targets == step["point"]
     assert {
@@ -118,4 +152,5 @@ def test_a_cue_carries_its_whole_step():
         "wait",
         "collapse",
         "open",
+        "chapter",
     } <= seen

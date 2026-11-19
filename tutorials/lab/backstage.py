@@ -25,6 +25,17 @@ class Show(Lexicon):
     score: str  # which guide
 
 
+class File(Lexicon):
+    """The conductor, in its own repo, one per lab file at a fixed rkey: the
+    code a cue can put on show, with what the guide says it is for."""
+
+    nsid = "com.fastatp.demo.file"
+    show: str
+    name: str
+    gloss: str
+    text: str
+
+
 class Cue(Lexicon):
     """The conductor, in its own repo: "you, do this step of the score".
 
@@ -53,9 +64,10 @@ class Cue(Lexicon):
     style: str = ""  # a key concept's kind: key, important, tip
     level: int = 0  # a heading's depth
     targets: list[str] = []  # what the step points at or lays out: machines, sections, the wire
-    file: str = ""  # a heading that puts a lab file on show: its name...
-    code: str = ""  # ...and the file itself
+    file: str = ""  # the lab file a command runs, shown beside its machine (a File record)...
+    focus: str = ""  # ...open at the first line holding this
     wait_ms: int = 0  # a wait, in milliseconds: the data model has no floats
+    chapter: int = 0  # a chapter's number, where one begins
 
     @classmethod
     def for_step(
@@ -78,9 +90,10 @@ class Cue(Lexicon):
             style=step.get("style", ""),
             level=step.get("level", 0),
             targets=step.get("point") or step.get("targets") or step.get("machines") or [],
-            file=code.get("name", ""),
-            code=code.get("text", ""),
+            file=code.get("file", ""),
+            focus=code.get("focus", ""),
             wait_ms=int(step.get("seconds", 0) * 1000),
+            chapter=step.get("number", 0),
         )
 
 

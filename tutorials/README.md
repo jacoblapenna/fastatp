@@ -44,7 +44,12 @@ cd lab
 
 Then open <http://localhost:8080> and press **Start**. Each press of **Next**
 is one step: a caption from the guide, or one command on one machine, with
-the terminal it runs in lit up. Key concepts stop the show until **Got it**,
+the terminal it runs in lit up. The show is four chapters of a few minutes
+each, chosen from the menu the page opens with: a chapter builds on the
+ones before it, so choosing ahead plays them first, fast and without stops,
+then opens the one chosen. When a command runs one of the
+lab's scripts, or one of the peer's routes, that file opens beside the
+machine, at the handler. Key concepts stop the show until **Got it**,
 which is also Next. **Back** shows an earlier caption or concept again; the
 machines stay where they are, because every step really ran. The page is
 the only thing published to your computer, on `127.0.0.1` only.
@@ -85,7 +90,13 @@ updates the guide.
   the screen (bob's terminal, alice's repo, the wire), a
   `<!-- @demo point bob.terminal -->` right under it outlines and opens that
   place while the caption is up; the repo, tunnel and wire sections stay
-  folded otherwise. `tools/md_manifest.py` lists every directive.
+  folded otherwise. A `<!-- @demo chapter N "Title" -->` starts or
+  continues chapter N, and a `<!-- @demo blurb ... -->` under it is the
+  sentence or two its card shows; the show plays chapters by number, so a
+  chapter can sit anywhere on the page. Every ``### `name.py` ``
+  section opens with one line on what the file is for: the screen heads
+  the code with it when a command runs that file. `tools/md_manifest.py`
+  lists every directive.
 - Scripts a later guide adds go under `lab/<guide>/`; the eight files guide
   1 reads stay where they are.
 - Nothing here ships in the package: the wheel packages `fastatp/` only,

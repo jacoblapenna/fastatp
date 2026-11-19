@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 import uvicorn
-from backstage import Control, Cue, Show, follow
+from backstage import Control, Cue, File, Show, follow
 from dids import resolver
 from starlette.applications import Starlette
 from starlette.responses import FileResponse, JSONResponse
@@ -89,7 +89,15 @@ async def write(record) -> str:
 
 events: list[dict] = []  # everything the page has been told, so a tab opened late sees it all
 browsers: set[WebSocket] = set()
-state = {"cursor": -1, "mode": "paused", "concept": None, "speed": 1.0, "done": False}
+state = {
+    "cursor": -1,
+    "mode": "paused",
+    "concept": None,
+    "speed": 1.0,
+    "done": False,
+    "until": None,
+}
+# until: a chapter's first step the show is hurrying to, through the chapters before it
 env: dict[str, str] = {}  # CH=... captured from a command's output
 subs: dict[str, str] = {}  # an rkey printed in the guide -> the one this run produced
 cue_step: dict[str, int] = {}  # cue path -> score step
@@ -202,14 +210,15 @@ async def cue(step: dict, command: str = "") -> int:
 # these. A key concept waits for Got it, and Got it is also Next: the step
 # the concept set up follows without another press. Play (auto) paces
 # everything by the speed instead.
-VISIBLE = ("run", "restart", "stop", "say", "concept")
+VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter")
 PAUSES = tuple(k for k in VISIBLE if k != "concept")
 
 
 async def perform(step: dict) -> None:
     kind = step["kind"]
     auto = state["mode"] == "playing"
-    pace = 1 / state["speed"] if auto else 0  # stepping: the viewer sets the pace with Next
+    hurrying = state["until"] is not None  # catching up to a chosen chapter: no pauses at all
+    pace = 0 if hurrying or not auto else 1 / state["speed"]  # stepping: the viewer sets the pace
     if kind in ("run", "restart", "stop"):
         command = step.get("cmd", "")
         for literal, value in subs.items():  # an rkey the guide printed, swapped for this run's
@@ -252,7 +261,7 @@ async def perform(step: dict) -> None:
         await asyncio.sleep(
             min(max(len(step["text"].split()) / 4, 3), 14) * pace
         )  # about reading speed
-    elif kind == "concept":
+    elif kind == "concept" and not hurrying:
         state["concept"] = step["id"]
         await status()
         while state["concept"] is not None:
@@ -273,6 +282,8 @@ async def director() -> None:
             state["done"], state["mode"] = True, "paused"
             await status()
             continue
+        if state["until"] is not None and state["cursor"] >= state["until"]:
+            state["until"], state["mode"] = None, "step"  # arrived: this press opens the chapter
         await status()
         step = steps[state["cursor"]]
         await perform(step)
@@ -281,6 +292,28 @@ async def director() -> None:
         ):
             state["mode"] = "paused"  # one visible step per press of Next
             await status()
+
+
+def jump(number: str) -> None:
+    """Open a chapter, when nothing is running.
+
+    A chapter builds on the ones before it, so choosing one the show has not
+    reached plays everything up to it first, as fast as the machines go and
+    with no stops, then opens it. Choosing one already passed starts it again
+    from its first step, on the machines as they are: every step really ran.
+    Steps performed again forget their earlier answers."""
+    if state["mode"] != "paused" or state["concept"] is not None:
+        return
+    start = next((c["start"] for c in score["chapters"] if str(c["number"]) == number), None)
+    if start is None:
+        return
+    if start > state["cursor"] + 1:
+        state.update(until=start, mode="playing", done=False)  # hurry there, then open it
+        return
+    for sid in [k for k in results if k >= start]:
+        results.pop(sid)
+        output.pop(sid, None)
+    state.update(cursor=start - 1, done=False, mode="step")  # this press opens the chapter
 
 
 # --- the page -----------------------------------------------------------------
@@ -293,7 +326,7 @@ async def browser(ws: WebSocket) -> None:
     try:
         while True:
             msg = json.loads(await ws.receive_text())
-            if msg["type"] not in ("play", "pause", "step", "gotit", "speed"):
+            if msg["type"] not in ("play", "pause", "step", "gotit", "speed", "chapter"):
                 continue
             await write(
                 Control(action=msg["type"], value=str(msg.get("value", "")))
@@ -304,6 +337,8 @@ async def browser(ws: WebSocket) -> None:
                 state["concept"] = None
             elif msg["type"] == "speed":
                 state["speed"] = float(msg["value"])
+            elif msg["type"] == "chapter":
+                jump(str(msg["value"]))
             wake.set()
             await status()
     except WebSocketDisconnect:
@@ -315,6 +350,8 @@ async def lifespan(app):
     await server.put_record(
         Show.nsid, "self", Show(id=SHOW, score=SCORE)
     )  # before any cue: "this is the show now"
+    for name, lab_file in score.get("files", {}).items():  # the code a cue can put on show
+        await server.put_record(File.nsid, name, File(show=SHOW, name=name, **lab_file))
     tasks = [asyncio.create_task(director())]
     for machine in score["machines"]:
         tasks.append(

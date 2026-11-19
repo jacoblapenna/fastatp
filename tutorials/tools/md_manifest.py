@@ -5,8 +5,9 @@ python md_manifest.py GETTING_STARTED.md > GETTING_STARTED.json
 The markdown is the score. The conductor cues each step to the machine that
 plays it. Most steps come straight from what the guide already says: a ```bash
 block whose lines read `./lab.sh <machine> <command>` is that machine's line,
-a ``### `name.py` `` heading carries the file's code (the section's first
-```python block) so the screen can show it while the prose talks about it,
+every ``### `name.py` `` section (its first paragraph and its first ```python
+block) is a lab file the screen knows, shown beside the machine whose command
+runs it, open at the part the command reaches,
 a `> 🔑 **Key concept: ...**` blockquote (or `⚠️ **Important: ...**`, or
 `💡 **Did you know: ...**`) is a pause with a "Got it", and each
 paragraph of prose is a caption: one press of Next each, flushed before the
@@ -16,6 +17,13 @@ GitHub and fastatp.com do not render:
 
   <!-- @demo machines alice bob eve -->   who is in the cast
   <!-- @demo start -->  <!-- @demo end --> what the screen plays (any number of ranges)
+  <!-- @demo chapter 3 "The private side" -->
+  <!-- @demo blurb Eve reads the public repo like anyone... -->
+                                          a sentence or two on the chapter, for its card
+                                          the steps from here belong to chapter 3 (a number
+                                          cued again continues its chapter); the show plays
+                                          chapters in number order, whatever order the page
+                                          tells them in, and the menu lists them
   <!-- @demo run bob: <command> -->       a line the prose describes but no block shows;
                                           directly before a bash block it replaces the block
   <!-- @demo skip -->                     the next bash block is for a person, not the screen
@@ -46,6 +54,24 @@ import sys
 LAB = re.compile(r"^\./lab\.sh (\S+)(?: (.*))?$")
 CAPTURE = re.compile(r"^(\w+)=\$\((.*)\)$")
 FILE_HEADING = re.compile(r"^### `([\w.]+)`")  # a section that shows one lab file
+ROUTES = {"/drop": "drop", "/admit": "admit", "/evict": "evict", "/whoami": "whoami"}
+
+
+def code_for(cmd: str) -> dict | None:
+    """The lab file a command runs, and the line to open it at.
+
+    A script by name; a request to one of the peer's own routes, at that
+    route's handler; the peer's log, at its boot."""
+    if m := re.search(r"python (\w+\.py)", cmd):
+        return {"file": m.group(1), "focus": ""}
+    for route, handler in ROUTES.items():
+        if route in cmd:
+            return {"file": "peer.py", "focus": f"async def {handler}("}
+    if cmd == "cat /tmp/peer.log":
+        return {"file": "peer.py", "focus": "async def boot("}
+    return None
+
+
 CONCEPT = re.compile(
     r"^(🔑|⚠️|💡) \*\*(?:Key concept|Important|Did you know): (.+?)\*\*\s*(.*)$", re.S
 )
@@ -96,6 +122,7 @@ def without_terminal(text: str, inside: bool) -> tuple[str, bool]:
     return "\n".join(" ".join(line.split()) for line in text.split("\n")).strip(), inside
 
 
+VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter")  # one press of Next each
 LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until they give up
 
 
@@ -109,7 +136,8 @@ def parse(text: str) -> dict:
     skip_next_para = False  # a terminal directive on its own line: the next paragraph is typing
     in_terminal = False  # inside a terminal span that started in an earlier paragraph
     last_block: list[dict] = []  # the run steps of the last bash block, for save
-    file_heading: dict | None = None  # a `### `name.py`` heading waiting for its code
+    files: dict[str, dict] = {}  # name -> {"gloss", "text"}: the lab files the guide shows
+    file_section: dict | None = None  # the `### `name.py`` section being read
 
     def emit(step: dict) -> dict:
         step["id"] = len(steps)
@@ -137,6 +165,7 @@ def parse(text: str) -> dict:
                 "cmd": "cat /tmp/peer.log",
                 "display": line,
                 "bg": False,
+                "code": code_for("cat /tmp/peer.log"),
             }
         if who == "restart" and rest in machines:
             return {"kind": "restart", "machine": rest, "display": line}
@@ -151,6 +180,8 @@ def parse(text: str) -> dict:
         }
         if capture:
             step["capture"] = capture
+        if code := code_for(rest):
+            step["code"] = code
         return step
 
     lines = text.splitlines()
@@ -207,6 +238,13 @@ def parse(text: str) -> dict:
                 emit({"kind": "layout", "action": verb, "machines": arg.split()})
             elif verb in ("open", "close"):
                 emit({"kind": "layout", "action": verb, "targets": arg.split()})
+            elif verb == "chapter":
+                number, _, title = arg.partition(" ")
+                emit_say()
+                emit({"kind": "chapter", "number": int(number), "title": title.strip().strip('"')})
+            elif verb == "blurb":
+                if steps and steps[-1]["kind"] == "chapter":
+                    steps[-1]["blurb"] = arg
             elif verb == "point":
                 emit_say()  # the paragraph just above is the step that points
                 if steps and steps[-1]["kind"] in ("concept", "say"):
@@ -223,12 +261,12 @@ def parse(text: str) -> dict:
                 body.append(lines[i])
                 i += 1
             i += 1
+            lang = info[0] if info else ""
+            if lang == "python" and file_section is not None:
+                file_section["text"] = "\n".join(body)
+                file_section = None
             if not active:
                 continue
-            lang = info[0] if info else ""
-            if lang == "python" and file_heading is not None:
-                file_heading["code"] = {"name": file_heading["file"], "text": "\n".join(body)}
-                file_heading = None
             if lang == "bash":
                 if skip_next_bash or replace_next_bash:
                     skip_next_bash = replace_next_bash = False
@@ -275,15 +313,12 @@ def parse(text: str) -> dict:
         if stripped.startswith("#"):
             level = len(stripped) - len(stripped.lstrip("#"))
             i += 1
+            file_section = None
+            if m := FILE_HEADING.match(stripped):
+                file_section = files[m.group(1)] = {"gloss": "", "text": ""}
             if active:
                 emit_say()  # what the section said last is still a caption
-                heading = emit(
-                    {"kind": "heading", "level": level, "text": stripped.lstrip("#").strip()}
-                )
-                file_heading = None
-                if m := FILE_HEADING.match(stripped):
-                    heading["file"] = m.group(1)
-                    file_heading = heading  # its first python block is the file
+                emit({"kind": "heading", "level": level, "text": stripped.lstrip("#").strip()})
             replace_next_bash = False
             continue
 
@@ -302,6 +337,8 @@ def parse(text: str) -> dict:
                 continue
             # typing prose out, spacing tidied: what is left is the caption
             text, in_terminal = without_terminal(as_lines(para), in_terminal)
+            if file_section is not None and not file_section["gloss"] and not file_section["text"]:
+                file_section["gloss"] = text  # what the file is for, in a line
             if active and text and not skip_next_para:
                 say.append(text)
             skip_next_para = False
@@ -309,7 +346,49 @@ def parse(text: str) -> dict:
             continue
         i += 1
 
-    return {"machines": machines, "steps": steps}
+    return {"machines": machines, "chapters": chapters(steps), "files": files, "steps": steps}
+
+
+def chapters(steps: list[dict]) -> list[dict]:
+    """Put the steps in chapter order, in place, and say where each chapter starts.
+
+    A guide without chapter cues is one unnamed chapter and plays as written.
+    With them, every range belongs to a chapter, and the show plays the
+    chapters by number: the code's chapter can come last on the screen while
+    the page keeps it up front for a reader."""
+    loose: list[dict] = []
+    groups: dict[int, list[dict]] = {}  # a number cued again continues that chapter
+    current: list[dict] | None = None
+    for step in steps:
+        if step["kind"] == "chapter":
+            if step["number"] in groups:
+                current = groups[step["number"]]
+            else:
+                current = groups[step["number"]] = [step]
+        elif current is None:
+            loose.append(step)
+        else:
+            current.append(step)
+    if not groups:
+        return []
+    if loose:
+        raise SystemExit("steps before the first chapter cue: every range needs a chapter")
+    ordered = [groups[n] for n in sorted(groups)]
+    steps[:] = [s for g in ordered for s in g]
+    for i, step in enumerate(steps):
+        step["id"] = i
+    return [
+        {
+            "number": g[0]["number"],
+            "title": g[0]["title"],
+            "blurb": g[0].get("blurb", ""),
+            "start": g[0]["id"],
+            "concepts": [s["title"] for s in g if s["kind"] == "concept"],
+            "presses": sum(1 for s in g if s["kind"] in VISIBLE),
+            "commands": sum(1 for s in g if s["kind"] == "run"),
+        }
+        for g in ordered
+    ]
 
 
 if __name__ == "__main__":

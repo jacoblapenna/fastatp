@@ -1,7 +1,11 @@
 <script>
-  // One lab file, on show while the guide talks about it. The machines fold
-  // beside it: nothing has run yet, and the code is what to look at.
-  let { code } = $props();
+  // One lab file, beside the machine whose command runs it, open at the part
+  // the command reaches. The other machines fold while it is up: the code is
+  // what to look at, and the guide's line on what the file is for heads it.
+  import { md } from '../lib/md.js';
+
+  let { name, file, focus = '' } = $props();
+  let pre;
 
   const KEYWORDS = new Set(
     'import from def class return await async if elif else for while in not and or is None True False try except finally raise with as pass lambda yield global del assert'.split(' ')
@@ -43,29 +47,43 @@
       return out;
     });
   }
-  let lines = $derived(highlight(code.text));
+  let raw = $derived(file.text.split('\n'));
+  let lines = $derived(highlight(file.text));
+  let at = $derived(focus ? raw.findIndex((l) => l.includes(focus)) : -1);
+
+  $effect(() => {
+    // open at the line the command reaches, a little below the top
+    at;
+    const target = pre?.querySelector('.line.at');
+    if (target) pre.scrollTop = Math.max(0, target.offsetTop - pre.offsetTop - 28);
+    else if (pre) pre.scrollTop = 0;
+  });
 </script>
 
 <section class="code" data-anchor="code">
-  <header>{code.name} <span class="meta">{lines.length} lines · the app's own code</span></header>
-  <pre>{#each lines as line, i}<span class="n">{i + 1}</span>{@html line}
+  <header>
+    <span class="name">{name}</span>
+    {#if file.gloss}<span class="gloss">{@html md(file.gloss)}</span>{/if}
+  </header>
+  <pre bind:this={pre}>{#each lines as line, i}<span class="line" class:at={i === at}><span class="n">{i + 1}</span>{@html line}</span>
 {/each}</pre>
 </section>
 
 <style>
   .code {
-    flex: 3 1 0; min-width: 0; display: flex; flex-direction: column;
+    flex: 2.2 1 0; min-width: 0; display: flex; flex-direction: column;
     background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden;
   }
-  header {
-    display: flex; gap: 6px; align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--color-border);
-    font: 600 13px var(--font-mono); color: var(--color-text);
-  }
-  .meta { margin-left: auto; font: 11px var(--font-mono); color: var(--color-text-muted); }
+  header { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--color-border); min-width: 0; }
+  .name { font: 600 13px var(--font-mono); color: var(--color-text); flex: none; }
+  .gloss { font-size: 12px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gloss :global(code) { font-size: 11px; }
   pre {
-    flex: 1; min-height: 0; margin: 0; padding: 8px 10px; overflow: auto;
+    flex: 1; min-height: 0; margin: 0; padding: 8px 0; overflow: auto;
     font: 12px/1.5 var(--font-mono); color: var(--color-text-soft); background: var(--color-terminal-bg); tab-size: 4;
   }
+  .line { display: block; padding: 0 10px; }
+  .line.at { background: color-mix(in srgb, var(--color-highlight) 16%, transparent); box-shadow: inset 3px 0 0 var(--color-highlight); }
   .n { display: inline-block; width: 3.2em; color: var(--color-text-muted); opacity: 0.6; user-select: none; }
   pre :global(.cmt) { color: var(--color-verified); font-style: italic; }
   pre :global(.str) { color: var(--color-plaintext); }

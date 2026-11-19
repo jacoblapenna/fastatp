@@ -41,6 +41,8 @@ between the commands; they are the point.
 
 <!-- @demo machines alice bob eve -->
 <!-- @demo start -->
+<!-- @demo chapter 1 "A sovereign peer" -->
+<!-- @demo blurb Three machines boot and mint identities. Alice's DID document, read from bob; one drop, one verify, and what the repo actually holds. -->
 
 Three machines on one LAN, alice, bob and eve, each running the same peer.
 In four parts:
@@ -163,8 +165,6 @@ fastatp/                     the fastatp repository; the lab installs the packag
         └── state/           created on first boot: alice.lan/, bob.lan/, eve.lan/
 ```
 
-<!-- @demo start -->
-
 `state/<machine>/` is that machine's disk. It holds one private signing key,
 one WireGuard key and one repo, and no machine can see another's. <!-- @demo terminal -->The eight
 Python files are baked into every machine's image, so each box has the
@@ -230,21 +230,11 @@ and `MaxGraphemes(300)` is a real lexicon constraint, counted in grapheme
 clusters, not Python `len()`. It is enforced before anything is signed<!-- @demo terminal -->; you
 will see it refuse a record in "Things to try"<!-- @demo /terminal -->.
 
-> 🔑 **Key concept: a lexicon is a contract that can grow.** A record's
-> `$type` names its lexicon, and that is the whole agreement between a
-> writer and a reader: these fields, these limits, this namespace. Each
-> side chooses what to honour. A reader that imports `lexicons.py` gets
-> typed `Note` and `Reply` objects. A reader that never heard of them still
-> receives every record, verified, as plain data, and `follow.py` shows how
-> to carry on when a type is unknown. Changes that only add are backward
-> compatible on their own: a writer who adds a `mood` field to notes
-> tomorrow breaks no reader running today, because unknown fields are kept
-> and passed through, not refused. Removing a field, renaming one, or
-> tightening a limit is a new contract, and the honest move is a new nsid.
-> A subscriber supports the lexicons it chooses, all of them, some of them,
-> or none; the repo does not care, and the signatures hold either way.
-
 ### `dids.py`: how this LAN resolves did:web
+
+`dids.py` is how every script on this LAN turns a `did:web` into its
+document: the shipped resolver, handed a plain-`http` client because the
+lab has no certificate authority.
 
 ```python
 """did:web resolution on this LAN.
@@ -298,17 +288,9 @@ first read.
 
 ### `peer.py`: one sovereign peer
 
-> 🔑 **Key concept: the words for the private side.**
->
-> - **Channel**: this guide's name for alice's private repo: a second repo
->   with its own `did:key` identity, hosted by the same process.
-> - **Gated repo**: a repo registered with `public=False`. It is served
->   only inside a tunnel, and to everyone else it does not exist.
-> - **Doorman**: the check a gated repo runs on every caller: which wire
->   did this connection arrive on, and whose key does that wire belong to.
-> - **Hub**: the peer that hosts a gated repo and decides who may read it.
-> - **Capability**: a signed record in the gated repo that says who may
->   read it. Writing one is admission; deleting it is eviction.
+`peer.py` is the whole peer: it mints or reloads an identity, serves the
+DID document, hosts the public repo and a gated channel, and takes drops,
+admissions and evictions on loopback-only routes.
 
 ```python
 """One sovereign peer, one machine: python peer.py <domain>
@@ -651,24 +633,10 @@ decision, signed and kept; the kernel peer is the enforcement, and it is
 the only thing that lets a packet through. The two are written in that
 order.
 
-> 🔑 **Key concept: authorization in FastATP is declarative.** Who may read
-> the channel is not a setting in the process or a rule in a config file. It
-> is the set of live `Capability` records in the channel's repo: there is a
-> record for bob, or there is not. Everything else is derived from that set.
-> The kernel's peer list is meant to be a cache of it, and in production
-> `WireGuardReconciler.reconcile()` makes the two equal on every run: it
-> adds peers the records call for, removes peers no record explains, and
-> deletes records whose `expires_at` has passed. The lab's `/admit` and
-> `/evict` do the two steps by hand so you can watch them. Three things fall
-> out for free. The access list is a signed, readable record set, so an
-> audit is a read. A reboot that lost the kernel state is repaired by one
-> reconcile, because the repo was the truth all along. A time-boxed
-> admission is one field on the record, not a cron job. The one thing you
-> do not get is an instant cutoff: deleting the record is the decision, and
-> nothing changes in the kernel until something reconciles. `/evict` does
-> both in one request, which is why bob's packets stop within a second.
-
 ### `pair.py`: point a machine's tunnel at a hub
+
+`pair.py` points this machine's tunnel at a hub, using nothing but the
+hub's DID document.
 
 ```python
 """Point this machine's tunnel at a hub, using nothing but the hub's DID document:
@@ -746,18 +714,6 @@ alice's DID document.
 ask alice for anything, and alice does not learn that it happened. No
 handshake can complete until alice adds this machine's key on alice's side,
 which is what `/admit` does.
-
-> 🔑 **Key concept: the subscriber's side is yours to build.** FastATP
-> ships no pairing method for the reader and no protocol for asking to be
-> admitted. That is deliberate, for now. The library owns the hub's half,
-> where enforcement lives, and leaves how a reader finds a hub, asks for
-> access, and gets an answer to the app builder. A bulletin board of DIDs,
-> an invite link that carries one, a form on a website, a message in some
-> other app: any of these works, because the whole ask is one sentence
-> said outside the protocol, "I am knocking at your tunnel, and this is my
-> DID." Everything the hub needs to answer is already published under that
-> DID, and answering is writing one record. The market for that layer is
-> meant to emerge, not be fixed by the library.
 
 ### `follow.py`: a verified reader
 
@@ -1054,8 +1010,6 @@ if raw:
     print(f"one record, as stored: {raw[:56]!r}...")  # binary, but the field names are right there
 ```
 
-<!-- @demo end -->
-
 ### The runner, for the curious
 
 You do not need to read `compose.yml` or the `Dockerfile`. What they do:
@@ -1075,6 +1029,7 @@ the guide's traffic, and its image adds a Node build of the page. A last service
 `tap`, is not a machine: it runs `tcpdump` attached to the LAN's switch.
 
 <!-- @demo start -->
+<!-- @demo chapter 1 "A sovereign peer" -->
 
 ## Part 1: alice, a sovereign peer
 <!-- @demo collapse eve -->
@@ -1225,6 +1180,22 @@ Four things happened inside the process: a `Note` was validated, written
 into the tree, the new root was signed with `signing.key` into a commit
 with revision `3mz23h6bwy242`, and a frame went out on the firehose as
 sequence number 3. The `uri` is the record's permanent address.
+
+<!-- @demo point alice.repo -->
+
+> 🔑 **Key concept: a lexicon is a contract that can grow.** A record's
+> `$type` names its lexicon, and that is the whole agreement between a
+> writer and a reader: these fields, these limits, this namespace. Each
+> side chooses what to honour. A reader that imports `lexicons.py` gets
+> typed `Note` and `Reply` objects. A reader that never heard of them still
+> receives every record, verified, as plain data, and `follow.py` shows how
+> to carry on when a type is unknown. Changes that only add are backward
+> compatible on their own: a writer who adds a `mood` field to notes
+> tomorrow breaks no reader running today, because unknown fields are kept
+> and passed through, not refused. Removing a field, renaming one, or
+> tightening a limit is a new contract, and the honest move is a new nsid.
+> A subscriber supports the lexicons it chooses, all of them, some of them,
+> or none; the repo does not care, and the signatures hold either way.
 
 <!-- @demo point alice.repo -->
 
@@ -1382,6 +1353,9 @@ open a second one, and drop another note as alice; it appears live.<!-- @demo /t
 build on it. <!-- @demo terminal -->Ctrl-C it.<!-- @demo /terminal -->
 
 <!-- @demo stop bob -->
+
+<!-- @demo chapter 2 "A verified follower" -->
+<!-- @demo blurb Bob follows alice, checkpoint then tail, and replies from bob's own repo. Alice deletes a note, reboots, and loses nothing. -->
 
 ## Part 2: bob, a verified follower
 
@@ -1608,6 +1582,9 @@ been verified before.
 <!-- @demo point bob.terminal -->
 <!-- @demo stop bob -->
 
+<!-- @demo chapter 3 "The private side" -->
+<!-- @demo blurb Eve reads the public repo like anyone, and the channel is absent over the LAN. Bob pairs with alice's tunnel and knocks, unanswered. -->
+
 ## Part 3: eve, and the private side
 
 <!-- @demo expand eve -->
@@ -1624,6 +1601,18 @@ that changes that. Privacy in FastATP is a *different repo*, not a flag on
 a record. <!-- @demo terminal -->Ctrl-C it.<!-- @demo /terminal -->
 
 <!-- @demo stop eve -->
+
+> 🔑 **Key concept: the words for the private side.**
+>
+> - **Channel**: this guide's name for alice's private repo: a second repo
+>   with its own `did:key` identity, hosted by the same process.
+> - **Gated repo**: a repo registered with `public=False`. It is served
+>   only inside a tunnel, and to everyone else it does not exist.
+> - **Doorman**: the check a gated repo runs on every caller: which wire
+>   did this connection arrive on, and whose key does that wire belong to.
+> - **Hub**: the peer that hosts a gated repo and decides who may read it.
+> - **Capability**: a signed record in the gated repo that says who may
+>   read it. Writing one is admission; deleting it is eviction.
 
 `peer.py` registered a second repo beside the public one, with
 `public=False`: the channel, with a fresh `did:key` identity, hosted by the
@@ -1734,6 +1723,23 @@ no route to fd5a:7a7f:9c3e:0:5c0e:7a19:2bd4:8f31: ConnectTimeout (is there a tun
 Not refused: unreachable. Before admission, alice's private side does not
 exist on the network as far as bob can tell.
 
+> 🔑 **Key concept: the subscriber's side is yours to build.** FastATP
+> ships no pairing method for the reader and no protocol for asking to be
+> admitted. That is deliberate, for now. The library owns the hub's half,
+> where enforcement lives, and leaves how a reader finds a hub, asks for
+> access, and gets an answer to the app builder. A bulletin board of DIDs,
+> an invite link that carries one, a form on a website, a message in some
+> other app: any of these works, because the whole ask is one sentence
+> said outside the protocol, "I am knocking at your tunnel, and this is my
+> DID." Everything the hub needs to answer is already published under that
+> DID, and answering is writing one record. The market for that layer is
+> meant to emerge, not be fixed by the library.
+
+<!-- @demo point bob.tunnel -->
+
+<!-- @demo chapter 4 "Admission and eviction" -->
+<!-- @demo blurb Alice admits bob and the tunnel opens. Eve knocks and hears nothing. Alice evicts bob mid-session, and then the wire shows what it saw of all of it. -->
+
 ### Alice admits bob
 
 Admission is one call with one argument, on alice's machine:
@@ -1783,6 +1789,25 @@ source address is an identity inside the tunnel, and why nobody had to
 agree on the address: it was never chosen.
 
 <!-- @demo point alice.tunnel -->
+
+> 🔑 **Key concept: authorization in FastATP is declarative.** Who may read
+> the channel is not a setting in the process or a rule in a config file. It
+> is the set of live `Capability` records in the channel's repo: there is a
+> record for bob, or there is not. Everything else is derived from that set.
+> The kernel's peer list is meant to be a cache of it, and in production
+> `WireGuardReconciler.reconcile()` makes the two equal on every run: it
+> adds peers the records call for, removes peers no record explains, and
+> deletes records whose `expires_at` has passed. The lab's `/admit` and
+> `/evict` do the two steps by hand so you can watch them. Three things fall
+> out for free. The access list is a signed, readable record set, so an
+> audit is a read. A reboot that lost the kernel state is repaired by one
+> reconcile, because the repo was the truth all along. A time-boxed
+> admission is one field on the record, not a cron job. The one thing you
+> do not get is an instant cutoff: deleting the record is the decision, and
+> nothing changes in the kernel until something reconciles. `/evict` does
+> both in one request, which is why bob's packets stop within a second.
+
+<!-- @demo point alice.repo alice.tunnel -->
 
 > ⚠️ **Important: for private repos to work in production, three things
 > must be true on the hub's host.** First, WireGuard's UDP port (51820 here) must be
@@ -1944,10 +1969,10 @@ is also a seam: `create_server(identity_resolver=...)` takes any callable
 from a connection to a DID, for hosts whose network already knows who its
 addresses are.
 
-<!-- @demo start -->
-
 ## Part 4: everything at once, on one screen
 
+<!-- @demo start -->
+<!-- @demo chapter 2 "A verified follower" -->
 <!-- @demo open wire -->
 
 Everything so far was seen by one party at a time: alice, bob or eve, each
@@ -1957,6 +1982,7 @@ LAN, holds no key, and is admitted to nothing. On the internet that is your
 ISP, the shared Wi-Fi, or anyone on the path between two peers.
 
 <!-- @demo point wire -->
+<!-- @demo end -->
 
 <!-- @demo terminal -->Start from a clean lab, so the demo can replay the guide from the
 first minted identity:<!-- @demo /terminal -->
@@ -1979,7 +2005,8 @@ parts: one frame per machine, the diagram, and the wire.
 | The diagram | The whole picture, which no single machine has: who follows whom, over which wire, and which tunnels are open |
 | The wire | Every packet the machines put on the LAN, as an outsider sees it |
 
-The conductor plays Parts 1 to 3 again on fresh machines, one step for
+The conductor plays the guide in four chapters of a few minutes each, in
+order or picked from the menu at the top, on fresh machines, one step for
 each press of **Next**: the guide's own words as a caption, or one command
 on one machine, whose terminal lights up while it runs. At every key
 concept it stops and points at what the concept is about; **Got it**
@@ -1987,17 +2014,7 @@ carries on, and is the next press of **Next**. **Back** shows an earlier
 caption or concept again; the machines stay where they are, because every
 step really ran.
 
-> 🔑 **Key concept: the demo is backstage, and only the typing is done for
-> you.** The conductor runs each command of this guide on the machine the
-> guide says, in the guide's order, and nothing else. The records,
-> signatures, tunnels and refusals you watch are the same ones you made by
-> hand. The demo talks to the machines on a separate network, so the LAN,
-> and the wire view, carry exactly the traffic you would see without it.
-> The wire view is each machine reporting the packets it sends on the LAN,
-> which together are what a tap on the switch would see.
 
-<!-- @demo point controls wire -->
-<!-- @demo end -->
 
 The score is this file. Open `GETTING_STARTED.md` as plain text and you
 will find lines such as `<!-- @demo stop bob -->` between the paragraphs.
@@ -2008,6 +2025,8 @@ line. The first cue, `<!-- @demo machines alice bob eve -->` under "What you
 are building", names the cast.
 
 <!-- @demo start -->
+<!-- @demo chapter 2 "A verified follower" -->
+<!-- @demo open wire -->
 
 ### The public side is public
 
@@ -2044,6 +2063,10 @@ The DID document deserves one more word, because it is the exception:
 > network.
 
 <!-- @demo point wire -->
+
+<!-- @demo close wire -->
+<!-- @demo chapter 4 "Admission and eviction" -->
+<!-- @demo open wire -->
 
 ### The private side is a shape
 
@@ -2126,6 +2149,19 @@ None of this is free, and the price is worth stating plainly:
 > `peer.py`. For everyone else, FastATP ships an experimental browser peer
 > that runs in the tab they already have open; the browser app tutorial,
 > later in this series, is the guide to it.
+
+<!-- @demo close wire -->
+
+> 🔑 **Key concept: the demo is backstage, and only the typing is done for
+> you.** The conductor runs each command of this guide on the machine the
+> guide says, in the guide's order, and nothing else. The records,
+> signatures, tunnels and refusals you watch are the same ones you made by
+> hand. The demo talks to the machines on a separate network, so the LAN,
+> and the wire view, carry exactly the traffic you would see without it.
+> The wire view is each machine reporting the packets it sends on the LAN,
+> which together are what a tap on the switch would see.
+
+<!-- @demo point controls -->
 
 > 💡 **Did you know: the engine playing this demo is FastATP too.** Each
 > machine runs a second peer backstage, and so does the conductor. The

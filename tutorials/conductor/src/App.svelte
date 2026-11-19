@@ -11,6 +11,7 @@
   import WireLane from './cards/WireLane.svelte';
   import KeyConcept from './cards/KeyConcept.svelte';
   import CodeCard from './cards/CodeCard.svelte';
+  import ChapterMenu from './cards/ChapterMenu.svelte';
   import BrandWordmark from './brand/BrandWordmark.svelte';
   import { theme } from './lib/theme.svelte.js';
 
@@ -33,13 +34,16 @@
       ? script.step?.kind === 'concept' ? script.step : null
       : live.concept === null ? null : live.manifest?.steps[live.concept]
   );
+  let menu = $state(true); // the chapters, over everything, until one is chosen
+  let chapters = $derived(live.manifest?.chapters ?? []);
+  let chapter = $derived(chapters.filter((c) => c.start <= live.cursor).at(-1) ?? null);
   function gotIt() {
     if (view.back > 0) view.back -= 1;
     else send('gotit');
   }
   function key(e) {
     // arrows and Enter press the buttons; an open key concept has Enter for Got it
-    if (concept || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
+    if (menu || concept || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
     if (e.key === 'ArrowLeft') stepBack();
     if (e.key === 'ArrowRight' || e.key === 'Enter') stepNext();
   }
@@ -50,7 +54,7 @@
 
   function size(name) {
     if (panels.has(name) || focused(name)) return 'open'; // pointed at, or running: open for this step
-    if (script.code) return 'collapsed'; // a file is on show: the machines fold beside it
+    if (script.code) return name === script.code.machine ? 'open' : 'collapsed'; // the code beside its machine
     return script.layout[name] ?? 'open';
   }
   function focused(name) {
@@ -70,6 +74,9 @@
   <header>
     <div class="brand"><BrandWordmark /> <span>· playing {live.manifest?.source ?? ''}</span></div>
     <div class="right">
+      <button class="chapters" onclick={() => (menu = true)} title="the chapters">
+        {chapter ? `${chapter.number} · ${chapter.title}` : 'Chapters'} ▾
+      </button>
       <Controls />
       <button class="theme" onclick={() => theme.toggle()} title="light or dark">
         {theme.current === 'dark' ? '☀' : '☾'}
@@ -82,10 +89,12 @@
     {#each live.manifest?.machines ?? [] as name (name)}
       <MachinePanel m={live.machines[name]} size={size(name)} active={script.active === name && !concept}
         focus={focused(name)} {pointed} {kept} {now} />
+      {#if script.code?.machine === name && live.manifest?.files?.[script.code.file]}
+        {#key script.code.file + script.code.focus}
+          <CodeCard name={script.code.file} file={live.manifest.files[script.code.file]} focus={script.code.focus} />
+        {/key}
+      {/if}
     {/each}
-    {#if script.code}
-      {#key script.code.name}<CodeCard code={script.code} />{/key}
-    {/if}
   </main>
 
   <footer>
@@ -98,8 +107,11 @@
     The records, signatures and tunnels are real.
   </div>
 
-  {#if concept}
+  {#if concept && !menu}
     <KeyConcept step={concept} onGotIt={gotIt} />
+  {/if}
+  {#if menu}
+    <ChapterMenu {chapters} current={chapter?.number ?? null} onClose={() => (menu = false)} />
   {/if}
 </div>
 
@@ -109,6 +121,7 @@
   .brand > span { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-sm); }
   .right { display: flex; gap: 10px; align-items: center; }
   .theme { padding: 2px 9px; }
+  .chapters { font-weight: 600; }
   .machines { display: flex; gap: 10px; padding: 10px 12px; min-height: 0; }
   footer { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 10px; padding: 0 12px 6px; align-items: start; }
   .fold { height: 240px; min-height: 0; }

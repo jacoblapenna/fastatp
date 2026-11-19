@@ -10,12 +10,13 @@ export const live = $state({
   concept: null,
   speed: 1,
   done: false,
+  until: null, // a chapter's first step the conductor is hurrying to
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
 });
 
 // What one press of Next shows; what Back looks at again.
-export const VISIBLE = ['run', 'restart', 'stop', 'say', 'concept'];
+export const VISIBLE = ['run', 'restart', 'stop', 'say', 'concept', 'chapter'];
 
 // Looking back: how many visible steps behind the conductor the page is
 // showing. The machines stay where they are, because every step really ran;
@@ -67,7 +68,7 @@ export function send(type, extra = {}) {
 
 function status(msg) {
   if (msg.cursor !== live.cursor) view.back = 0; // the show moved on: stop looking back
-  for (const k of ['cursor', 'mode', 'concept', 'speed', 'done']) live[k] = msg[k];
+  for (const k of ['cursor', 'mode', 'concept', 'speed', 'done', 'until']) live[k] = msg[k];
 }
 
 function machine(name) {
@@ -113,13 +114,16 @@ export function nameOf({ key, ip, did }) {
 // --- where the script is ------------------------------------------------------
 
 export function scriptState(manifest, cursor) {
-  const s = { part: '', section: '', say: '', step: null, active: null, layout: {}, open: new Set(), code: null };
+  const s = { part: '', section: '', say: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null };
   if (!manifest) return s;
   for (const name of manifest.machines) s.layout[name] = 'open';
   for (const step of manifest.steps.slice(0, cursor + 1)) {
+    if (step.kind === 'chapter') [s.chapter, s.part, s.section, s.say, s.code] = [step, '', '', '', null];
     if (step.kind === 'heading' && step.level === 2) [s.part, s.section] = [step.text, ''];
     if (step.kind === 'heading' && step.level === 3) s.section = step.text;
-    if (step.kind === 'heading') [s.say, s.code] = ['', step.code ?? null]; // a file's section shows the file
+    if (step.kind === 'heading') [s.say, s.code] = ['', null];
+    // a command shows the file it runs, beside its machine, until the next command
+    if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
     if (step.kind === 'say') s.say = step.text;
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
     if (step.kind === 'layout' && (step.action === 'open' || step.action === 'close')) {
