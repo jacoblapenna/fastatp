@@ -32,7 +32,6 @@ peer:
 ![alice, bob and eve on one LAN, each with its own peer and tunnel interface; a WireGuard tunnel between alice and bob opened by admission; eve's never handshakes](sketches/lan.svg)
 
 In four parts:
-
 1. **alice** publishes signed records to their own repo. Anyone on the LAN
    can read and verify them.
 2. **bob** follows alice, verifying every commit, and answers from their own
@@ -93,7 +92,9 @@ Each machine runs one symmetric `peer.py`, which is a complete personal data ser
 it mints or reloads an identity, serves that identity's DID document on
 port 80, hosts its signed repo on the atproto sync surface
 (`/xrpc/com.atproto.sync.*`), and takes local drops on a loopback-only
-`/drop` route. That is the same shape as the peer you would run on your own domain, with
+`/drop` route.
+
+That is the same shape as the peer you would run on your own domain, with
 `alice.lan` standing in for the public hostname.
 
 <!-- @demo end -->
@@ -1114,6 +1115,7 @@ machine, over the LAN:
 The `verificationMethod` with fragment `#atproto` is alice's public signing
 key in Multikey form. `alsoKnownAs` names the twin. The first service is where alice's repo lives, the second
 is alice's tunnel: the public WireGuard key and the address it answers on.
+
 The address alice uses *inside* the tunnel is not in the document, because
 anyone who has the key can derive it, and the kernel on both ends does.
 Publishing the WireGuard *public* key is the point; it lets anyone pair
@@ -1239,10 +1241,14 @@ one record, as stored: b'\xa3dtextjhello, LANe$typex\x19com.example.tutorial.not
 Three blocks, and there are only ever three kinds. The record is your
 `Note`, encoded as DAG-CBOR: a binary form of the same data model JSON
 uses, which is why the decoded block is exactly the JSON you dropped and
-the raw bytes still read `hello, LAN`. The tree node is a leaf of the
+the raw bytes still read `hello, LAN`.
+
+The tree node is a leaf of the
 Merkle search tree that maps the record's path to the record's hash. The
 commit names the tree's root hash, the revision, the DID, and carries the
-signature. Each block's address is the hash of its bytes, and the commit's
+signature.
+
+Each block's address is the hash of its bytes, and the commit's
 address is the CID you saw in the drop response. Drawn as what points to
 what, with every arrow a hash:
 
@@ -1250,7 +1256,9 @@ what, with every arrow a hash:
 
 Follow the hashes from the record up. The record's bytes determine its CID. The tree node
 contains that CID, so the node's bytes, and its CID, depend on the record.
-The commit contains the root node's CID and is signed. Change one byte of
+The commit contains the root node's CID and is signed.
+
+Change one byte of
 the record and all three addresses change, and the signature no longer
 matches. That is the whole trick, and every record you add is one more
 leaf under the same root.
@@ -1309,7 +1317,9 @@ verified, signed by did:web:alice.lan: Note(text='hello, LAN', created_at='2026-
 ```
 
 Those 534 bytes are the whole product. They contain the signed commit, the
-tree path from the root to this record, and the record itself. Bob's
+tree path from the root to this record, and the record itself.
+
+Bob's
 machine resolved alice's DID document over the LAN, took the public key out of
 it, and checked the signature. Anyone holding those bytes plus that
 document can do the same with no connection to alice, now or in ten years.
@@ -1332,10 +1342,14 @@ on the wire at ws://alice.lan/xrpc/com.atproto.sync.subscribeRepos?cursor=0
 ```
 
 Frames 1 and 2 announce the identity and that the account is active.
-Relays ignore commits from accounts they never saw activate. Frame 3 is
+Relays ignore commits from accounts they never saw activate.
+
+Frame 3 is
 your note: the ops say what changed, `since` names the previous revision,
 and `blocks` carries the record plus just enough tree nodes for a verifier
-to check the new root. The frame is long<!-- @demo terminal -->, so the listing above elides the
+to check the new root.
+
+The frame is long<!-- @demo terminal -->, so the listing above elides the
 rest<!-- @demo /terminal -->: `commit` is the new commit's CID, `prevData` is the tree root before
 this write, `blobs` is empty because notes carry no media, and `rebase` and
 `tooBig` are always false here. <!-- @demo terminal -->Leave `tail.py` running in this terminal,
@@ -1369,7 +1383,6 @@ tailing did:web:alice.lan after seq 3, via alice.lan
 
 <!-- @demo terminal -->Read `follow.py` again with this output next to
 it.<!-- @demo /terminal --> A follower does two things, in order:
-
 1. **Checkpoint.** `getRepo` returns alice's whole repo as one CAR. The
    mirror resolves alice's DID document, checks the commit signature
    against alice's key, rebuilds the tree, and only then adopts the records.
@@ -1497,7 +1510,11 @@ look at alice's store again:
 
 Before the delete there were three records, a tree node and a commit.
 After it there are two records, a *different* tree node and a *different*
-commit. The second note's block is gone, and so are the old tree node and
+commit.
+
+<!-- @demo point alice.repo -->
+
+The second note's block is gone, and so are the old tree node and
 the old commit, because nothing reachable from the new commit refers to
 them and every commit ends by discarding unreachable blocks. <!-- @demo terminal -->Deleting the
 same URI again returns a 500 and alice's log says
@@ -1566,9 +1583,17 @@ place in it.
 
 Look at how bob's follow recovered. Stopping alice's process closes every
 open websocket with code 1012, "service restart"; no follower can avoid
-seeing that. `follow.py` printed `connection lost` and then did the simplest
+seeing that.
+
+<!-- @demo point bob.terminal -->
+
+`follow.py` printed `connection lost` and then did the simplest
 safe thing: waited two seconds, took a fresh checkpoint, and subscribed
-again from the seq that checkpoint reported. It could have resumed from its
+again from the seq that checkpoint reported.
+
+<!-- @demo point bob.terminal -->
+
+It could have resumed from its
 old cursor instead, since alice kept the count, and a production follower
 would, with backoff between retries and a limit on patience. The cost of
 the simple habit is one `getRepo`, and the mirror already held every record
@@ -1647,7 +1672,9 @@ alice.lan serves no repo did:key:zQ3shrSrkz... on this wire
 ```
 
 Both get the same answer a stranger gets for a repo alice does not host at
-all: not refused, absent. A gated repo identifies callers by the address
+all: not refused, absent.
+
+A gated repo identifies callers by the address
 they arrive from *inside a tunnel*, and a LAN address is not one. The
 doorman answers as if there were nothing to see, so nobody outside a tunnel
 can even learn that the channel exists. The only way to read a gated repo
@@ -1912,7 +1939,11 @@ Bob's follow from earlier is still running in its terminal. <!-- @demo terminal 
 Watch bob's terminal: nothing arrives. The second private note was
 committed and a frame went out on the channel's firehose, but the packets
 carrying it to bob's address no longer match any peer on alice's
-interface, so the kernel dropped them. Bob's WebSocket is not closed with
+interface, so the kernel dropped them.
+
+<!-- @demo point bob.terminal -->
+
+Bob's WebSocket is not closed with
 an error; it goes silent, and bob's keepalives go unanswered until the
 connection times out. <!-- @demo terminal -->Ctrl-C it, and confirm:<!-- @demo /terminal -->
 
@@ -1994,7 +2025,9 @@ addresses are.
 <!-- @demo open wire -->
 
 Everything so far was seen by one party at a time: alice, bob or eve, each
-in their own terminal. The last view is the one none of them has: the
+in their own terminal.
+
+The last view is the one none of them has: the
 cable between them, as seen by an observer who sees every frame on the
 LAN, holds no key, and is admitted to nothing. On the internet that is your
 ISP, the shared Wi-Fi, or anyone on the path between two peers.
@@ -2094,10 +2127,17 @@ The DID document deserves one more word, because it is the exception:
 
 Now the `WireGuard` rows from Part 3. When bob pairs, a 148-byte
 `handshake initiation` goes out every five seconds and nothing comes back.
+
+<!-- @demo point wire -->
+
 The moment alice admits bob, a 92-byte `handshake response` answers, the
 diagram's tunnel turns solid, and from then on every packet between them is
 `transport data`: the inner packet plus 32 bytes, padded to a multiple
-of 16. That is all the structure there is. No row of it says `did:key`,
+of 16. That is all the structure there is.
+
+<!-- @demo point wire -->
+
+No row of it says `did:key`,
 `getRepo`, `HTTP` or the note's text. Eve's rows are initiations every five
 seconds, never a response. The observer can tell that eve is knocking and
 alice is not answering, a fact eve only learns from the silence.
