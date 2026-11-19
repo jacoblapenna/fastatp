@@ -66,10 +66,11 @@ async def boot() -> Starlette:
     identity = await Identity.bootstrap(domain=domain, state_dir=Path(domain))
     if identity.rotation_private_key is not None:
         # Only set on first boot. The rotation key (the "pen") is the one that can
-        # replace the signing key if it ever leaks. It is never written to disk
-        # here; printing it is the lab's stand-in for copying it to cold storage.
+        # replace the signing key if it ever leaks. FastATP hands it over once,
+        # here, in memory, and neither logs it nor writes it to disk. Printing it
+        # is this lab's own choice, a stand-in for copying it to cold storage.
         print(f"[{domain}] minted {identity.did}")
-        print(f"[{domain}] ROTATION PEN (shown once; a throwaway here, cold storage for real):")
+        print(f"[{domain}] ROTATION PEN (printed by this lab, never by FastATP; cold storage for real):")
         pen = identity.rotation_private_key.private_numbers().private_value
         print(f"[{domain}]   {pen.to_bytes(32, 'big').hex()}")
     else:
