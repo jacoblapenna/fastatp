@@ -52,10 +52,10 @@
   h1 { margin: 6px 0 2px; font-size: 26px; line-height: 1.2; }
   .looking { margin-left: 12px; color: var(--color-accent-text); font-weight: 500; }
   .sep { color: var(--color-text-muted); margin: 0 6px; }
-  .row { display: flex; gap: 18px; align-items: flex-start; }
-  .words { flex: 1 1 0; min-width: 0; }
-  .picture { flex: 0 0 auto; width: min(420px, 38%); max-height: 190px; background: var(--color-terminal-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; }
-  .picture :global(svg) { width: 100%; height: auto; max-height: 176px; display: block; }
+  .row { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .words { min-width: 0; max-width: 100%; }
+  .picture { flex: 0 0 auto; width: min(520px, 100%); max-height: 230px; background: var(--color-terminal-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px; }
+  .picture :global(svg) { width: 100%; height: auto; max-height: 216px; display: block; }
   .text { margin: 4px 0 0; max-width: 110ch; color: var(--color-text); }
   .ask {
     margin: 8px 0 2px; display: flex; gap: 12px; align-items: baseline; max-width: 110ch;
