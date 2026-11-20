@@ -6,17 +6,20 @@ all draw from it.
 
 ## Where the truth lives
 
-Two files choose everything, and nothing else chooses a color or a shape:
+Two files choose every color and shape, and a third holds the letters of
+the name:
 
 - `tutorials/conductor/src/brand/tokens.css` holds every color, for the dark
   and the light theme.
 - `tutorials/conductor/src/brand/brand.js` holds the goose (one path) and the
   skein (where the five birds sit).
+- `brand/wordmark.json` holds `FastATP` as outlines, drawn once from the
+  font, for the lockup.
 
-`python brand/make.py --write` writes everything else from those two: the
+`python brand/make.py --write` writes everything else from those: the
 logo files here, the favicon, the palette table below, and the ground and
 fallback colors inside each sketch under `tutorials/sketches/`. Run it after
-changing either file. `python brand/make.py` only reports what is out of
+changing any of them. `python brand/make.py` only reports what is out of
 date, and `tests/test_brand.py` fails when anything is.
 
 ## The goose
@@ -33,7 +36,7 @@ it are in the text color.
 | `lockup-dark.svg`, `lockup-light.svg` | The skein beside the name, `ATP` in orange | The title of a README or a page. The letters are outlines, so it looks the same with no font installed. |
 | `mark-dark.svg`, `mark-light.svg` | The skein of five | Wherever there is room: a README title, a landing page, a chapter menu. About 48 pixels tall or more. |
 | `goose-dark.svg`, `goose-light.svg` | One goose, in orange | Beside the name in a header, or anywhere the skein would be smaller than 48 pixels. |
-| `favicon.svg` | One goose on a square, adapting to a light or dark tab | Browser tabs. |
+| `favicon.svg` | One goose in the mark's orange, the same on a light tab and a dark one | Browser tabs. |
 
 "Dark" and "light" name the page the file sits on: the lead bird is the
 same orange on both, and only the birds behind it change with the text. Keep clear space around the mark of at least one bird's wingspan.

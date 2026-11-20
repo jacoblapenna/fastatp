@@ -268,6 +268,7 @@ exchange a private reply, end to end).
 - **Hosting and firehose** — `PeerServer` is the personal data server: it
   hosts one or many repos (routed by DID) behind a
   `com.atproto.sync.subscribeRepos`-shaped WebSocket with cursor resume;
+  `DIDServer`, beside it, serves the peer's DID document;
   `RepoMirror` verifies every commit against the producer's DID. A repo whose
   pen lives elsewhere is hosted **frozen**: the host serves it and takes the
   owner's signed pushes, and can never commit to it itself. Readers still

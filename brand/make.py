@@ -1,11 +1,12 @@
-"""Everything the brand is drawn from two files, written out to where it is used.
+"""Everything the brand is drawn from, written out to where it is used.
 
 python brand/make.py            say what is out of date, exit 1 if anything is
 python brand/make.py --write    bring it all up to date
 
 The sources are the conductor's theme, `tutorials/conductor/src/brand/tokens.css`
 (every color, dark and light), and `brand.js` beside it (the goose and the
-skein). Nothing else chooses a color or a shape. From those this writes:
+skein). Nothing else chooses a color or a shape; `brand/wordmark.json` holds
+the letters of the name as outlines, for the lockup. From those this writes:
 
 - `brand/lockup-*.svg`, `brand/mark-*.svg` and `brand/goose-*.svg`, the logo
   files, one per theme;

@@ -19,7 +19,8 @@ Everything they run is shared: `lab/` is three machines on a LAN inside
 Docker and the scripts baked into their image, `conductor/` is the demo
 engine's page, and `tools/` turns a guide into the score the conductor
 plays and keeps a guide's quoted files equal to the files themselves. A new
-guide adds one markdown file and whatever scripts it needs.
+guide adds one markdown file, whatever scripts it needs, and one line in
+`lab/Dockerfile` that builds its score into the conductor's image.
 
 ## Three ways to run a guide
 
@@ -30,7 +31,7 @@ interface.
 **Read it and type along.** Open the guide, then:
 
 ```bash
-cd lab
+cd tutorials/lab             # from the repository root
 ./lab.sh up                  # build the image and boot alice, bob and eve
 ./lab.sh alice <command...>  # every command in the guide is one of these
 ./lab.sh clean               # when you are done: stop everything, delete all state
@@ -41,7 +42,7 @@ machines and shows every machine's view, the whole diagram and the wire
 side by side:
 
 ```bash
-cd lab
+cd tutorials/lab             # from the repository root
 ./lab.sh clean               # start from the first minted identity
 ./lab.sh conductor           # boots the machines with the demo engine
 ```
@@ -59,13 +60,12 @@ machines stay where they are, because every step really ran. The page is
 the only thing published to your computer, on `127.0.0.1` only.
 
 **Play it headless.** The same show with nobody watching, reported step by
-step, exit 0 when the whole guide played. This is what CI runs, and what a
-coding agent runs to see for itself ([AGENTS.md](AGENTS.md)):
+step, exit 0 when the whole guide played. This is what a coding agent runs
+to see for itself ([AGENTS.md](AGENTS.md)):
 
 ```bash
-cd lab
+cd tutorials/lab             # from the repository root
 ./lab.sh test                # GETTING_STARTED; about five minutes
-./lab.sh test CONDUCTOR      # a later guide, by the name of its file
 ```
 
 ## What a guide is tested against
@@ -74,8 +74,12 @@ The fastatp in this tree, the commit you have checked out: the lab image
 installs the package from the repo root with its dependencies exactly as
 `uv.lock` pins them. No guide names a version. A guide quotes its lab
 files in full, and `uv run pytest` fails when a quote and its file differ;
-after changing a file, `python tools/md_embed.py --write GETTING_STARTED.md`
-updates the guide.
+after changing a file, run this from the repository root to update the
+guide:
+
+```bash
+python tutorials/tools/md_embed.py --write tutorials/GETTING_STARTED.md
+```
 
 ## Writing one
 
@@ -110,10 +114,10 @@ updates the guide.
   files as records and the pictures as blobs in its repo; the page fetches
   them from there. A `<!-- @demo ask ... -->` above a command block or a
   key concept is a question for the viewer to answer before the next press
-  shows the answer: one every handful of presses, before most concepts. Every ``### `name.py` ``
-  section opens with one line on what the file is for: the screen heads
-  the code with it when a command runs that file. `tools/md_manifest.py`
-  lists every directive.
+  shows the answer: one every handful of presses, before most concepts.
+  Every ``### `name.py` `` section opens with one line on what the file is
+  for: the screen heads the code with it when a command runs that file.
+  `tools/md_manifest.py` lists every directive.
 - Scripts a later guide adds go under `lab/<guide>/`; the eight files guide
   1 reads stay where they are.
 - Nothing here ships in the package: the wheel packages `fastatp/` only,

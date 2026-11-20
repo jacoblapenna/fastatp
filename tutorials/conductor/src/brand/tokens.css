@@ -11,7 +11,7 @@
    - Running text is text, text-soft or text-muted, nothing else.
    - Every text and color token reads on every surface (bg, surface,
      surface-raised, terminal-bg) in both themes: 7:1 for text and
-     text-soft, 4.5:1 for text-muted, primary and the meaning colors.
+     text-soft, 4.5:1 for text-muted, accent-text and the meaning colors.
    - Orange is the brand, and it is one orange on every page: `mark` for the
      goose, `primary` for the main button, borders and rings, `highlight`
      for what a key concept points at. None of them reports a state, and
