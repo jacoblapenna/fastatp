@@ -254,8 +254,19 @@ async def admit(request: Request) -> JSONResponse:
     # is signed and part of the repo's history, so admitting and evicting are
     # both visible commits. The key is what the doorman keys on: a request
     # arriving from the address that key derives is this DID.
+    #
+    # One DID holds one live capability. Admitting someone who is already in
+    # replaces their record, so /evict always has exactly one to delete. If
+    # they changed tunnel keys since, the key they were admitted with before
+    # is shut out here too.
+    earlier = live_capabilities(channel.repo).get(body["did"])
     cap = Capability(subject=body["did"], actions=["subscribe"], wg_public_key=info.public_key)
     await channel.put_record(Capability.nsid, generate_tid(), cap)
+    if earlier is not None:
+        earlier_rkey, earlier_cap = earlier
+        await channel.delete_record(Capability.nsid, earlier_rkey)
+        if earlier_cap.wg_public_key != info.public_key:
+            wg.remove_peer(earlier_cap.wg_public_key)
     # Step 3, open the door. Until this line the kernel drops their handshakes
     # unanswered. After it, their key is accepted, and only from their tunnel address.
     wg.add_peer(info.public_key, info.allowed_ips)
@@ -270,17 +281,20 @@ async def evict(request: Request) -> JSONResponse:
         return denied
     body = await request.json()
     # live_capabilities walks the channel's current records and returns, per
-    # subject, the one capability still in force. A deleted capability is gone
-    # from the tree, so it does not come back.
+    # subject, the capability still in force. /admit keeps that to one per
+    # DID, and a deleted capability is gone from the tree, so it does not come
+    # back.
     live = live_capabilities(channel.repo).get(body["did"])
     if live is None:
         return JSONResponse({"error": f"{body['did']} holds no live capability"}, status_code=404)
     rkey, cap = live
-    # The same two steps as admit, undone in the same order: the decision
-    # first, then the enforcement. Removing the peer also
-    # ends any session in flight. Their next packet is dropped unanswered.
-    await channel.delete_record(Capability.nsid, rkey)
+    # The same two steps as admit, undone door first: close the tunnel, then
+    # delete the record. If the second step fails they are already locked
+    # out, and asking again finishes the job, because the record is still
+    # there to find. Removing the peer also ends any session in flight. Their
+    # next packet is dropped unanswered.
     wg.remove_peer(cap.wg_public_key)
+    await channel.delete_record(Capability.nsid, rkey)
     return JSONResponse({"evicted": body["did"], "deleted": f"{Capability.nsid}/{rkey}"})
 
 
