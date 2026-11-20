@@ -3,11 +3,18 @@
 // one item per line. Escaped first, so nothing in the text can become
 // markup it did not ask for.
 function inline(text) {
+  // code spans first, and whole: a * or a [ inside one is code, not markup
   return text
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    .split(/(`[^`]+`)/)
+    .map((part, i) =>
+      i % 2
+        ? `<code>${part.slice(1, -1)}</code>`
+        : part
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    )
+    .join('');
 }
 
 // The words the guide's key concepts define, from the score. A caption that
@@ -80,7 +87,7 @@ function render(text = '') {
     } else {
       if (list) out += `</${list}>`;
       list = null;
-      out += (out && !out.endsWith('>') ? ' ' : '') + inline(line);
+      out += (out && !/<\/(ul|ol)>$/.test(out) ? ' ' : '') + inline(line); // a wrapped line joins with a space
     }
   }
   if (list) out += `</${list}>`;

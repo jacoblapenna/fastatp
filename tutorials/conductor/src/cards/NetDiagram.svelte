@@ -38,7 +38,7 @@
     for (const m of Object.values(live.machines)) {
       for (const id of m.order) {
         const p = m.procs[id];
-        const hit = p.display.match(/(follow|tail)\.py\s+(?:(\S+)\s+)?(\S+)/);
+        const hit = p.display.match(/(follow|tail)\.py\s+(?:([^\s-]\S*)\s+)?([^\s-]\S*)/) // a flag such as --cursor is never the host;
         if (!hit || (!p.running && now - p.ended > 8000)) continue;
         const [, script, did, host] = hit;
         const target = nameOf({ ip: host }) ?? host.replace('.lan', '');
@@ -120,7 +120,7 @@
     </g>
   {/each}
 
-  {#each pulses as p (p.at + p.src + p.len)}
+  {#each pulses as p (p)}
     {@const a = nameOf({ ip: p.src })}
     {@const b = nameOf({ ip: p.dst })}
     {#if a && b}

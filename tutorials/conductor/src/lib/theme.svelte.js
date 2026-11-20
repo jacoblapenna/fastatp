@@ -28,7 +28,7 @@ export const theme = {
       // private mode
     }
     const asked = new URLSearchParams(location.search).get('theme'); // ?theme=light, for screenshots and docs
-    const pick = ['dark', 'light'].includes(asked) ? asked : saved;
+    const pick = [asked, saved].find((v) => ['dark', 'light'].includes(v)); // a stale saved value is ignored
     apply(pick ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
   },
 };

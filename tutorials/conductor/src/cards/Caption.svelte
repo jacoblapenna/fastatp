@@ -9,7 +9,11 @@
   $effect(() => {
     const path = script.step?.kind === 'say' ? script.step.sketch : null;
     svg = null;
-    if (path) picture(path).then((text) => (svg = text));
+    if (!path) return;
+    // a slow picture must not land on a later step: only the newest ask may answer
+    let current = true;
+    picture(path).then((text) => current && (svg = text));
+    return () => (current = false);
   });
 </script>
 

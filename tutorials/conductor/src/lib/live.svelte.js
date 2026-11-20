@@ -108,6 +108,9 @@ function apply(ev, fresh) {
   } else if (ev.type === 'log') m.log.push(ev.line);
   else if (ev.type === 'proc' && ev.state === 'start') {
     m.procs[step] = { step, display: ev.display, bg: ev.bg, lines: [], running: true, code: null, ended: 0 };
+    // a chapter played again runs the same step again: it moves to the end, once
+    const earlier = m.order.indexOf(step);
+    if (earlier >= 0) m.order.splice(earlier, 1);
     m.order.push(step);
   } else if (ev.type === 'proc' && m.procs[step]) {
     Object.assign(m.procs[step], { running: false, code: ev.code, ended: fresh ? Date.now() : 1 });
@@ -116,19 +119,26 @@ function apply(ev, fresh) {
 
 // --- the pictures, from the conductor's own repo ------------------------------
 
-const pictures = new Map(); // path -> the SVG's text, once fetched
+const pictures = new Map(); // whose repo and which bytes -> the SVG's text, once fetched
 
 // A picture the guide shows, as a blob in the conductor's repo: fetched once
 // with getBlob and inlined, so the theme's colours apply to it.
 export async function picture(path) {
-  if (pictures.has(path)) return pictures.get(path);
   const cid = live.manifest?.images?.[path]?.cid;
   if (!cid || !live.did) return null;
-  const res = await fetch(`/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(live.did)}&cid=${cid}`);
-  if (!res.ok) return null;
-  const text = await res.text();
-  pictures.set(path, text);
-  return text;
+  // kept by DID and CID, not by path: a conductor that restarted with a
+  // changed picture has a different CID, and the old bytes are not shown for it
+  const key = `${live.did}/${cid}`;
+  if (pictures.has(key)) return pictures.get(key);
+  try {
+    const res = await fetch(`/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(live.did)}&cid=${cid}`);
+    if (!res.ok) return null;
+    const text = await res.text();
+    pictures.set(key, text);
+    return text;
+  } catch {
+    return null; // the conductor is away: no picture this time, ask again next step
+  }
 }
 
 // --- who is who, from what the machines published about themselves ---------
@@ -150,11 +160,14 @@ export function scriptState(manifest, cursor) {
   const s = { part: '', section: '', say: '', ask: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null };
   if (!manifest) return s;
   for (const name of manifest.machines) s.layout[name] = 'open';
+  let answered = false; // the step before this one was a key concept: its question is answered
   for (const step of manifest.steps.slice(0, cursor + 1)) {
-    if (step.kind === 'chapter') [s.chapter, s.part, s.section, s.say, s.code] = [step, '', '', '', null];
+    if (answered) s.ask = '';
+    answered = step.kind === 'concept';
+    if (step.kind === 'chapter') [s.chapter, s.part, s.section, s.say, s.code, s.ask] = [step, '', '', '', null, ''];
     if (step.kind === 'heading' && step.level === 2) [s.part, s.section] = [step.text, ''];
     if (step.kind === 'heading' && step.level === 3) s.section = step.text;
-    if (step.kind === 'heading') [s.say, s.code] = ['', null];
+    if (step.kind === 'heading') [s.say, s.code, s.ask] = ['', null, ''];
     // a command shows the file it runs, beside its machine, until the next command
     if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
     if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];

@@ -1,10 +1,8 @@
-// Who the demo says it is. Change the name, the mark or the links here and
-// every page and tutorial follows.
+// Who the demo says it is. Change the name or the mark here and the page's
+// header follows; index.html carries the tab's title.
 export const brand = {
   name: 'FastATP',
   product: 'conductor',
-  tagline: 'signed mail for machines',
-  url: 'https://fastatp.com',
 };
 
 // The goose: one bird seen from below, flying up the page, drawn in a
