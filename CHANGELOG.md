@@ -239,8 +239,9 @@ Nothing yet.
   sovereign peers on a private LAN inside Docker, signed records, verified
   following, and a private channel behind a real WireGuard tunnel. A guide
   can be read and typed along with, watched in the browser as a show the
-  demo engine plays on the three machines (`./lab.sh conductor`), or
-  played headless (`./lab.sh test`). `tutorials/AGENTS.md` tells a coding
+  demo engine plays on the three machines
+  (`tutorials/lab/lab.sh conductor`), or played headless
+  (`tutorials/lab/lab.sh test`). `tutorials/AGENTS.md` tells a coding
   agent how to run a guide itself and answer from what the machines did.
   Nothing under `tutorials/` ships in the wheel or the source archive.
 - CI plays every tutorial end to end on every pull request, and a guide
