@@ -5,7 +5,19 @@
   </picture>
 </h1>
 
-**Signed mail for machines, not remote procedure calls with a login.**
+<p align="center">
+  <strong>Private and public composable atproto PDS via symmetric peers, without shared secrets: signed mail for machines (and humans), not remote procedure calls with a login.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/jacoblapenna/fastatp/actions/workflows/test.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/jacoblapenna/fastatp/test.yml?branch=main&label=tests&labelColor=20242a" alt="tests on main"></a>
+  <a href="https://pypi.org/project/fastatp/"><img src="https://img.shields.io/pypi/v/fastatp?label=pypi&labelColor=20242a&color=a84300" alt="the release on PyPI"></a>
+  <a href="https://github.com/jacoblapenna/fastatp/tags"><img src="https://img.shields.io/github/v/tag/jacoblapenna/fastatp?label=latest%20tag&labelColor=20242a&color=a84300" alt="the latest tag, release candidates included"></a>
+  <a href="https://github.com/jacoblapenna/fastatp/blob/main/pyproject.toml"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjacoblapenna%2Ffastatp%2Fmain%2Fpyproject.toml&query=%24.project.version&label=main&prefix=v&labelColor=20242a&color=a84300" alt="the version on main"></a>
+  <a href="https://pypi.org/project/fastatp/"><img src="https://img.shields.io/pypi/pyversions/fastatp?label=python&labelColor=20242a&color=a84300" alt="supported Python versions"></a>
+</p>
+
+---
 
 You drop a signed, content-addressed record — authored by your key, addressed by
 DID, verifiable by anyone, forever — and any peer you have admitted picks it up,

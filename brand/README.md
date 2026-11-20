@@ -97,6 +97,15 @@ and white do nearly all the work, and orange is the one hue that is ours.
    light and dark colors. `make.py` writes both; a sketch's author only
    writes `var(--color-name)` and never a raw color.
 
+## Badges
+
+The row of badges under the main README's title is drawn by shields.io. The
+label half is `surface-raised` from the dark theme (`20242a`) and the value
+half is the light theme's `accent-text` (`a84300`), the deeper orange,
+because a badge's value is small white text and the mark's own orange is too
+light to carry it. The tests badge keeps its own green or red: it reports a
+state, and orange never does.
+
 ## What resonates, and why this palette
 
 FastATP is for developers and vibe coders working at a systems level. That
