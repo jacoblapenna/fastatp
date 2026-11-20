@@ -18,6 +18,7 @@ The browser is not a peer; it only watches what the conductor verified.
 import asyncio
 import contextlib
 import json
+import math
 import os
 import re
 import time
@@ -313,10 +314,24 @@ def jump(number: str) -> None:
     for sid in [k for k in results if k >= start]:
         results.pop(sid)
         output.pop(sid, None)
-    state.update(cursor=start - 1, done=False, mode="step")  # this press opens the chapter
+    # This press opens the chapter. A catch-up that was paused part way is
+    # over: left set, `until` would hurry this chapter past its key concepts.
+    state.update(cursor=start - 1, done=False, mode="step", until=None)
 
 
 # --- the page -----------------------------------------------------------------
+
+
+def speed_from(value: object) -> float | None:
+    """A speed the director can divide by, or None for anything else.
+
+    The pace of the show is 1 / speed, so zero, a negative number, or text
+    that is not a number would stop the director for every viewer."""
+    try:
+        speed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return min(max(speed, 0.25), 16.0) if math.isfinite(speed) and speed > 0 else None
 
 
 async def browser(ws: WebSocket) -> None:
@@ -330,6 +345,8 @@ async def browser(ws: WebSocket) -> None:
             msg = json.loads(await ws.receive_text())
             if msg["type"] not in ("play", "pause", "step", "gotit", "speed", "chapter"):
                 continue
+            if msg["type"] == "speed" and (speed := speed_from(msg.get("value"))) is None:
+                continue  # not a speed: nothing is signed and nothing changes
             await write(
                 Control(action=msg["type"], value=str(msg.get("value", "")))
             )  # every press is signed too
@@ -338,7 +355,7 @@ async def browser(ws: WebSocket) -> None:
             elif msg["type"] == "gotit":
                 state["concept"] = None
             elif msg["type"] == "speed":
-                state["speed"] = float(msg["value"])
+                state["speed"] = speed
             elif msg["type"] == "chapter":
                 jump(str(msg["value"]))
             wake.set()
