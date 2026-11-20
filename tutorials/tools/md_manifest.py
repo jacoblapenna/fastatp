@@ -40,6 +40,11 @@ GitHub and fastatp.com do not render:
                                           to fail (a refusal, a ping nobody answers); with no
                                           numbers, every command in it. Every other command is
                                           meant to succeed, and the headless play checks both
+  <!-- @demo prints bob -->               the next listing is what bob's terminal goes on to
+                                          print, from the command bob left running, and not
+                                          what the block above it printed. A listing is
+                                          otherwise the output of its block's commands, and
+                                          the headless play holds the machines to it
   <!-- @demo stop bob -->                 Ctrl-C whatever bob left running
   <!-- @demo wait 5 -->                   let time pass
   <!-- @demo expand eve -->  collapse  focus
@@ -157,6 +162,7 @@ def parse(text: str) -> dict:
     file_section: dict | None = None  # the `### `name.py`` section being read
     code_cue: dict | None = None  # a code cue waiting for the next bash block
     fails_cue: tuple[int, list[int]] | None = None  # its line, and which commands are meant to fail
+    prints_cue: tuple[int, str] | None = None  # its line, and whose terminal the next listing is
 
     def emit(step: dict) -> dict:
         step["id"] = len(steps)
@@ -258,6 +264,8 @@ def parse(text: str) -> dict:
                 last_block[n - 1].setdefault("save", []).append(
                     {"field": field, "literal": literal}
                 )
+            elif verb == "prints":
+                prints_cue = (i, arg)
             elif verb == "fails":
                 fails_cue = (i, [int(n) for n in arg.split()])
             elif verb == "stop":
@@ -338,7 +346,25 @@ def parse(text: str) -> dict:
                         runs[n - 1]["fails"] = True  # everything else is meant to exit 0
                 code_cue = fails_cue = None
             elif lang in ("text", "json") and last_block and steps and steps[-1] is last_block[-1]:
-                last_block[-1]["expect"] = "\n".join(body)  # what the guide says should come back
+                # what the guide says should come back, and from which commands: the
+                # block's own, or the one a machine left running
+                sources = list(last_block)  # the steps themselves: chapters renumber them later
+                if prints_cue:
+                    at, who = prints_cue
+                    running = [
+                        s
+                        for s in steps
+                        if s["kind"] == "run" and s["machine"] == who and s.get("bg")
+                    ]
+                    if not running:
+                        raise SystemExit(
+                            f"line {at}: @demo prints {who}, and {who} left nothing running"
+                        )
+                    sources = running[-1:]
+                last_block[-1].setdefault("listings", []).append(
+                    {"text": "\n".join(body), "from": sources}
+                )
+                prints_cue = None
             replace_next_bash = False
             continue
 
@@ -424,9 +450,13 @@ def parse(text: str) -> dict:
             continue
         i += 1
 
+    menu = chapters(steps)  # puts the steps in playing order and numbers them
+    for step in steps:
+        for listing in step.get("listings", []):  # now that every step has its number
+            listing["from"] = [source["id"] for source in listing["from"]]
     return {
         "machines": machines,
-        "chapters": chapters(steps),
+        "chapters": menu,
         "files": files,
         "images": images,
         "glossary": glossary,

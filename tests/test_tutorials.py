@@ -252,6 +252,73 @@ def test_the_score_says_how_each_command_is_meant_to_end():
     assert meant and set(meant) <= {"python", "ping"}  # followers refused, pings unanswered
 
 
+def test_a_listing_is_held_to_what_the_commands_print():
+    """The listing under a command block is an excerpt of what its commands
+    print. The headless play compares the two: every line the guide shows
+    must have been printed, in order; values that are new on every run are
+    compared by shape; and nothing else is forgiven."""
+    md_manifest = _tool("md_manifest")
+    play = _tool("play")
+    page = """<!-- @demo machines alice bob -->
+<!-- @demo start -->
+```bash
+./lab.sh bob python follow.py did:web:alice.lan alice.lan
+```
+
+```bash
+./lab.sh alice true
+./lab.sh alice false
+```
+
+```text
+the block's own
+```
+
+<!-- @demo prints bob -->
+```text
+what bob's follower went on to print
+```
+<!-- @demo end -->
+"""
+    runs = [s for s in md_manifest.parse(page)["steps"] if s["kind"] == "run"]
+    follower, first, second = (s["id"] for s in runs)
+    assert runs[2]["listings"] == [
+        {"text": "the block's own", "from": [first, second]},
+        {"text": "what bob's follower went on to print", "from": [follower]},
+    ]
+    with pytest.raises(SystemExit, match="left nothing running"):
+        md_manifest.parse(page.replace("prints bob", "prints alice"))
+
+    printed = [
+        "checkpoint: rev 3n2r4ij7vh5mg, 1 records, verified; stream at seq 3",
+        "   com.example.tutorial.note/3n2r4ij7o44fx: Note(text='hello, LAN',"
+        " created_at='2026-11-20T17:31:23.671643Z')",
+        '{"cid":',
+        '    "bafyreieoherpgtc7hnql6zstcfnrhznqccf45zk53aylattr3dvzph7fzq"}',
+        "  latest handshake: 6 seconds ago",
+        "  transfer: 964 B received, 316 B sent",
+    ]
+    agrees = """checkpoint: rev 3mz23h6bwy242, 1 records, verified; stream at seq 3
+   com.example.tutorial.note/3mz23h6bv4dmd: Note(text='hello, LAN', ...)
+{"cid": "bafyreifoptz..."}
+  latest handshake: 7 seconds ago
+  transfer: 212 B received, 92 B sent"""
+    assert play.listing_problems(agrees, printed) == []
+    # a count is not a value that changes from run to run: it is compared exactly
+    assert play.listing_problems("checkpoint: rev 3mz23h6bwy242, 2 records", printed) == [
+        "checkpoint: rev 3mz23h6bwy242, 2 records"
+    ]
+    # the guide's order is part of what it claims
+    assert play.listing_problems("latest handshake: 7 seconds ago\ncheckpoint: rev", printed)
+    # what a listing leaves out of a line, it marks with ...
+    assert play.listing_problems("checkpoint: rev 3mz23h6bwy242, verified", printed)
+    assert play.listing_problems("checkpoint: rev 3mz23h6bwy242, ..., verified", printed) == []
+
+    guide = md_manifest.parse((TUTORIALS / "GETTING_STARTED.md").read_text())
+    listings = [x for s in guide["steps"] for x in s.get("listings", [])]
+    assert len(listings) >= 20 and all(x["from"] for x in listings)
+
+
 def test_the_favicon_is_the_brand_goose():
     """The tab icon is a static file, so it carries its own copy of the goose: the same path."""
     brand = (TUTORIALS / "conductor" / "src" / "brand" / "brand.js").read_text()

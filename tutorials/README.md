@@ -68,8 +68,9 @@ cd tutorials/lab             # from the repository root
 ./lab.sh test                # GETTING_STARTED; about five minutes
 ```
 
-The run fails if a command ends the wrong way: one the guide means to work
-fails, or one it means to be refused goes through. With the lab still up,
+The run fails if a command ends the wrong way (one the guide means to work
+fails, or one it means to be refused goes through) or does not print what
+the listing under it shows. With the lab still up,
 `python tutorials/tools/page_check.py` (from the repository root, with
 fastatp installed and a Chrome on the path) then opens the page in a
 headless browser and looks back through every step: no page errors, a page
@@ -126,7 +127,13 @@ python tutorials/tools/md_embed.py --write tutorials/GETTING_STARTED.md
   A `<!-- @demo fails 2 3 -->` above a command block says its second and
   third commands are meant to fail (a refusal, a ping nobody answers); with
   no numbers, every command in it. Every other command is meant to succeed,
-  and the headless play fails when either kind ends the wrong way.
+  and the headless play fails when either kind ends the wrong way. A
+  ```text or ```json block right under a command block is its listing, and
+  the play holds the commands to it: every line shown must be printed, in
+  order. Leave lines out freely, and mark what you cut from inside a line
+  with `...`; values that are new on every run are compared by shape
+  (`tools/play.py` lists them). A listing of what a machine's still-running
+  command goes on to print takes `<!-- @demo prints bob -->` above it.
   Every ``### `name.py` `` section opens with one line on what the file is
   for: the screen heads the code with it when a command runs that file.
   `tools/md_manifest.py` lists every directive.
