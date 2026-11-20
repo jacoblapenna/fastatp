@@ -191,7 +191,7 @@ The wrapper, in full:<!-- @demo /terminal -->
 ./lab.sh alice <command...>  # run a command on alice's machine (curl, python follow.py, wg show, ...)
 ./lab.sh restart alice       # reboot alice's machine
 ./lab.sh conductor           # Part 4: boot the machines with the demo engine, on http://localhost:8080
-./lab.sh tap <tcpdump args>  # watch the LAN from outside with tcpdump, as nobody (optional)
+./lab.sh tap <tcpdump args>  # watch the LAN from outside with tcpdump, an observer on the wire (optional)
 ./lab.sh down                # stop the machines; state survives
 ./lab.sh clean               # stop the machines and delete all state
 ```
@@ -2401,11 +2401,11 @@ None of this is free, and the price is worth stating plainly:
 ### The raw tap, if you want it
 
 The wire view is a summary. For raw packets, `./lab.sh tap` runs `tcpdump`
-attached to the LAN's switch from outside, as nobody: `./lab.sh tap -A
-port 80` prints the public side as text, and `./lab.sh tap -c 50 -w
-/state/wire.pcap udp port 51820` saves a capture to `lab/state/wire.pcap` for
-Wireshark, whose WireGuard dissector labels every packet and still cannot
-open one. On macOS and Windows the tap needs a Docker Desktop recent enough to
+attached to the LAN's switch from outside, an observer on the wire and not
+a machine on it: `./lab.sh tap -A port 80` prints the public side as text,
+and `./lab.sh tap -c 50 -w /state/wire.pcap udp port 51820` saves a capture
+to `lab/state/wire.pcap` for Wireshark, whose WireGuard dissector labels
+every packet and still cannot open one. On macOS and Windows the tap needs a Docker Desktop recent enough to
 support host networking.
 
 ## What you just ran, in "Bluesky" terms
