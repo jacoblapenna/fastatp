@@ -4,9 +4,11 @@ python play.py [ws://localhost/ws] [--speed 4]   (run it on the conductor)
 
 Presses Play, answers every key concept with "Got it", and prints every
 command a machine ran with its exit code and last line of output. Exits
-non-zero if a machine refused a step or the play stalls. The start of the
-CI runner; it checks that the guide plays, not yet that each output matches
-the guide's own listings.
+non-zero if there is no conductor, the show was already played, or the play
+stalls. A command's own exit code does not fail the run: some of a guide's
+commands are meant to be refused. The start of the CI runner; it checks
+that the guide plays, not yet that each output matches the guide's own
+listings.
 """
 
 import argparse
@@ -30,7 +32,6 @@ opts = args.parse_args()
 
 async def main() -> int:
     procs: dict[int, dict] = {}
-    failures = 0
     for _ in range(60):  # the conductor may still be starting
         try:
             ws = await websockets.connect(opts.url, max_size=None)
@@ -43,6 +44,10 @@ async def main() -> int:
     async with ws:
         hello = json.loads(await ws.recv())
         steps = hello["manifest"]["steps"]
+        if hello["done"]:
+            # Pressing Play on a finished show does nothing, and nothing is not a pass.
+            print("this show has already been played; ./lab.sh clean starts a fresh one")
+            return 1
         await ws.send(json.dumps({"type": "speed", "value": opts.speed}))
         await ws.send(json.dumps({"type": "play"}))
         while True:
@@ -59,7 +64,7 @@ async def main() -> int:
                         return 0
                     await ws.send(json.dumps({"type": "gotit"}))
                 if msg["done"]:
-                    return 1 if failures else 0
+                    return 0
             elif msg["type"] == "event":
                 ev = msg["event"]
                 if ev["type"] == "proc" and ev["state"] == "start":
@@ -74,9 +79,6 @@ async def main() -> int:
                     )
                     if last:
                         print(f"            └ {last[:110]}")
-                elif ev["type"] == "refused":
-                    failures += 1
-                    print(f"REFUSED step {ev['step']} on {ev['machine']}: {ev['reason']}")
 
 
 sys.exit(asyncio.run(main()))

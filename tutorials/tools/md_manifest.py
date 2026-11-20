@@ -229,15 +229,16 @@ def parse(text: str) -> dict:
             elif verb == "run":
                 who, _, cmd = arg.partition(":")
                 emit_say()
-                emit(
-                    {
-                        "kind": "run",
-                        "machine": who.strip(),
-                        "cmd": cmd.strip(),
-                        "display": f"./lab.sh {who.strip()} {cmd.strip()}",
-                        "bg": any(s in cmd for s in LONG_RUNNING),
-                    }
-                )
+                step = {
+                    "kind": "run",
+                    "machine": who.strip(),
+                    "cmd": cmd.strip(),
+                    "display": f"./lab.sh {who.strip()} {cmd.strip()}",
+                    "bg": any(s in cmd for s in LONG_RUNNING),
+                }
+                if code := code_for(cmd):  # a script it runs opens beside the machine
+                    step["code"] = code
+                emit(step)
                 replace_next_bash = True
             elif verb == "skip":
                 skip_next_bash = True
@@ -384,7 +385,9 @@ def parse(text: str) -> dict:
             while (
                 i < len(lines)
                 and lines[i].strip()
-                and not re.match(r"^(#|>|```|\|)", lines[i].strip())
+                and not re.match(
+                    r"^(#|>|```|\||!\[)", lines[i].strip()
+                )  # a picture is its own line
                 and not FULL_COMMENT.match(lines[i].strip())
             ):
                 para.append(lines[i].strip())

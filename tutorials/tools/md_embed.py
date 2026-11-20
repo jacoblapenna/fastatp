@@ -49,7 +49,9 @@ def sync(guide: Path, lab: Path, write: bool) -> list[str]:
     for name, start, end in reversed(embedded_blocks(text)):
         source = lab / name
         if not source.exists():
-            continue
+            # A quoted file that was renamed or deleted is the worst drift of
+            # all: the page still shows code nothing runs.
+            raise SystemExit(f"{guide.name} quotes lab/{name}, which does not exist")
         wanted = source.read_text(encoding="utf-8").rstrip("\n").splitlines()
         if lines[start:end] != wanted:
             drifted.append(name)
@@ -61,6 +63,8 @@ def sync(guide: Path, lab: Path, write: bool) -> list[str]:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 3 or sys.argv[1] not in ("--check", "--write"):
+        raise SystemExit("usage: python md_embed.py --check|--write <guide.md>")
     mode, target = sys.argv[1], Path(sys.argv[2])
     drifted = sync(target, target.parent / "lab", write=(mode == "--write"))
     if mode == "--check" and drifted:
