@@ -17,7 +17,7 @@ To upgrade safely within one minor line, pin with `~=`, for example
 
 Nothing yet.
 
-## [0.3.0] - 2026-11-18
+## [0.3.0] - 2026-11-20
 
 ### Breaking
 - Garbage collection is per commit and per repo: a commit or import
@@ -233,6 +233,33 @@ Nothing yet.
   a function of a key, the rejected alternatives (a central allocator, host
   assignment, self-chosen addresses), and the limits (IPv6 overlay, key
   rotation moves the address, the doorman's walk at scale).
+- The tutorials live in this repository now, under `tutorials/`, and run
+  against the fastatp in the tree. The first guide,
+  `tutorials/GETTING_STARTED.md`, is ported to the 0.3.0 API: three
+  sovereign peers on a private LAN inside Docker, signed records, verified
+  following, and a private channel behind a real WireGuard tunnel. A guide
+  can be read and typed along with, watched in the browser as a show the
+  demo engine plays on the three machines
+  (`tutorials/lab/lab.sh conductor`), or played headless
+  (`tutorials/lab/lab.sh test`). `tutorials/AGENTS.md` tells a coding
+  agent how to run a guide itself and answer from what the machines did.
+  Nothing under `tutorials/` ships in the wheel or the source archive.
+- CI plays every tutorial end to end on every pull request, and a guide
+  that does not play blocks the merge. The play fails when a command ends
+  the wrong way (one meant to work fails, or one meant to be refused goes
+  through) or does not print what the guide's listing shows, and the
+  conductor's page is then checked in a headless Chrome. A pull request
+  that adds a tutorial adds it to that job. `docs/TESTING.md` "In CI:
+  every tutorial is played".
+- The README opens with the logo, one sentence saying what FastATP is, and
+  badges for the tests, the release on PyPI, the latest tag, the version
+  on `main` and the supported Pythons; it gains a Tutorials section and a
+  pointer for coding agents. `brand/` holds the logo files and the palette
+  they are drawn from; it does not ship in the package either.
+- `CONTRIBUTING.md` and `AGENTS.md` say what gates a merge: the
+  deterministic test suite, tutorials included. Automated review is
+  advisory, and every review thread is owed a reply and a resolve before a
+  maintainer reads the pull request.
 
 ## [0.2.0] - 2026-11-05
 
