@@ -45,7 +45,7 @@ DID_PARAM = quote(opts.did, safe="")  # the %3A inside a did:web must survive th
 
 
 class Unreachable(Exception):
-    """The host did not answer at all. Fatal on first contact, a retry later."""
+    """The host did not answer, or is not ready to. Fatal on first contact, a retry later."""
 
 
 async def checkpoint(mirror: RepoMirror) -> int:
@@ -55,9 +55,10 @@ async def checkpoint(mirror: RepoMirror) -> int:
     async with httpx.AsyncClient(timeout=5) as client:
         try:
             resp = await client.get(f"http://{BASE}.getRepo", params={"did": opts.did})
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.TransportError as e:
             # A tunnel address with no tunnel open fails like an unplugged cable:
             # no answer at all, not a refusal. That silence is the point of WireGuard.
+            # A peer that is restarting fails the same way, part way through its answer.
             raise Unreachable(
                 f"no route to {opts.host}: {type(e).__name__} (is there a tunnel?)"
             ) from None
@@ -68,6 +69,9 @@ async def checkpoint(mirror: RepoMirror) -> int:
         # the doorman answers exactly as if the repo did not exist, so a
         # stranger cannot even learn that it does.
         raise SystemExit(f"{opts.host} serves no repo {opts.did} on this wire")
+    if resp.status_code >= 500:
+        # The host is there but not serving yet, as a peer is for a moment while it boots.
+        raise Unreachable(f"{opts.host} is not ready: HTTP {resp.status_code}")
     resp.raise_for_status()
     # This is where the trust happens. load_checkpoint resolves the DID (through
     # our resolver) to find the public signing key, checks the commit's signature,
@@ -108,10 +112,14 @@ async def main() -> None:
                             frame
                         )  # only to show the frame type and ops; the checking is below
                     except FirehoseErrorFrame as refusal:
-                        print(
-                            f"refused: {refusal}"
-                        )  # the server closes with a reason, e.g. a cursor it cannot honour
-                        return
+                        if refusal.error == "ConsumerTooSlow":
+                            # We fell behind and the server let go of us. Nothing is
+                            # lost: the checkpoint below brings us level again.
+                            print(f"fell behind: {refusal}")
+                            break
+                        # Any other reason is a refusal, e.g. a cursor the server
+                        # cannot honour. Exit 1, so a script can tell it from a clean end.
+                        raise SystemExit(f"refused: {refusal}") from None
                     # handle_frame verifies the frame (signature, hashes, that it builds on
                     # the rev we hold) and applies it. It returns records created or updated.
                     # Deletes are applied too, but there is no record to return for them.
@@ -119,9 +127,11 @@ async def main() -> None:
                     if mirror.resync_target is not None:
                         # A #sync frame announces a new root without a full tree. If the
                         # mirror cannot connect it to what it holds, it refuses to guess
-                        # and we fetch a fresh checkpoint instead.
-                        cursor = await checkpoint(mirror)
-                        continue
+                        # and we fetch a fresh checkpoint instead. This socket may
+                        # still hold frames from before that checkpoint, so we leave
+                        # it: the loop below checkpoints, then subscribes again.
+                        print("the mirror cannot place this frame; fetching a fresh checkpoint")
+                        break
                     print(f"seq {mirror.seq}: {header['t']} rev={mirror.rev} verified")
                     for item in records:
                         print(f"   {item['action']} {item['path']}: {show(item['record'])!r}")

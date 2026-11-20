@@ -24,12 +24,19 @@ async def main() -> None:
     # the tree nodes on the path from that commit down to this record, and the
     # record itself. That is enough to check one record without the rest of the repo.
     url = f"http://{host}/xrpc/com.atproto.sync.getRecord"
-    proof = httpx.get(url, params={"did": did, "collection": collection, "rkey": rkey}).content
+    response = httpx.get(url, params={"did": did, "collection": collection, "rkey": rkey})
+    if response.status_code != 200:
+        # No such record, or a repo this host does not serve. That is the host's
+        # answer, not a failed proof, so say what it said.
+        sys.exit(f"{host} answered {response.status_code}: {response.text.strip()}")
+    proof = response.content
     print(f"proof slice: {len(proof)} bytes (signed commit + MST path + record)")
     # verify() resolves the DID to find the public signing key, checks the commit's
     # signature, walks the hashes down to the record, and raises if any step
-    # fails or if the signer is not the DID we expected. The host we fetched
-    # from plays no part in the trust. It could be a stranger's cache.
+    # fails or if the signer is not the DID we expected. path names the record
+    # we asked for, so a host cannot answer with a different one that DID also
+    # signed. The host we fetched from plays no part in the trust. It could be
+    # a stranger's cache.
     if tamper:
         # Change one byte, as a failing disk or a dishonest mirror might. The record
         # is the last block in the slice, so the slice's last byte is the record's.
@@ -38,11 +45,15 @@ async def main() -> None:
         print(f"changed one byte of the record: {proof[-9:]!r} -> {bytes(changed[-9:])!r}")
         proof = bytes(changed)
     try:
-        record = await Peer(resolver=resolver()).verify(proof, expected_signer=did)
+        record = await Peer(resolver=resolver()).verify(
+            proof, expected_signer=did, path=f"{collection}/{rkey}"
+        )
     except VerificationError as error:
         # Nothing is returned for bytes that fail: there is no "mostly valid" record.
         print(f"refused: {error}")
-        sys.exit(0 if tamper else 1)
+        sys.exit(0 if tamper else 1)  # with --tamper, refused is the right answer
+    if tamper:
+        sys.exit("the changed bytes verified, which must never happen")
     print(f"verified, signed by {did}: {record!r}")
 
 

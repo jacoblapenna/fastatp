@@ -5,7 +5,7 @@ import asyncio
 
 import websockets
 
-from fastatp.exceptions import FirehoseErrorFrame
+from fastatp.exceptions import FirehoseErrorFrame, RepoError
 from fastatp.repo.sync import decode_frame
 
 # No RepoMirror, no resolver, no signature checks. This script shows what the
@@ -31,6 +31,9 @@ async def main() -> None:
             except FirehoseErrorFrame as e:
                 print(f"error frame: {e}")  # the server's way of closing with a reason
                 return
+            except RepoError as e:
+                print(f"unreadable frame: {e}")  # bytes that are not a frame: say so, keep watching
+                continue
             kind = header.get("t")  # the frame type: #commit, #sync, ...
             summary = {k: v for k, v in body.items() if k not in ("blocks",)}
             if "blocks" in body:

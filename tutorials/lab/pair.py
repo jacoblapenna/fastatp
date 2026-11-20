@@ -31,6 +31,10 @@ async def main() -> None:
     # is not in the document: it is derived from the key, here, by the same
     # function that peer used to put it on its own interface.
     info = parse_wireguard_service(await resolver()(target))
+    if info.endpoint is None:
+        # A WireGuard service may leave the address out. The reader is the side
+        # that sends first, so without one there is nowhere to knock.
+        raise SystemExit(f"{target}'s DID document names no WireGuard endpoint to send to")
     # Hand those to the kernel. This is the whole "client side" of a WireGuard
     # tunnel, four facts:
     #   peer <key>                trust this key

@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastatp import Lexicon
-from fastatp.lex.types import Datetime, MaxGraphemes
+from fastatp.lex.types import AtUri, Datetime, MaxGraphemes
 
 # A Lexicon is a record schema. Subclassing it does two jobs at once. The class
 # becomes a validator: building a Note that breaks a rule raises, before anything
@@ -23,6 +23,6 @@ class Note(Lexicon):
 
 class Reply(Lexicon):
     nsid = "com.example.tutorial.reply"
-    to: str  # the at:// URI of the note being answered; a plain string, nothing is looked up
+    to: AtUri  # the at:// URI of the note being answered; its shape is checked, nothing is looked up
     text: Annotated[str, MaxGraphemes(300)]
     created_at: Datetime

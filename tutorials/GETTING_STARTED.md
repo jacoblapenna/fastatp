@@ -212,7 +212,7 @@ they belong to.
 from typing import Annotated
 
 from fastatp import Lexicon
-from fastatp.lex.types import Datetime, MaxGraphemes
+from fastatp.lex.types import AtUri, Datetime, MaxGraphemes
 
 # A Lexicon is a record schema. Subclassing it does two jobs at once. The class
 # becomes a validator: building a Note that breaks a rule raises, before anything
@@ -232,7 +232,7 @@ class Note(Lexicon):
 
 class Reply(Lexicon):
     nsid = "com.example.tutorial.reply"
-    to: str  # the at:// URI of the note being answered; a plain string, nothing is looked up
+    to: AtUri  # the at:// URI of the note being answered; its shape is checked, nothing is looked up
     text: Annotated[str, MaxGraphemes(300)]
     created_at: Datetime
 ```
@@ -283,7 +283,8 @@ def resolver() -> WebResolver:
     # they hold. From
     # then on the reader verifies the impostor's records and rejects alice's,
     # and every check passes honestly. TLS makes that fetch untamperable. This
-    # LAN has no one in between, which is the only reason the shortcut is safe.
+    # lab has no one who tampers with that fetch, which is the only reason the
+    # shortcut is safe here.
     return WebResolver(client=httpx.AsyncClient(transport=_PlainHTTP()))
 ```
 
@@ -701,6 +702,10 @@ async def main() -> None:
     # is not in the document: it is derived from the key, here, by the same
     # function that peer used to put it on its own interface.
     info = parse_wireguard_service(await resolver()(target))
+    if info.endpoint is None:
+        # A WireGuard service may leave the address out. The reader is the side
+        # that sends first, so without one there is nowhere to knock.
+        raise SystemExit(f"{target}'s DID document names no WireGuard endpoint to send to")
     # Hand those to the kernel. This is the whole "client side" of a WireGuard
     # tunnel, four facts:
     #   peer <key>                trust this key
@@ -799,7 +804,7 @@ DID_PARAM = quote(opts.did, safe="")  # the %3A inside a did:web must survive th
 
 
 class Unreachable(Exception):
-    """The host did not answer at all. Fatal on first contact, a retry later."""
+    """The host did not answer, or is not ready to. Fatal on first contact, a retry later."""
 
 
 async def checkpoint(mirror: RepoMirror) -> int:
@@ -809,9 +814,10 @@ async def checkpoint(mirror: RepoMirror) -> int:
     async with httpx.AsyncClient(timeout=5) as client:
         try:
             resp = await client.get(f"http://{BASE}.getRepo", params={"did": opts.did})
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.TransportError as e:
             # A tunnel address with no tunnel open fails like an unplugged cable:
             # no answer at all, not a refusal. That silence is the point of WireGuard.
+            # A peer that is restarting fails the same way, part way through its answer.
             raise Unreachable(
                 f"no route to {opts.host}: {type(e).__name__} (is there a tunnel?)"
             ) from None
@@ -822,6 +828,9 @@ async def checkpoint(mirror: RepoMirror) -> int:
         # the doorman answers exactly as if the repo did not exist, so a
         # stranger cannot even learn that it does.
         raise SystemExit(f"{opts.host} serves no repo {opts.did} on this wire")
+    if resp.status_code >= 500:
+        # The host is there but not serving yet, as a peer is for a moment while it boots.
+        raise Unreachable(f"{opts.host} is not ready: HTTP {resp.status_code}")
     resp.raise_for_status()
     # This is where the trust happens. load_checkpoint resolves the DID (through
     # our resolver) to find the public signing key, checks the commit's signature,
@@ -862,10 +871,14 @@ async def main() -> None:
                             frame
                         )  # only to show the frame type and ops; the checking is below
                     except FirehoseErrorFrame as refusal:
-                        print(
-                            f"refused: {refusal}"
-                        )  # the server closes with a reason, e.g. a cursor it cannot honour
-                        return
+                        if refusal.error == "ConsumerTooSlow":
+                            # We fell behind and the server let go of us. Nothing is
+                            # lost: the checkpoint below brings us level again.
+                            print(f"fell behind: {refusal}")
+                            break
+                        # Any other reason is a refusal, e.g. a cursor the server
+                        # cannot honour. Exit 1, so a script can tell it from a clean end.
+                        raise SystemExit(f"refused: {refusal}") from None
                     # handle_frame verifies the frame (signature, hashes, that it builds on
                     # the rev we hold) and applies it. It returns records created or updated.
                     # Deletes are applied too, but there is no record to return for them.
@@ -873,9 +886,11 @@ async def main() -> None:
                     if mirror.resync_target is not None:
                         # A #sync frame announces a new root without a full tree. If the
                         # mirror cannot connect it to what it holds, it refuses to guess
-                        # and we fetch a fresh checkpoint instead.
-                        cursor = await checkpoint(mirror)
-                        continue
+                        # and we fetch a fresh checkpoint instead. This socket may
+                        # still hold frames from before that checkpoint, so we leave
+                        # it: the loop below checkpoints, then subscribes again.
+                        print("the mirror cannot place this frame; fetching a fresh checkpoint")
+                        break
                     print(f"seq {mirror.seq}: {header['t']} rev={mirror.rev} verified")
                     for item in records:
                         print(f"   {item['action']} {item['path']}: {show(item['record'])!r}")
@@ -918,7 +933,7 @@ import asyncio
 
 import websockets
 
-from fastatp.exceptions import FirehoseErrorFrame
+from fastatp.exceptions import FirehoseErrorFrame, RepoError
 from fastatp.repo.sync import decode_frame
 
 # No RepoMirror, no resolver, no signature checks. This script shows what the
@@ -944,6 +959,9 @@ async def main() -> None:
             except FirehoseErrorFrame as e:
                 print(f"error frame: {e}")  # the server's way of closing with a reason
                 return
+            except RepoError as e:
+                print(f"unreadable frame: {e}")  # bytes that are not a frame: say so, keep watching
+                continue
             kind = header.get("t")  # the frame type: #commit, #sync, ...
             summary = {k: v for k, v in body.items() if k not in ("blocks",)}
             if "blocks" in body:
@@ -988,12 +1006,19 @@ async def main() -> None:
     # the tree nodes on the path from that commit down to this record, and the
     # record itself. That is enough to check one record without the rest of the repo.
     url = f"http://{host}/xrpc/com.atproto.sync.getRecord"
-    proof = httpx.get(url, params={"did": did, "collection": collection, "rkey": rkey}).content
+    response = httpx.get(url, params={"did": did, "collection": collection, "rkey": rkey})
+    if response.status_code != 200:
+        # No such record, or a repo this host does not serve. That is the host's
+        # answer, not a failed proof, so say what it said.
+        sys.exit(f"{host} answered {response.status_code}: {response.text.strip()}")
+    proof = response.content
     print(f"proof slice: {len(proof)} bytes (signed commit + MST path + record)")
     # verify() resolves the DID to find the public signing key, checks the commit's
     # signature, walks the hashes down to the record, and raises if any step
-    # fails or if the signer is not the DID we expected. The host we fetched
-    # from plays no part in the trust. It could be a stranger's cache.
+    # fails or if the signer is not the DID we expected. path names the record
+    # we asked for, so a host cannot answer with a different one that DID also
+    # signed. The host we fetched from plays no part in the trust. It could be
+    # a stranger's cache.
     if tamper:
         # Change one byte, as a failing disk or a dishonest mirror might. The record
         # is the last block in the slice, so the slice's last byte is the record's.
@@ -1002,11 +1027,15 @@ async def main() -> None:
         print(f"changed one byte of the record: {proof[-9:]!r} -> {bytes(changed[-9:])!r}")
         proof = bytes(changed)
     try:
-        record = await Peer(resolver=resolver()).verify(proof, expected_signer=did)
+        record = await Peer(resolver=resolver()).verify(
+            proof, expected_signer=did, path=f"{collection}/{rkey}"
+        )
     except VerificationError as error:
         # Nothing is returned for bytes that fail: there is no "mostly valid" record.
         print(f"refused: {error}")
-        sys.exit(0 if tamper else 1)
+        sys.exit(0 if tamper else 1)  # with --tamper, refused is the right answer
+    if tamper:
+        sys.exit("the changed bytes verified, which must never happen")
     print(f"verified, signed by {did}: {record!r}")
 
 
@@ -1022,8 +1051,9 @@ of its bytes.
 ```python
 """What is actually in a repo: python blocks.py <state-dir>
 
-Every block in blocks.sqlite, decoded. A repo holds three kinds of block and
-nothing else: one signed commit, the tree nodes, and the records. All of it
+Every block in blocks.sqlite, decoded. A repo is three kinds of block and
+nothing else: one signed commit, the tree nodes, and the records. (The file
+may also keep a block the commit no longer reaches, until it is collected.) All of it
 is DAG-CBOR, a binary encoding of the same data model JSON uses. None of it
 is encrypted; the only secret in the directory is signing.key.
 """

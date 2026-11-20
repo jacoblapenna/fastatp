@@ -1,7 +1,8 @@
 """What is actually in a repo: python blocks.py <state-dir>
 
-Every block in blocks.sqlite, decoded. A repo holds three kinds of block and
-nothing else: one signed commit, the tree nodes, and the records. All of it
+Every block in blocks.sqlite, decoded. A repo is three kinds of block and
+nothing else: one signed commit, the tree nodes, and the records. (The file
+may also keep a block the commit no longer reaches, until it is collected.) All of it
 is DAG-CBOR, a binary encoding of the same data model JSON uses. None of it
 is encrypted; the only secret in the directory is signing.key.
 """

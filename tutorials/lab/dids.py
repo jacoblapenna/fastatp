@@ -32,5 +32,6 @@ def resolver() -> WebResolver:
     # they hold. From
     # then on the reader verifies the impostor's records and rejects alice's,
     # and every check passes honestly. TLS makes that fetch untamperable. This
-    # LAN has no one in between, which is the only reason the shortcut is safe.
+    # lab has no one who tampers with that fetch, which is the only reason the
+    # shortcut is safe here.
     return WebResolver(client=httpx.AsyncClient(transport=_PlainHTTP()))
