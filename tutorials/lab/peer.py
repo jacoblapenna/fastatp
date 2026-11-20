@@ -289,11 +289,15 @@ async def evict(request: Request) -> JSONResponse:
         # No record. Either they were never admitted, or an earlier /evict
         # deleted the record and stopped before it closed the tunnel. Their
         # document says which key to look for, so asking again finishes the job.
-        key = parse_wireguard_service(await resolve(body["did"])).public_key
+        nothing = JSONResponse(
+            {"error": f"{body['did']} holds no live capability"}, status_code=404
+        )
+        try:
+            key = parse_wireguard_service(await resolve(body["did"])).public_key
+        except Exception:  # no document, or no tunnel key in it: there is nothing to close
+            return nothing
         if key not in wg.peers():
-            return JSONResponse(
-                {"error": f"{body['did']} holds no live capability"}, status_code=404
-            )
+            return nothing
         close_tunnel(key)
         return JSONResponse({"evicted": body["did"], "deleted": "already deleted"})
     rkey, cap = live
