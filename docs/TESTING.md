@@ -73,10 +73,10 @@ blocks the merge.
 The job keeps the lab image's layers between runs, so a pull request that
 changes no dependency downloads nothing from apt, PyPI or npm. It is no
 faster for it (the build is under half a minute either way); it is less
-traffic, and one fewer way for a slow mirror to fail the job. A layer is reused only when
-its Dockerfile line and every file it copies from the checkout are byte for
-byte the same, so the machines always run the fastatp, the guide and the
-lab scripts in the checkout. What a layer downloaded (the system packages)
+traffic, and when every such layer is reused, a slow mirror cannot fail
+the job. A layer is reused only when its Dockerfile line and every file it
+copies from the checkout are byte for byte the same, so the machines always
+run the fastatp, the guide and the lab scripts in the checkout. What a layer downloaded (the system packages)
 is not part of that, so the kept layers are thrown away at the start of
 each week and built from nothing once. `tutorials/lab/compose.ci.yml` is
 the whole of it, and the build step's log says `CACHED` beside each step it

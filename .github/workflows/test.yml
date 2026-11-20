@@ -322,8 +322,9 @@ jobs:
         # Built from nothing, the image is a fresh download of everything it
         # installs, from apt, PyPI and npm, on every run. Keeping the layers
         # saves no time worth naming (the build is under half a minute either
-        # way, measured on pull request 30); it saves that traffic, and a job
-        # that reuses them cannot fail because a package mirror was slow. The
+        # way, measured on pull request 30); it saves that traffic, and a run
+        # that reuses every layer that downloads asks no package mirror for
+        # anything, so a slow one cannot fail it. The
         # layers are kept under a key made of the files that decide what is
         # downloaded (the system packages, fastatp's dependencies, the page's
         # packages). A layer is only ever reused when all that went into it
