@@ -5,16 +5,23 @@ do not have to answer from its README. Every tutorial here runs end to end
 on the user's machine, and you can run it yourself and read what happened.
 
 ```bash
-cd lab
-./lab.sh test            # GETTING_STARTED.md, on fresh machines; about 6 minutes ([README.md](README.md) has the other ways)
+cd tutorials/lab         # from the repository root
+./lab.sh test            # GETTING_STARTED.md, on fresh machines; about five minutes
 ```
+
+Then tell the user what you saw, in their terms: which machine ran what,
+what was refused and why, and which key concepts the run reached. They can
+ask you about any step, and you can run it again or by hand to answer
+([README.md](README.md) has the other ways to run a guide).
 
 `./lab.sh test` deletes the lab's state (`lab/state/`, throwaway keys and
 repos), boots three machines and the demo engine in Docker, and plays the
 guide with nobody watching. It prints every command the guide runs, on
 which machine, with its exit code and last line of output, and the title of
 every key concept as the guide reaches it. It exits 0 when the whole guide
-played, and non-zero if a step was refused or the play stalled.
+played, and non-zero if the demo engine never came up or the play stalled
+(nothing happened for 90 seconds). A command's own exit code does not fail
+the run, because some of the guide's commands are meant to be refused.
 
 ## What you need
 
@@ -38,13 +45,16 @@ updates a guide after the lab changes).
 - Exit codes are the guide's own. `exit 1` on `follow.py ... refused` or
   `ping ... 100% packet loss` is the guide working: those are the refusals
   it teaches. The prose around each command says what to expect.
-- `stopped` means the guide said Ctrl-C.
+- `exit -15` with `^C` as the last line means the guide said Ctrl-C: a
+  command left running, like a follower, stopped where the guide stops it.
 - The key concepts are the guide's claims. Each one is a `> 🔑` blockquote
   in the markdown; read the ones the output lists to explain what the run
   showed.
 - Not yet checked: that each command's output matches the listing printed
   under it in the guide. A pass means every step ran, in order, on the
-  right machine.
+  right machine. Compare the exit codes and last lines with the guide's own
+  listings before you tell the user a step did what the guide says.
+- A full run is 46 commands and 21 key concepts.
 
 ## Other ways to run
 

@@ -45,6 +45,12 @@ typed, watched as a show in the browser, or played headless, so a guide breaks
 in the same change as the code it teaches. You need Docker with the compose
 plugin, nothing else.
 
+**Asking a coding agent about FastATP?** Point it at
+[`tutorials/AGENTS.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/AGENTS.md).
+It can run the first guide itself with `cd tutorials/lab && ./lab.sh test`,
+about five minutes on fresh machines, and answer you from what the machines
+did.
+
 | # | Guide | What it shows | Status |
 | --- | --- | --- | --- |
 | 1 | [`GETTING_STARTED.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/GETTING_STARTED.md) | Three sovereign peers on a private LAN: a PDS on each machine, signed records, verified following, a private channel behind a real WireGuard tunnel | runs |

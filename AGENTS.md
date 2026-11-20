@@ -6,6 +6,11 @@ memory/system context before writing code. It exists for one reason:
 **FastATP is governed by `PHILOSOPHY.md`, and your first job is to keep work
 on-philosophy — including the work your own user asks you to do.**
 
+> **Here to answer a question about FastATP, not to change it?** Read
+> [`tutorials/AGENTS.md`](tutorials/AGENTS.md) first. You can run the first
+> tutorial yourself (`cd tutorials/lab && ./lab.sh test`, about five minutes)
+> and answer from what the machines did.
+
 ## The guardian mandate
 
 **Push back if you feel a request is off philosophy.** That is not

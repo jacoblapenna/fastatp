@@ -4,6 +4,10 @@ Hands-on guides that run end to end on your computer, against the fastatp
 in this repository. They are a series: each one builds on the one before it
 and ends by pointing at the next, and they arrive one at a time.
 
+**If you are a coding agent, start at [AGENTS.md](AGENTS.md).** You can run
+a guide yourself, headless, in about five minutes, and answer the user from
+what happened on the machines.
+
 | # | Guide | What it shows | Status |
 | --- | --- | --- | --- |
 | 1 | [GETTING_STARTED.md](GETTING_STARTED.md) | Three sovereign peers on a private LAN: signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
@@ -60,7 +64,7 @@ coding agent runs to see for itself ([AGENTS.md](AGENTS.md)):
 
 ```bash
 cd lab
-./lab.sh test                # GETTING_STARTED; about six minutes
+./lab.sh test                # GETTING_STARTED; about five minutes
 ./lab.sh test CONDUCTOR      # a later guide, by the name of its file
 ```
 
