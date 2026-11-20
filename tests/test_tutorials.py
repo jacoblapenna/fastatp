@@ -210,6 +210,44 @@ def test_the_words_a_concept_defines_are_the_shows_glossary():
     assert all(text and "\n" not in text for text in words.values())
 
 
+def test_the_score_says_how_each_command_is_meant_to_end():
+    """A `fails` cue marks the commands of the next block that are meant to be
+    refused; every other command is meant to exit 0. The headless play holds
+    each command to it, so a refusal that stops refusing fails the run."""
+    md_manifest = _tool("md_manifest")
+    page = """<!-- @demo machines alice bob -->
+<!-- @demo start -->
+<!-- @demo fails 2 -->
+```bash
+./lab.sh alice true
+./lab.sh bob false
+```
+
+```bash
+./lab.sh bob true
+```
+<!-- @demo end -->
+"""
+    runs = [s for s in md_manifest.parse(page)["steps"] if s["kind"] == "run"]
+    assert [bool(s.get("fails")) for s in runs] == [False, True, False]
+    with pytest.raises(SystemExit, match="fails 3"):
+        md_manifest.parse(page.replace("fails 2", "fails 3"))
+
+    play = _tool("play")
+    works, refused, left_running = {}, {"fails": True}, {"bg": True}
+    assert play.verdict(works, 0) is None
+    assert play.verdict(refused, 1) is None
+    assert play.verdict(left_running, -15) is None  # the guide's own Ctrl-C
+    assert "says this works" in play.verdict(works, 1)
+    assert "says this fails" in play.verdict(refused, 0)
+    assert "says this fails" in play.verdict(refused, -15)
+    assert "took too long" in play.verdict(works, -15)
+
+    guide = md_manifest.parse((TUTORIALS / "GETTING_STARTED.md").read_text())
+    meant = [s["cmd"].split()[0] for s in guide["steps"] if s.get("fails")]
+    assert meant and set(meant) <= {"python", "ping"}  # followers refused, pings unanswered
+
+
 def test_the_favicon_is_the_brand_goose():
     """The tab icon is a static file, so it carries its own copy of the goose: the same path."""
     brand = (TUTORIALS / "conductor" / "src" / "brand" / "brand.js").read_text()

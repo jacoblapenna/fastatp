@@ -36,6 +36,10 @@ GitHub and fastatp.com do not render:
                                           says: with the words the key concepts list the
                                           same way, it is the glossary the page marks in
                                           captions and shows on hover
+  <!-- @demo fails 2 3 -->                the 2nd and 3rd commands of the next block are meant
+                                          to fail (a refusal, a ping nobody answers); with no
+                                          numbers, every command in it. Every other command is
+                                          meant to succeed, and the headless play checks both
   <!-- @demo stop bob -->                 Ctrl-C whatever bob left running
   <!-- @demo wait 5 -->                   let time pass
   <!-- @demo expand eve -->  collapse  focus
@@ -152,6 +156,7 @@ def parse(text: str) -> dict:
     images: dict[str, dict] = {}  # path -> {"alt"}: the pictures the guide shows
     file_section: dict | None = None  # the `### `name.py`` section being read
     code_cue: dict | None = None  # a code cue waiting for the next bash block
+    fails_cue: tuple[int, list[int]] | None = None  # its line, and which commands are meant to fail
 
     def emit(step: dict) -> dict:
         step["id"] = len(steps)
@@ -253,6 +258,8 @@ def parse(text: str) -> dict:
                 last_block[n - 1].setdefault("save", []).append(
                     {"field": field, "literal": literal}
                 )
+            elif verb == "fails":
+                fails_cue = (i, [int(n) for n in arg.split()])
             elif verb == "stop":
                 emit_say()
                 emit({"kind": "stop", "machine": arg})
@@ -320,7 +327,16 @@ def parse(text: str) -> dict:
                             s["code"] = dict(code_cue)  # the cue above said where this reaches
                         emit(s)
                     last_block = [s for s in block if s["kind"] == "run"]
-                code_cue = None
+                if fails_cue:
+                    at, numbers = fails_cue
+                    runs = [s for s in block if s["kind"] == "run"]
+                    for n in numbers or range(1, len(runs) + 1):
+                        if not 1 <= n <= len(runs):
+                            raise SystemExit(
+                                f"line {at}: @demo fails {n}, but the block has {len(runs)} commands"
+                            )
+                        runs[n - 1]["fails"] = True  # everything else is meant to exit 0
+                code_cue = fails_cue = None
             elif lang in ("text", "json") and last_block and steps and steps[-1] is last_block[-1]:
                 last_block[-1]["expect"] = "\n".join(body)  # what the guide says should come back
             replace_next_bash = False

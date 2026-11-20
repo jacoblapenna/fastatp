@@ -19,9 +19,10 @@ repos), boots three machines and the demo engine in Docker, and plays the
 guide with nobody watching. It prints every command the guide runs, on
 which machine, with its exit code and last line of output, and the title of
 every key concept as the guide reaches it. It exits 0 when the whole guide
-played, and non-zero if the demo engine never came up or the play stalled
-(nothing happened for 90 seconds). A command's own exit code does not fail
-the run, because some of the guide's commands are meant to be refused.
+played and every command ended the way the guide says, and non-zero if the
+demo engine never came up, the play stalled (nothing happened for 90
+seconds), or a command ended the wrong way: one the guide means to work
+failed, or one it means to be refused went through.
 
 ## What you need
 
@@ -42,9 +43,12 @@ updates a guide after the lab changes).
 
 ## Reading the output
 
-- Exit codes are the guide's own. `exit 1` on `follow.py ... refused` or
-  `ping ... 100% packet loss` is the guide working: those are the refusals
-  it teaches. The prose around each command says what to expect.
+- Exit codes are the guide's own, and the run checks them. `exit 1` on
+  `follow.py ... refused` or `ping ... 100% packet loss` is the guide
+  working: those are the refusals it teaches, marked in the markdown with
+  `<!-- @demo fails -->`. Any other command must exit 0. A line starting
+  `✗`, and a `WRONG:` line at the end, name a command that did not end the
+  way the guide says.
 - `exit -15` with `^C` as the last line means the guide said Ctrl-C: a
   command left running, like a follower, stopped where the guide stops it.
 - The key concepts are the guide's claims. Each one is a `> 🔑` blockquote
@@ -52,8 +56,9 @@ updates a guide after the lab changes).
   showed.
 - Not yet checked: that each command's output matches the listing printed
   under it in the guide. A pass means every step ran, in order, on the
-  right machine. Compare the exit codes and last lines with the guide's own
-  listings before you tell the user a step did what the guide says.
+  right machine, and succeeded or was refused as the guide says. Compare
+  the last lines with the guide's own listings before you tell the user a
+  step printed what the guide prints.
 - A full run is 46 commands and 21 key concepts.
 
 ## Other ways to run

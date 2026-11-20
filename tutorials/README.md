@@ -115,6 +115,10 @@ python tutorials/tools/md_embed.py --write tutorials/GETTING_STARTED.md
   them from there. A `<!-- @demo ask ... -->` above a command block or a
   key concept is a question for the viewer to answer before the next press
   shows the answer: one every handful of presses, before most concepts.
+  A `<!-- @demo fails 2 3 -->` above a command block says its second and
+  third commands are meant to fail (a refusal, a ping nobody answers); with
+  no numbers, every command in it. Every other command is meant to succeed,
+  and the headless play fails when either kind ends the wrong way.
   Every ``### `name.py` `` section opens with one line on what the file is
   for: the screen heads the code with it when a command runs that file.
   `tools/md_manifest.py` lists every directive.

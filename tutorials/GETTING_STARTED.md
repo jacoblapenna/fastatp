@@ -1813,6 +1813,7 @@ with the channel DID in `$CH` and alice's tunnel address in `$AT`, try to
 read the channel over the LAN, as bob and as eve:
 
 <!-- @demo ask Will bob see the channel over the LAN? Bob has its DID, and alice's LAN address serves the public repo. -->
+<!-- @demo fails 3 4 -->
 ```bash
 CH=$(./lab.sh alice curl -s localhost/whoami | sed 's/.*"channel":"\([^"]*\)".*/\1/')
 AT=$(./lab.sh alice curl -s localhost/whoami | sed 's/.*"tunnel_ip":"\([^"]*\)".*/\1/')
@@ -1897,6 +1898,7 @@ on the floor, because alice's `wg0` has no peers. Try the tunnel:
 
 <!-- @demo point bob.tunnel -->
 
+<!-- @demo fails -->
 ```bash
 ./lab.sh bob python follow.py "$CH" "$AT"
 ```
@@ -2076,6 +2078,7 @@ tunnel.
 Eve can pair exactly as bob did, because alice's document is public:
 
 <!-- @demo ask Will eve's ping get an answer? Eve has alice's public tunnel key and alice's tunnel address, the same as bob had. -->
+<!-- @demo fails 2 3 -->
 ```bash
 ./lab.sh eve python pair.py did:web:alice.lan
 ./lab.sh eve ping -c1 -W3 "$AT"
@@ -2127,6 +2130,7 @@ connection times out. <!-- @demo terminal -->Ctrl-C it, and confirm:<!-- @demo /
 <!-- @demo wait 5 -->
 <!-- @demo stop bob -->
 
+<!-- @demo fails 2 3 -->
 ```bash
 ./lab.sh alice wg show wg0 peers            # prints nothing
 ./lab.sh bob ping -c1 -W3 "$AT"             # 100% packet loss

@@ -4,11 +4,15 @@ python play.py [ws://localhost/ws] [--speed 4]   (run it on the conductor)
 
 Presses Play, answers every key concept with "Got it", and prints every
 command a machine ran with its exit code and last line of output. Exits
-non-zero if there is no conductor, the show was already played, or the play
-stalls. A command's own exit code does not fail the run: some of a guide's
-commands are meant to be refused. The start of the CI runner; it checks
-that the guide plays, not yet that each output matches the guide's own
-listings.
+non-zero if there is no conductor, the show was already played, the play
+stalls, or a command ended the wrong way.
+
+The score says how each command is meant to end. One the guide marks
+`<!-- @demo fails -->` must exit non-zero: a refusal, a ping nobody answers.
+Every other command must exit 0. A command left running may be stopped by
+the guide's own Ctrl-C; a command that was not left running and is killed
+anyway took too long, and that is wrong too. What this does not yet check is
+each command's output against the listing printed under it in the guide.
 """
 
 import argparse
@@ -27,11 +31,25 @@ args.add_argument(
 args.add_argument(
     "--until", help="stop, leaving this key concept open on screen (a substring of its title)"
 )
-opts = args.parse_args()
+
+
+def verdict(step: dict, code: int) -> str | None:
+    """What is wrong with how a command ended, or None if it ended as the guide says."""
+    if step.get("fails"):
+        return None if code > 0 else f"the guide says this fails, and it exited {code}"
+    if code == 0:
+        return None
+    if code < 0 and step.get("bg"):
+        return None  # left running, and stopped where the guide stops it
+    if code < 0:
+        return f"killed (signal {-code}): it was not meant to be left running, and took too long"
+    return f"the guide says this works, and it exited {code}"
 
 
 async def main() -> int:
     procs: dict[int, dict] = {}
+    ended: set[int] = set()
+    wrong: list[str] = []
     for _ in range(60):  # the conductor may still be starting
         try:
             ws = await websockets.connect(opts.url, max_size=None)
@@ -64,7 +82,14 @@ async def main() -> int:
                         return 0
                     await ws.send(json.dumps({"type": "gotit"}))
                 if msg["done"]:
-                    return 0
+                    for step in steps:  # a refusal that never came is not a refusal
+                        if step.get("fails") and step["id"] not in ended:
+                            wrong.append(f"step {step['id']} never ended: {step['display'][:70]}")
+                    meant = sum(1 for s in steps if s.get("fails"))
+                    print(f"{len(ended)} commands ended, {meant} of them meant to fail")
+                    for line in wrong:
+                        print(f"WRONG: {line}")
+                    return 1 if wrong else 0
             elif msg["type"] == "event":
                 ev = msg["event"]
                 if ev["type"] == "proc" and ev["state"] == "start":
@@ -79,6 +104,12 @@ async def main() -> int:
                     )
                     if last:
                         print(f"            └ {last[:110]}")
+                    ended.add(ev["step"])
+                    if problem := verdict(steps[ev["step"]], ev["code"]):
+                        wrong.append(f"step {ev['step']} on {ev['machine']}: {problem}")
+                        print(f"            ✗ {problem}")
 
 
-sys.exit(asyncio.run(main()))
+if __name__ == "__main__":
+    opts = args.parse_args()  # read here, so the checks above can be imported and tested
+    sys.exit(asyncio.run(main()))
