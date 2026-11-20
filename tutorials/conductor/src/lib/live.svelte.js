@@ -76,7 +76,10 @@ function status(msg) {
   for (const k of ['cursor', 'mode', 'concept', 'speed', 'done', 'until']) live[k] = msg[k];
 }
 
+// Only the machines the score names get a panel, and only a whole number is
+// a step: a key from a message never reaches an object unchecked.
 function machine(name) {
+  if (!live.manifest?.machines?.includes(name)) return null;
   return (live.machines[name] ??= {
     name, identity: null, repo: null, wg: [], stage: 'down', log: [], procs: {}, order: [],
   });
@@ -89,6 +92,9 @@ function apply(ev, fresh) {
     return;
   }
   const m = machine(ev.machine);
+  if (!m) return;
+  const step = Number(ev.step);
+  if (['proc', 'out'].includes(ev.type) && !Number.isInteger(step)) return;
   if (ev.type === 'stage') m.stage = ev.state;
   else if (ev.type === 'view') {
     m.identity = ev.identity;
@@ -96,11 +102,11 @@ function apply(ev, fresh) {
     m.wg = ev.wg;
   } else if (ev.type === 'log') m.log.push(ev.line);
   else if (ev.type === 'proc' && ev.state === 'start') {
-    m.procs[ev.step] = { step: ev.step, display: ev.display, bg: ev.bg, lines: [], running: true, code: null, ended: 0 };
-    m.order.push(ev.step);
-  } else if (ev.type === 'proc' && m.procs[ev.step]) {
-    Object.assign(m.procs[ev.step], { running: false, code: ev.code, ended: fresh ? Date.now() : 1 });
-  } else if (ev.type === 'out') m.procs[ev.step]?.lines.push(ev.line);
+    m.procs[step] = { step, display: ev.display, bg: ev.bg, lines: [], running: true, code: null, ended: 0 };
+    m.order.push(step);
+  } else if (ev.type === 'proc' && m.procs[step]) {
+    Object.assign(m.procs[step], { running: false, code: ev.code, ended: fresh ? Date.now() : 1 });
+  } else if (ev.type === 'out') m.procs[step]?.lines.push(ev.line);
 }
 
 // --- the pictures, from the conductor's own repo ------------------------------
