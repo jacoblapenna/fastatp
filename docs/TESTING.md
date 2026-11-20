@@ -70,6 +70,13 @@ page errors, a page wider than its window, and a key concept without its
 card or picture. `all tests ran` waits on it, so a guide that does not play
 blocks the merge.
 
+The job keeps the lab image's layers between runs, so a pull request that
+changes no dependency installs nothing again. A layer is reused only when
+everything that went into it is byte for byte the same, so the machines
+always run the fastatp, the guide and the lab scripts in the checkout;
+`tutorials/lab/compose.ci.yml` is the whole of it, and the build step's log
+says `CACHED` beside each step it reused.
+
 Run the same thing locally, from the repository root:
 
 ```bash

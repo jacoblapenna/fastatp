@@ -282,12 +282,14 @@ jobs:
     # A tutorial that stops working when the library changes under it is a
     # broken promise, so every guide ships with its own proof: this job plays
     # it end to end with nobody watching, on fresh machines, against the
-    # fastatp in this checkout. `lab.sh test` builds the lab's image from the
-    # tree, boots three peers and the demo engine in Docker, and runs every
+    # fastatp in this checkout. It builds the lab's image from the tree
+    # (reusing the layers an earlier run built, where nothing in them
+    # changed), boots three peers and the demo engine in Docker, and runs every
     # command the guide runs, in order, over a real WireGuard tunnel. It
-    # fails if the lab does not build or boot, if the play stalls, or if a
+    # fails if the lab does not build or boot, if the play stalls, if a
     # command ends the wrong way (one meant to work fails, or one meant to be
-    # refused goes through). Then it opens the conductor's page in a headless
+    # refused goes through), or if a command does not print what the guide's
+    # listing shows. Then it opens the conductor's page in a headless
     # Chrome and looks back through every step of the show it just played.
     #
     # One entry per guide: a new tutorial adds its file's name here (and its
@@ -301,6 +303,9 @@ jobs:
         guide: [GETTING_STARTED]
     env:
       GUIDE: ${{ matrix.guide }}
+      # every build in this job, the play's own `up --build` included, goes to
+      # the builder made below, which holds the layers once they are built
+      BUILDX_BUILDER: lab
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -310,6 +315,33 @@ jobs:
         # the module here means a missing one fails now, by name, and not
         # later as a peer that never boots
         run: sudo modprobe wireguard
+      - name: Bring back the lab image's layers from an earlier run
+        # Built from nothing, the image is about three of this job's minutes
+        # and a fresh download of everything it installs. The layers are kept
+        # under a key made of the files that decide the slow ones (the system
+        # packages, fastatp's dependencies, the page's packages). A layer is
+        # only ever reused when all that went into it is byte for byte the
+        # same, so the fastatp, guide and lab scripts in this checkout are
+        # always the ones built in: see tutorials/lab/compose.ci.yml. A pull
+        # request from a fork can read these layers and cannot replace them.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/lab-layers
+          key: lab-layers-${{ runner.os }}-${{ hashFiles('tutorials/lab/Dockerfile', 'pyproject.toml', 'uv.lock', 'tutorials/conductor/package-lock.json') }}
+          restore-keys: lab-layers-${{ runner.os }}-
+      - name: Build the lab's image
+        # its log says CACHED beside every step that was reused
+        env:
+          COMPOSE_FILE: compose.yml:compose.ci.yml
+          LAB_CACHE: ${{ runner.temp }}/lab-layers
+        run: |
+          # Docker's built-in builder cannot write its layers to a folder; this kind can
+          docker buildx create --name "$BUILDX_BUILDER" --driver docker-container
+          cd tutorials/lab
+          docker compose --profile conductor --progress plain build
+          # the build wrote the layers it used beside the old folder: keep only those
+          rm -rf "$LAB_CACHE"
+          mv "$LAB_CACHE-new" "$LAB_CACHE"
       - name: Play the guide headless
         run: tutorials/lab/lab.sh test "$GUIDE"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3

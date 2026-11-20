@@ -1,0 +1,24 @@
+# For CI only: `COMPOSE_FILE=compose.yml:compose.ci.yml` adds this to compose.yml.
+# It keeps the image's layers in a folder ($LAB_CACHE) that the workflow saves
+# between runs, so a run that changes no dependency downloads and installs
+# nothing. On your computer Docker already keeps its layers; you never need this.
+#
+# A layer is reused only when everything that went into it is the same, byte
+# for byte (the Dockerfile line, and the files it copies). An edit to fastatp,
+# a guide or a lab script rebuilds from that line down, so the machines always
+# run the tree that was checked out.
+#
+# One folder serves both images: the conductor's build runs every stage of the
+# Dockerfile, so it alone writes the folder and everything reads it.
+x-reads: &reads
+  build: {cache_from: ["type=local,src=${LAB_CACHE:?the folder the layers are kept in}"]}
+
+services:
+  alice: *reads
+  bob: *reads
+  eve: *reads
+  conductor:
+    build:
+      cache_from: ["type=local,src=${LAB_CACHE}"]
+      # written beside the old one and swapped in after, so the folder never grows without end
+      cache_to: ["type=local,dest=${LAB_CACHE}-new,mode=max"]
