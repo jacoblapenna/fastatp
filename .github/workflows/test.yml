@@ -3,8 +3,11 @@
 #
 # Every input is pinned: actions by commit SHA, the Rust toolchain by
 # rust-toolchain.toml, Python dependencies by uv.lock, the wasm build tools by
-# scripts/wasm-tools.env, uv and Node by version below. The one deliberate
-# exception is the plain-pip job, which resolves fresh to prove what users get.
+# scripts/wasm-tools.env, uv and Node by version below. Two deliberate
+# exceptions: the plain-pip job resolves fresh to prove what users get, and
+# the tutorials job builds the lab's image the way a reader's machine does,
+# from the Dockerfile's tagged base images and the distribution's packages
+# (fastatp and its dependencies inside it still come from the tree and uv.lock).
 name: test
 
 on:
@@ -271,6 +274,58 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  tutorials:
+    # A tutorial that stops working when the library changes under it is a
+    # broken promise, so every guide ships with its own proof: this job plays
+    # it end to end with nobody watching, on fresh machines, against the
+    # fastatp in this checkout. `lab.sh test` builds the lab's image from the
+    # tree, boots three peers and the demo engine in Docker, and runs every
+    # command the guide runs, in order, over a real WireGuard tunnel. It
+    # fails if the lab does not build or boot, or if the play stalls.
+    #
+    # One entry per guide: a new tutorial adds its file's name here (and its
+    # score to tutorials/lab/Dockerfile), in the pull request that adds it.
+    name: tutorial ${{ matrix.guide }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        guide: [GETTING_STARTED]
+    env:
+      GUIDE: ${{ matrix.guide }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Load WireGuard on the runner
+        # the machines are containers and share the runner's kernel; loading
+        # the module here means a missing one fails now, by name, and not
+        # later as a peer that never boots
+        run: sudo modprobe wireguard
+      - name: Play the guide headless
+        run: tutorials/lab/lab.sh test "$GUIDE"
+      - name: Collect what the machines and the demo engine logged
+        if: ${{ failure() }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lab"
+          cd tutorials/lab
+          docker compose --profile conductor ps -a > "$RUNNER_TEMP/lab/containers.txt" 2>&1 || true
+          for name in alice bob eve conductor; do
+            docker compose --profile conductor logs --no-color "$name" \
+              > "$RUNNER_TEMP/lab/$name.log" 2>&1 || true
+          done
+      - name: Upload the lab's logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lab-${{ matrix.guide }}
+          path: ${{ runner.temp }}/lab/
+          retention-days: 7
+      - name: Stop the lab
+        if: ${{ always() }}
+        run: tutorials/lab/lab.sh down
+
   all-tests-ran:
     # Every job above skips some tests on purpose and another job runs them.
     # This merges every job's JUnit report and fails if any Python test never
@@ -278,7 +333,10 @@ jobs:
     # quietly stop running. See scripts/check_all_tests_ran.py. Rust tests
     # are not in scope: the rust job runs the whole cargo workspace.
     name: all tests ran
-    needs: [python, browser-peer, interop-oracles, wireguard-netns]
+    # `tutorials` is here for the last step only (it writes no JUnit report):
+    # a guide that does not play fails this job, which is the one the
+    # main-branch ruleset requires.
+    needs: [python, browser-peer, interop-oracles, wireguard-netns, tutorials]
     # run even when a test job failed, so the report names what never ran
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
