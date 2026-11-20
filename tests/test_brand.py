@@ -5,7 +5,12 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 MAKE = Path(__file__).resolve().parent.parent / "brand" / "make.py"
+
+# The source archive leaves brand/ and tutorials/ out, so from an sdist there is nothing to check.
+pytestmark = pytest.mark.skipif(not MAKE.exists(), reason="brand/ is the repo's, not the sdist's")
 
 
 def _make() -> ModuleType:

@@ -48,6 +48,7 @@ services:
     <<: *machine
     profiles: [tap]
     network_mode: host
+    sysctls: {}               # the host's network is the host's: Docker refuses to set a sysctl on it
     cap_add: [NET_RAW, NET_ADMIN]
     entrypoint: [tcpdump, -i, fastatp-lan, -nn, -U, -Z, root]
     volumes: ["./state:/state"]

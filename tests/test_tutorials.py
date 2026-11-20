@@ -11,6 +11,11 @@ import pytest
 TUTORIALS = Path(__file__).resolve().parent.parent / "tutorials"
 TOOLS = TUTORIALS / "tools"
 
+# The source archive leaves tutorials/ out, so from an sdist there is nothing to check.
+pytestmark = pytest.mark.skipif(
+    not TUTORIALS.exists(), reason="tutorials/ is the repo's, not the sdist's"
+)
+
 
 def _tool(name: str):
     spec = importlib.util.spec_from_file_location(name, TOOLS / f"{name}.py")

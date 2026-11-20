@@ -173,6 +173,7 @@ exclude_lines = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# tutorial code is read beside its prose: long lines stay copy-pasteable,
-# and a Lexicon field with a dict default is a pydantic default, not a shared one
-"tutorials/**" = ["E501", "RUF012"]
+# tutorial code is read beside its prose: long lines stay copy-pasteable
+"tutorials/**" = ["E501"]
+# a Lexicon field with a dict or list default is a pydantic default, not a shared one
+"tutorials/lab/backstage.py" = ["RUF012"]

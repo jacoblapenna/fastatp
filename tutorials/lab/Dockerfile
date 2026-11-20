@@ -7,12 +7,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 # fastatp's runtime dependencies exactly as the repo's uv.lock pins them, hashes
 # checked; then fastatp itself from the tree. No version is named anywhere.
+# The dependencies are their own layer, so editing fastatp's source rebuilds
+# only the last step and downloads nothing again.
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /bin/uv
-COPY pyproject.toml uv.lock README.md /src/
-COPY fastatp /src/fastatp
+COPY pyproject.toml uv.lock /src/
 RUN cd /src && uv export --frozen --no-dev --no-emit-project --format requirements-txt --no-header > requirements.txt \
- && uv pip install --system --require-hashes -r requirements.txt \
- && uv pip install --system --no-deps . && rm -rf /src
+ && uv pip install --system --require-hashes -r requirements.txt
+COPY README.md /src/
+COPY fastatp /src/fastatp
+RUN cd /src && uv pip install --system --no-deps . && rm -rf /src
 ENV PYTHONUNBUFFERED=1
 WORKDIR /srv
 COPY tutorials/lab/entrypoint.sh tutorials/lab/lexicons.py tutorials/lab/dids.py tutorials/lab/peer.py \
