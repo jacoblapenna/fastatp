@@ -33,9 +33,17 @@ args.add_argument(
 )
 
 
-def verdict(step: dict, code: int) -> str | None:
+NEVER_RAN = (126, 127)  # the shell's own codes: not executable, and command not found
+
+
+def verdict(step: dict, code: int, lines: list[str] | None = None) -> str | None:
     """What is wrong with how a command ended, or None if it ended as the guide says."""
+    if any(line.startswith("[player] ") for line in lines or []):
+        # the player could not start it, or was restarted under it: nothing was shown
+        return "the player could not run this, so it showed nothing either way"
     if step.get("fails"):
+        if code in NEVER_RAN:
+            return f"the guide says this is refused, and it never ran (exit {code})"
         return None if code > 0 else f"the guide says this fails, and it exited {code}"
     if code == 0:
         return None
@@ -105,7 +113,7 @@ async def main() -> int:
                     if last:
                         print(f"            └ {last[:110]}")
                     ended.add(ev["step"])
-                    if problem := verdict(steps[ev["step"]], ev["code"]):
+                    if problem := verdict(steps[ev["step"]], ev["code"], p["lines"]):
                         wrong.append(f"step {ev['step']} on {ev['machine']}: {problem}")
                         print(f"            ✗ {problem}")
 

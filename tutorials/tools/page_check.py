@@ -51,8 +51,11 @@ class Page:
         mine = self.sent
         await self.socket.send(json.dumps({"id": mine, "method": method, "params": params}))
         while True:
-            message = json.loads(await self.socket.recv())
+            # bounded, so a page that stops answering fails the check instead of hanging it
+            message = json.loads(await asyncio.wait_for(self.socket.recv(), timeout=10))
             if message.get("id") == mine:
+                if "error" in message:  # Chrome refused the request: say what it said
+                    raise RuntimeError(f"{method}: {message['error'].get('message', message)}")
                 return message.get("result", {})
             self.note(message)
 
@@ -85,6 +88,11 @@ class Page:
         return False
 
 
+def plain(markdown: str) -> str:
+    """A title as the page shows it: the guide's `code` and *emphasis* marks gone."""
+    return " ".join(markdown.replace("`", "").replace("*", "").split())
+
+
 async def check(page: Page, url: str) -> list[str]:
     found: list[str] = []
     with urllib.request.urlopen(f"{url}/manifest.json", timeout=10) as response:
@@ -112,7 +120,7 @@ async def check(page: Page, url: str) -> list[str]:
 
     # Now back through everything the show played, newest first.
     back = "document.querySelector('.controls button')"
-    cards_seen = pictures_seen = 0
+    cards_seen = pictures_seen = visited = 0
     for behind, shown in enumerate(reversed(played)):
         where = f"step {shown['id']} ({shown['kind']})"
         if behind:
@@ -120,11 +128,20 @@ async def check(page: Page, url: str) -> list[str]:
                 found.append(f"{where}: Back is disabled with {len(played) - behind} steps to go")
                 break
             await page.js(f"{back}.click()")
+        visited += 1
         if not behind:
             pass  # where the show stands: a key concept here was answered, so its card is down
         elif shown["kind"] == "concept":
+            # the card for this concept, not one left over from another: its heading says which
+            title = json.dumps(plain(shown["title"]))
+            heading = f"{CARD}?.querySelector('h2')?.textContent.replace(/\\s+/g, ' ').trim()"
             if not await page.until(f"!!{CARD}"):
                 found.append(f"{where}: no card for the key concept {shown['title']!r}")
+            elif not await page.until(f"{heading} === {title}"):
+                found.append(
+                    f"{where}: the card is headed {await page.js(heading)!r},"
+                    f" and the guide's key concept is {shown['title']!r}"
+                )
             elif shown.get("sketch") and not await page.until(f"!!{CARD}.querySelector('svg')"):
                 found.append(f"{where}: the card has no picture ({shown['sketch']})")
             else:
@@ -139,7 +156,8 @@ async def check(page: Page, url: str) -> list[str]:
             found.append(f"{where}: page error: {error}")
         page.errors.clear()
     print(
-        f"looked back through {len(played)} steps of {score['source']}: {wanted} chapters,"
+        f"looked back through {visited} of {len(played)} steps of {score['source']}:"
+        f" {wanted} chapters,"
         f" {cards_seen} key concept cards, {pictures_seen} with a picture"
     )
     return found
@@ -153,35 +171,48 @@ async def main(url: str) -> int:
         print("no Chrome or Chromium found; the page was not checked")
         return 1
     # Chrome can still be writing its profile as it exits; a leftover file is not our failure
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile:
+    with (
+        tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile,
+        tempfile.TemporaryFile() as log,
+    ):
         browser = subprocess.Popen(
             [
                 chrome,
                 "--headless=new",
                 "--disable-gpu",
                 "--no-sandbox",
+                "--disable-dev-shm-usage",  # a container or CI runner may have a small /dev/shm
                 "--remote-debugging-port=0",  # any free port; Chrome writes which one below
                 f"--user-data-dir={profile}",
                 f"--window-size={WIDTH},{HEIGHT}",
                 "about:blank",
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=log,
         )
         try:
             port_file = Path(profile) / "DevToolsActivePort"
-            for _ in range(100):
+            for _ in range(600):  # up to a minute: a first start on a cold machine is slow
                 if port_file.exists() and port_file.read_text().strip():
                     break
+                if browser.poll() is not None:
+                    break
                 await asyncio.sleep(0.1)
-            else:
-                print("Chrome did not start; the page was not checked")
+            if not (port_file.exists() and port_file.read_text().strip()):
+                ended = browser.poll()
+                why = f"exited with {ended}" if ended is not None else "wrote no debugging port"
+                print(f"{chrome} did not start ({why}); the page was not checked. It said:")
+                log.seek(0)
+                print(log.read().decode(errors="replace")[-2000:] or "(nothing)")
                 return 1
             port = port_file.read_text().split()[0]
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=10) as response:
                 tab = next(t for t in json.load(response) if t["type"] == "page")
             async with websockets.connect(tab["webSocketDebuggerUrl"], max_size=None) as socket:
-                found = await check(Page(socket), url.rstrip("/"))
+                try:
+                    found = await check(Page(socket), url.rstrip("/"))
+                except (TimeoutError, RuntimeError) as e:
+                    found = [f"the check could not finish: {e or 'the page stopped answering'}"]
         finally:
             browser.terminate()
             browser.wait()

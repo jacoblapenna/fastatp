@@ -242,6 +242,10 @@ def test_the_score_says_how_each_command_is_meant_to_end():
     assert "says this fails" in play.verdict(refused, 0)
     assert "says this fails" in play.verdict(refused, -15)
     assert "took too long" in play.verdict(works, -15)
+    # a refusal counts only if the command ran: a typo or a player that tripped is not one
+    assert "never ran" in play.verdict(refused, 127)
+    assert "could not run" in play.verdict(refused, 1, ["[player] could not run this: OSError()"])
+    assert "could not run" in play.verdict(works, 1, ["[player] restarted while this ran"])
 
     guide = md_manifest.parse((TUTORIALS / "GETTING_STARTED.md").read_text())
     meant = [s["cmd"].split()[0] for s in guide["steps"] if s.get("fails")]
