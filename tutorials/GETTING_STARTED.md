@@ -1936,32 +1936,34 @@ agree on the address: it was never chosen.
 > peer that serves it.** The doorman knows a caller by the address inside
 > the tunnel, so nothing may sit between the tunnel and the peer. Anything
 > that only carries the encrypted packets is fine in front: NAT, a UDP
-> load balancer, a relay. It holds no key, so it cannot read or change
-> what it carries; this lab's peer was tested behind a plain UDP relay.
-> What cannot sit in front is anything that opens the tunnel or answers in
-> the peer's place: a reverse proxy such as nginx, an HTTP load balancer,
-> a subnet router, a Docker port mapping. Behind one of those every caller
-> arrives from the same address, and the doorman refuses them all. FastATP
-> logs a warning when it sees that pattern. Two more things must be true
-> on that machine. WireGuard's UDP port (51820 here) must be reachable by
-> the peers you admit, with the reachable address in the `wg://` endpoint
-> of your DID document. And the peer process must be able to run `wg set`,
-> which means root or `CAP_NET_ADMIN`; the lab grants `NET_ADMIN` to each
-> machine. To grow past one machine you add peers, and each one adds to
-> the chain of custody. Put a peer at the edge of your network. It ends
-> the tunnel, verifies what arrives, and publishes it onward with its own
-> signature on top. A service inside reads from the edge peer and checks
-> every signature in the chain, back to the peer that first wrote the
-> record, and it can refuse anything that did not come by the hops it
-> expects. Faking that would take the signing key of every peer in the
-> chain. An edge peer can read what passes through it, though it cannot
-> change who wrote it, so it is part of your own infrastructure and a peer
-> you trust. If you do not want that, put a relay there instead, one that
-> only passes the encrypted packets on. Which one is the builder's choice.
-> A load balancer gives you none of this: it tells
-> you a request arrived, never who wrote what or which way it came. You
-> can compose this from records today; the library does not yet ship a
-> ready-made hop. The public repo can sit behind whatever you like.
+> load balancer, a relay.
+>
+> - **What may not sit in front** is anything that opens the tunnel or
+>   answers in the peer's place: nginx or any reverse proxy, an HTTP load
+>   balancer, a subnet router, a Docker port mapping. Behind one of those
+>   every caller arrives from the same address, and the doorman refuses
+>   them all. FastATP logs a warning when it sees that pattern.
+> - **Two more things that machine needs.** WireGuard's UDP port (51820
+>   here) must be reachable by the peers you admit, with that address in
+>   the `wg://` endpoint of your DID document. And the peer process must be
+>   allowed to run `wg set`, which means root or `CAP_NET_ADMIN`.
+> - **A relay in front** passes the encrypted packets on. It holds no key,
+>   so it cannot read them. It cannot sign anything either, so it adds
+>   nothing to the chain of custody. This lab's peer was tested behind one.
+> - **An edge peer in front** ends the tunnel, verifies what arrives, and
+>   publishes it onward with its own signature on top. A service inside
+>   can check every hop back to the peer that first wrote the record, and
+>   refuse anything that came another way. Faking that takes the signing
+>   key of every peer in the chain.
+> - **The cost of an edge peer** is that it can read what passes through
+>   it. It cannot change who wrote it. So it is a peer you trust, part of
+>   your own infrastructure.
+> - **Which one is the builder's choice.** Either way you grow by adding
+>   peers. You compose the hop from records today; the library does not
+>   yet ship one ready-made.
+> - **The public repo** can sit behind whatever you like.
+
+![a relay passes one tunnel through and cannot read or sign; an edge peer ends the tunnel, signs on top, and can read what passes](sketches/relay-or-edge.svg)
 
 <!-- @demo point alice.tunnel bob.tunnel -->
 

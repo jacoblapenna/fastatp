@@ -88,15 +88,19 @@ function render(text = '') {
 }
 
 // A key concept's words, split for the card: the first sentence or two as
-// the claim, the rest a click away. A body with a list is all claim.
+// the claim, the rest a click away. A body that opens with a list is all
+// claim (a vocabulary card); a list further down goes with the rest.
 export function lead(body = '') {
-  if (body.includes('\n')) return { lead: body, rest: '' };
-  const sentences = body.split(/(?<=[.!?])\s+(?=[A-Z`*"(])/);
+  const cut = body.indexOf('\n');
+  if (/^(- |\d+\. )/.test(body)) return { lead: body, rest: '' };
+  const prose = cut < 0 ? body : body.slice(0, cut);
+  const list = cut < 0 ? '' : body.slice(cut);
+  const sentences = prose.split(/(?<=[.!?])\s+(?=[A-Z`*"(])/);
   let lead = '';
   let i = 0;
   while (i < sentences.length && lead.split(/\s+/).filter(Boolean).length < 22) {
     lead += (lead ? ' ' : '') + sentences[i];
     i += 1;
   }
-  return { lead, rest: sentences.slice(i).join(' ') };
+  return { lead, rest: (sentences.slice(i).join(' ') + list).trim() };
 }

@@ -116,7 +116,8 @@
 </div>
 
 <style>
-  .app { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+  /* one column that never grows past the window: a wide card inside scrolls itself, not the page */
+  .app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--color-border); }
   .brand > span { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-sm); }
   .right { display: flex; gap: 10px; align-items: center; }

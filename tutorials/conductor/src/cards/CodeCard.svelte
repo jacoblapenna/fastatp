@@ -65,8 +65,7 @@
     <span class="name">{name}</span>
     {#if file.gloss}<span class="gloss">{@html md(file.gloss)}</span>{/if}
   </header>
-  <pre bind:this={pre}>{#each lines as line, i}<span class="line" class:at={i === at}><span class="n">{i + 1}</span>{@html line}</span>
-{/each}</pre>
+  <pre bind:this={pre}>{#each lines as line, i}<span class="line" class:at={i === at}><span class="n">{i + 1}</span>{@html line}</span>{/each}</pre>
 </section>
 
 <style>
@@ -76,7 +75,7 @@
   }
   header { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--color-border); min-width: 0; }
   .name { font: 600 13px var(--font-mono); color: var(--color-text); flex: none; }
-  .gloss { font-size: 12px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gloss { min-width: 0; font-size: 12px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gloss :global(code) { font-size: 11px; }
   pre {
     flex: 1; min-height: 0; margin: 0; padding: 8px 0; overflow: auto;
