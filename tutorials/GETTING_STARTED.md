@@ -377,7 +377,9 @@ async def boot() -> Starlette:
         # here, in memory, and neither logs it nor writes it to disk. Printing it
         # is this lab's own choice, a stand-in for copying it to cold storage.
         print(f"[{domain}] minted {identity.did}")
-        print(f"[{domain}] ROTATION PEN (printed by this lab, never by FastATP; cold storage for real):")
+        print(
+            f"[{domain}] ROTATION PEN (printed by this lab, never by FastATP; cold storage for real):"
+        )
         pen = identity.rotation_private_key.private_numbers().private_value
         print(f"[{domain}]   {pen.to_bytes(32, 'big').hex()}")
     else:
