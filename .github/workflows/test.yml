@@ -319,14 +319,18 @@ jobs:
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Bring back the lab image's layers from an earlier run
-        # Built from nothing, the image is about three of this job's minutes
-        # and a fresh download of everything it installs. The layers are kept
-        # under a key made of the files that decide the slow ones (the system
-        # packages, fastatp's dependencies, the page's packages). A layer is
-        # only ever reused when all that went into it is byte for byte the
-        # same, so the fastatp, guide and lab scripts in this checkout are
-        # always the ones built in: see tutorials/lab/compose.ci.yml. A pull
-        # request from a fork can read these layers and cannot replace them.
+        # Built from nothing, the image is a fresh download of everything it
+        # installs, from apt, PyPI and npm, on every run. Keeping the layers
+        # saves no time worth naming (the build is under half a minute either
+        # way, measured on pull request 30); it saves that traffic, and a job
+        # that reuses them cannot fail because a package mirror was slow. The
+        # layers are kept under a key made of the files that decide what is
+        # downloaded (the system packages, fastatp's dependencies, the page's
+        # packages). A layer is only ever reused when all that went into it
+        # is byte for byte the same, so the fastatp, guide and lab scripts in
+        # this checkout are always the ones built in: see
+        # tutorials/lab/compose.ci.yml. A pull request from a fork can read
+        # these layers and cannot replace them.
         #
         # What a step downloaded is not one of its inputs: the system
         # packages `apt-get` installed stay as they were when the layer was
