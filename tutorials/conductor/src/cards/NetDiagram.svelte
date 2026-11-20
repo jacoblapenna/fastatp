@@ -66,7 +66,7 @@
 </script>
 
 <div class="diagram" class:open class:pointed data-anchor="diagram">
-<button class="h4" onclick={() => (chosen = !chosen)} aria-expanded={open}>
+<button class="h4" onclick={() => (chosen = !open)} aria-expanded={open}>
   <span class="tri">{open ? '▾' : '▸'}</span> the whole picture, which no machine has
   <span class="meta">{tunnels.filter((t) => t.up).length} tunnel{tunnels.filter((t) => t.up).length === 1 ? '' : 's'} open · {follows.filter((f) => f.running).length} following</span>
 </button>

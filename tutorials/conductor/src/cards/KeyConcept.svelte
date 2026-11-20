@@ -45,7 +45,14 @@
   });
 
   function key(e) {
-    if (e.key === 'Enter' || e.key === 'Escape') onGotIt();
+    if (e.key === 'Escape') return onGotIt();
+    if (e.key !== 'Enter') return;
+    // Enter on one of the card's own buttons is that button's press: Got it
+    // once, or "why it matters" opening. Anywhere else, Enter is Got it, and
+    // a button left focused under the card (Next, after a click) stays unpressed.
+    if (e.target.closest?.('.card') && e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    onGotIt();
   }
 </script>
 

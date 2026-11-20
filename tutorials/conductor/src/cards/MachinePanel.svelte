@@ -15,6 +15,8 @@
   const anchor = (s) => `${m.name}.${s}`;
   const isPointed = (s) => pointed.has(anchor(s));
   const shown = (s) => chosen[s] || isPointed(s) || kept.has(anchor(s));
+  // A click toggles from what is on screen, not from the hidden flag: closing a
+  // section the show is holding open means "not by my hand", so it folds when the show lets go.
   let open = $derived(m.wg.filter((p) => p.latest_handshake && now / 1000 - p.latest_handshake < 150).length);
 </script>
 
@@ -38,7 +40,7 @@
       </div>
 
       <div class="section" class:pointed={isPointed('repo')} data-anchor={anchor('repo')}>
-        <button class="h4" onclick={() => (chosen.repo = !chosen.repo)} aria-expanded={shown('repo')}>
+        <button class="h4" onclick={() => (chosen.repo = !shown('repo'))} aria-expanded={shown('repo')}>
           <span class="tri">{shown('repo') ? '▾' : '▸'}</span> public repo
           <span class="meta">{m.repo?.records.length ?? 0} record{m.repo?.records.length === 1 ? '' : 's'}{#if m.repo} · rev {m.repo.rev}{/if}</span>
         </button>
@@ -60,7 +62,7 @@
       </div>
 
       <div class="section" class:pointed={isPointed('tunnel')} data-anchor={anchor('tunnel')}>
-        <button class="h4" onclick={() => (chosen.tunnel = !chosen.tunnel)} aria-expanded={shown('tunnel')}>
+        <button class="h4" onclick={() => (chosen.tunnel = !shown('tunnel'))} aria-expanded={shown('tunnel')}>
           <span class="tri">{shown('tunnel') ? '▾' : '▸'}</span> tunnel · wg0
           <span class="meta">
             {#if id}{id.tunnel_ip} · {/if}{m.wg.length} peer{m.wg.length === 1 ? '' : 's'}{#if open} · 🔒 open{/if}

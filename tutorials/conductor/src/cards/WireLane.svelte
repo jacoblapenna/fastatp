@@ -15,7 +15,7 @@
 </script>
 
 <div class="wire" class:open class:pointed data-anchor="wire">
-  <button class="h4" onclick={() => (chosen = !chosen)} aria-expanded={open}>
+  <button class="h4" onclick={() => (chosen = !open)} aria-expanded={open}>
     <span class="tri">{open ? '▾' : '▸'}</span> the wire, seen by nobody in particular
     <span class="readable">{readable} readable</span>
     <span class="sealed">{sealed} sealed</span>

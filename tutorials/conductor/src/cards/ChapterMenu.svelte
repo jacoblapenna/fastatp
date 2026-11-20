@@ -18,8 +18,8 @@
     return live.cursor >= ends[i] - 1 ? 'done' : 'next';
   }
   function pick(c) {
-    chosen = c.number;
-    send('chapter', { value: c.number });
+    // one pick at a time: the conductor takes a chapter only when nothing is running
+    if (chosen === null && send('chapter', { value: c.number })) chosen = c.number;
   }
   $effect(() => {
     // the chapter chosen has opened: the menu has done its job
@@ -50,7 +50,7 @@
   <div class="cards">
     {#each chapters as c, i (c.number)}
       {@const s = standing(c, i)}
-      <button class="card {s}" onclick={() => pick(c)} disabled={busy && chosen === null}>
+      <button class="card {s}" onclick={() => pick(c)} disabled={busy || chosen !== null || !live.connected}>
         <div class="meta">{c.number} · {c.presses} presses · {c.commands} commands</div>
         <h2>{c.title}</h2>
         <p class="blurb">{c.blurb}</p>

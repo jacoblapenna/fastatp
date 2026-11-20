@@ -32,7 +32,8 @@ export function visibleUpTo(manifest, cursor) {
 
 // The two buttons, and the keys that press them.
 export const canBack = () => view.back < visibleUpTo(live.manifest, live.cursor).length - 1;
-export const canNext = () => view.back > 0 || (live.mode !== 'playing' && live.mode !== 'step' && !live.done);
+export const canNext = () =>
+  view.back > 0 || (live.connected && live.mode !== 'playing' && live.mode !== 'step' && !live.done);
 export function stepBack() {
   if (canBack()) view.back += 1;
 }
@@ -67,8 +68,12 @@ export function connect() {
   };
 }
 
+// A press reaches the conductor only over an open socket. False means it did
+// not go: the buttons are disabled while disconnected, and this is the backstop.
 export function send(type, extra = {}) {
-  socket?.send(JSON.stringify({ type, ...extra }));
+  if (socket?.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify({ type, ...extra }));
+  return true;
 }
 
 function status(msg) {

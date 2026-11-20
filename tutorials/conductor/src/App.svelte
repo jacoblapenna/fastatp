@@ -43,9 +43,13 @@
   }
   function key(e) {
     // arrows and Enter press the buttons; an open key concept has Enter for Got it
-    if (menu || concept || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
+    if (menu || concept || e.target.tagName === 'SELECT') return;
+    // with a modifier held the key is the browser's (Alt+Left is its Back)
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key === 'ArrowLeft') stepBack();
-    if (e.key === 'ArrowRight' || e.key === 'Enter') stepNext();
+    if (e.key === 'ArrowRight') stepNext();
+    // a focused button takes Enter as its own press, so only step for Enter elsewhere
+    if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') stepNext();
   }
   // what the current step points at: a key concept's targets, or a caption's
   let pointed = $derived(new Set(concept?.point ?? (script.step?.kind === 'say' ? script.step.point ?? [] : [])));
