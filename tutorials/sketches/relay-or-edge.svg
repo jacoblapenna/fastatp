@@ -1,0 +1,34 @@
+<!-- two things that may sit in front of a gated repo: a relay that passes one tunnel through, or an edge peer that ends it and signs on top; what each can and cannot do -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 300" role="img" aria-label="a relay carries one tunnel from bob to alice and can neither read nor sign; alice's edge peer ends bob's tunnel, signs what it verified, and opens a second tunnel to alice inside, and it can read what passes">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-plaintext: #735c00; --fb-sealed: #0b6f66; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-text-soft: #2f353b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-plaintext: #f2d349; --fb-sealed: #5fd4c4; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-text-soft: #c9ced4; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="340" height="300" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <text x="14" y="20" font-size="11" font-weight="600" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">a relay: passes the packets on</text>
+  <rect x="14" y="34" width="64" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="46" y="53" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bob</text>
+  <rect x="138" y="34" width="64" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-dasharray="4 3" />
+  <text x="170" y="46" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">relay</text>
+  <rect x="262" y="34" width="64" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="294" y="53" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">alice</text>
+  <path d="M78 56 H262" fill="none" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="4" />
+  <text x="170" y="80" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">one tunnel, bob to alice; the relay holds no key</text>
+  <text x="14" y="100" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-soft, var(--fb-text-soft, #2f353b))">+ cannot read what it carries</text>
+  <text x="14" y="116" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-soft, var(--fb-text-soft, #2f353b))">− cannot sign, so it adds no hop to the chain</text>
+  <path d="M14 136 H326" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="14" y="160" font-size="11" font-weight="600" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">an edge peer: ends the tunnel, signs on top</text>
+  <rect x="14" y="174" width="64" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="46" y="193" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bob</text>
+  <rect x="132" y="174" width="76" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-plaintext, var(--fb-plaintext, #735c00))" />
+  <text x="170" y="193" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">edge peer</text>
+  <rect x="262" y="174" width="64" height="30" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" />
+  <text x="294" y="193" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">alice</text>
+  <path d="M78 189 H132 M208 189 H262" fill="none" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="4" />
+  <text x="170" y="220" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">two tunnels, and both end at alice's edge peer</text>
+  <text x="14" y="240" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">+ signs what it verified: one more hop to check</text>
+  <text x="14" y="256" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-plaintext, var(--fb-plaintext, #735c00))">− reads what passes, so it must be a peer you trust</text>
+  <text x="170" y="286" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">either is fine in front of a private repo; the builder chooses</text>
+</svg>

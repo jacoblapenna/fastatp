@@ -1,0 +1,10 @@
+# the tutorials' lab image builds from the repo root; keep the context small
+.git
+.venv
+**/__pycache__
+**/node_modules
+**/dist
+rust/target
+reference
+tutorials/lab/state
+fastatp/browser/static

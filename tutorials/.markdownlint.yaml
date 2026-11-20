@@ -1,0 +1,7 @@
+# Prose is wrapped by hand at about 76 columns; the limit is 90, so a line
+# that ends in a long link or code span need not be broken. Code, command
+# output and tables are left at their natural width so they stay copy-pasteable.
+MD013:
+  line_length: 90
+  code_blocks: false
+  tables: false

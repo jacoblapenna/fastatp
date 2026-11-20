@@ -1,0 +1,64 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-base)/1.45 var(--font-sans);
+}
+
+#app { height: 100%; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--color-code-text);
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+button {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--color-primary); }
+
+/* A word the guide defines: dotted under, and its one line on hover or focus. */
+abbr.term {
+  position: relative;
+  text-decoration: underline dotted var(--color-text-muted);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+abbr.term:hover::after,
+abbr.term:focus::after {
+  content: attr(data-def);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(360px, 60vw);
+  padding: 8px 10px;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-strong);
+  font: 400 var(--text-base)/1.45 var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+}
+
+abbr.term:focus { outline: 1px solid var(--color-primary); outline-offset: 2px; }

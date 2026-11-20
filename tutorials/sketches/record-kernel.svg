@@ -1,0 +1,31 @@
+<!-- the record decides, the kernel enforces: admission writes the record then opens the tunnel; eviction deletes the record then closes it -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="admit: a capability record, then a kernel peer entry; evict: both removed, record first">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-danger: #b3243f; --fb-sealed: #0b6f66; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-danger: #ff7a85; --fb-sealed: #5fd4c4; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <text x="14" y="22" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))" letter-spacing="0.06em">ADMIT</text>
+  <rect x="12" y="30" width="142" height="52" rx="7" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="83" y="48" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">capability record</text>
+  <text x="83" y="62" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-verified, var(--fb-verified, #256f1c))">subject: bob's DID</text>
+  <text x="83" y="75" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">signed, in the channel</text>
+  <path d="M156 56 H164" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" marker-end="url(#k)" /><text x="160" y="24" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">then ▶</text>
+  <rect x="166" y="30" width="142" height="52" rx="7" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="2" />
+  <text x="237" y="48" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">kernel peer entry</text>
+  <text x="237" y="62" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">bob's public key + address</text>
+  <text x="237" y="75" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">packets pass</text>
+  <text x="14" y="112" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))" letter-spacing="0.06em">EVICT</text>
+  <rect x="12" y="120" width="142" height="52" rx="7" fill="none" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-dasharray="4 4" />
+  <text x="83" y="138" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-danger, var(--fb-danger, #b3243f))" text-decoration="line-through">capability record</text>
+  <text x="83" y="158" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">deleted: a signed commit</text>
+  <path d="M156 146 H164" fill="none" stroke="var(--color-text-muted, var(--fb-text-muted, #58616b))" stroke-width="2" marker-end="url(#k)" /><text x="160" y="114" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">then ▶</text>
+  <rect x="166" y="120" width="142" height="52" rx="7" fill="none" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-dasharray="4 4" />
+  <text x="237" y="138" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-danger, var(--fb-danger, #b3243f))" text-decoration="line-through">kernel peer entry</text>
+  <text x="237" y="158" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">packets dropped, mid-session</text>
+  <text x="160" y="186" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">the record is the decision, readable by anyone admitted;</text>
+  <text x="160" y="197" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">the entry is the only thing that moves a packet</text>
+  <defs><marker id="k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke" /></marker></defs>
+</svg>

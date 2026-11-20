@@ -1,0 +1,29 @@
+<!-- private means a different repo behind a tunnel: the public repo for anyone, the channel only through WireGuard -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="alice's public repo is read by anyone; the channel is read only through a tunnel, and over the LAN it does not exist">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-danger: #b3243f; --fb-sealed: #0b6f66; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-danger: #ff7a85; --fb-sealed: #5fd4c4; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <rect x="14" y="22" width="110" height="56" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="69" y="42" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">public repo</text>
+  <text x="69" y="58" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">did:web:alice.lan</text>
+  <text x="69" y="71" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">readable by anyone</text>
+  <rect x="14" y="118" width="110" height="56" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="2" />
+  <text x="69" y="138" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">channel</text>
+  <text x="69" y="154" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">did:key:zQ3sh…</text>
+  <text x="69" y="167" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">a second repo</text>
+  <rect x="132" y="118" width="10" height="56" rx="3" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))" />
+  <text x="137" y="192" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif">the doorman</text>
+  <path d="M124 50 H254" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <path d="M142 146 H254" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" stroke-width="3" />
+  <path d="M142 98 H254" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-width="2" stroke-dasharray="5 4" />
+  <rect x="258" y="36" width="50" height="28" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" /><text x="283" y="54" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">eve</text>
+  <rect x="258" y="84" width="50" height="28" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-danger, var(--fb-danger, #b3243f))" /><text x="283" y="102" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-danger, var(--fb-danger, #b3243f))">eve</text>
+  <rect x="258" y="132" width="50" height="28" rx="6" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-sealed, var(--fb-sealed, #0b6f66))" /><text x="283" y="150" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">bob</text>
+  <text x="196" y="44" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">reads it, verifies it</text>
+  <text x="196" y="92" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-danger, var(--fb-danger, #b3243f))">over the LAN: "no such repo"</text>
+  <text x="196" y="160" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-sealed, var(--fb-sealed, #0b6f66))">through the tunnel</text>
+</svg>

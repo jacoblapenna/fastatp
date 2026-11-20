@@ -100,6 +100,12 @@ artifacts = ["fastatp/browser/static/**"]
 [tool.hatch.build.targets.wheel]
 packages = ["fastatp"]
 
+[tool.hatch.build.targets.sdist]
+# the tutorials (Docker lab, demo engine, conductor page) are the repo's, not
+# the package's: they run against the tree, never ship in a source archive.
+# The brand folder (logo files and their generator) is the repo's too.
+exclude = ["tutorials/", "brand/"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -165,3 +171,9 @@ exclude_lines = [
     "raise NotImplementedError",
     "@overload",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# tutorial code is read beside its prose: long lines stay copy-pasteable
+"tutorials/**" = ["E501"]
+# a Lexicon field with a dict or list default is a pydantic default, not a shared one
+"tutorials/lab/backstage.py" = ["RUF012"]
