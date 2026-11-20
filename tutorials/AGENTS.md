@@ -66,6 +66,7 @@ updates a guide after the lab changes).
 | Command | What it does |
 | --- | --- |
 | `./lab.sh test` | the whole guide, headless, as above |
+| `python tutorials/tools/page_check.py` | after a play, from the repository root: the conductor's page checked step by step in a headless Chrome |
 | `SPEED=1 ./lab.sh test` | the same at reading speed (4 is the default) |
 | `./lab.sh conductor` | the same guide on a page at <http://localhost:8080>, for a person |
 | `./lab.sh up` | the machines alone, for running the guide's commands by hand |

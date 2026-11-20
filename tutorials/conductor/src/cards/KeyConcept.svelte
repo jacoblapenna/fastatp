@@ -25,6 +25,7 @@
   });
 
   function place() {
+    if (!step) return; // the card has come down since this was asked for
     rings = (step.point ?? []).flatMap((target) => {
       const el = document.querySelector(`[data-anchor="${target}"]`)
         ?? document.querySelector(`[data-anchor="${target.split('.')[0]}"]`);
@@ -39,10 +40,11 @@
   $effect(() => {
     step;
     more = false;
-    requestAnimationFrame(place); // after the panels it opened have laid out
+    const first = requestAnimationFrame(place); // after the panels it opened have laid out
     const again = setTimeout(place, 450);
     addEventListener('resize', place);
     return () => {
+      cancelAnimationFrame(first);
       clearTimeout(again);
       removeEventListener('resize', place);
     };

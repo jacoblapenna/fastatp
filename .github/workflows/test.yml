@@ -281,7 +281,10 @@ jobs:
     # fastatp in this checkout. `lab.sh test` builds the lab's image from the
     # tree, boots three peers and the demo engine in Docker, and runs every
     # command the guide runs, in order, over a real WireGuard tunnel. It
-    # fails if the lab does not build or boot, or if the play stalls.
+    # fails if the lab does not build or boot, if the play stalls, or if a
+    # command ends the wrong way (one meant to work fails, or one meant to be
+    # refused goes through). Then it opens the conductor's page in a headless
+    # Chrome and looks back through every step of the show it just played.
     #
     # One entry per guide: a new tutorial adds its file's name here (and its
     # score to tutorials/lab/Dockerfile), in the pull request that adds it.
@@ -305,6 +308,16 @@ jobs:
         run: sudo modprobe wireguard
       - name: Play the guide headless
         run: tutorials/lab/lab.sh test "$GUIDE"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - name: Install (from uv.lock)
+        # for the page check below, which talks to Chrome over a websocket
+        run: uv sync --locked
+      - name: Look at the page the show was played on
+        # the runner image ships Chrome; the check says so by name if it is gone
+        run: uv run --no-sync python tutorials/tools/page_check.py http://localhost:8080
       - name: Collect what the machines and the demo engine logged
         if: ${{ failure() }}
         run: |

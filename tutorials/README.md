@@ -68,6 +68,14 @@ cd tutorials/lab             # from the repository root
 ./lab.sh test                # GETTING_STARTED; about five minutes
 ```
 
+The run fails if a command ends the wrong way: one the guide means to work
+fails, or one it means to be refused goes through. With the lab still up,
+`python tutorials/tools/page_check.py` (from the repository root, with
+fastatp installed and a Chrome on the path) then opens the page in a
+headless browser and looks back through every step: no page errors, a page
+no wider than its window, and every key concept's card and picture where
+the guide puts them. Every pull request runs both.
+
 ## What a guide is tested against
 
 The fastatp in this tree, the commit you have checked out: the lab image
