@@ -222,6 +222,7 @@ async def perform(uri: str, cue: dict) -> None:
             await flush()
 
     code = 1  # what is reported if the command never ran, or this player tripped over it
+    proc: asyncio.subprocess.Process | None = None
     flusher: asyncio.Task | None = None
     try:
         # The claim, before the command starts: an Output with no lines yet.
@@ -253,7 +254,13 @@ async def perform(uri: str, cue: dict) -> None:
         buffer.append(f"[player] could not run this: {e!r}")
     finally:
         # Whatever happened, the cue is answered: the conductor waits on the
-        # Result and on nothing else.
+        # Result and on nothing else. A command this player lost track of is
+        # stopped first, so nothing is left running that no cue can reach.
+        if proc is not None and proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGTERM)
+            with contextlib.suppress(Exception):
+                await proc.wait()
         running.pop(uri, None)
         stop.set()
         with contextlib.suppress(Exception):  # a failed write must not cost the Result

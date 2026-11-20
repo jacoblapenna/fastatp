@@ -49,6 +49,7 @@
   });
 
   function key(e) {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return; // with a modifier held the key is the browser's
     if (e.key === 'Escape') return onGotIt();
     if (e.key !== 'Enter') return;
     // Enter on one of the card's own buttons is that button's press: Got it

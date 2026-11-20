@@ -574,7 +574,7 @@ async def admit(request: Request) -> JSONResponse:
         earlier_rkey, earlier_cap = earlier
         await channel.delete_record(Capability.nsid, earlier_rkey)
         if earlier_cap.wg_public_key != info.public_key:
-            wg.remove_peer(earlier_cap.wg_public_key)
+            close_tunnel(earlier_cap.wg_public_key)
     # Step 3, open the door. Until this line the kernel drops their handshakes
     # unanswered. After it, their key is accepted, and only from their tunnel address.
     wg.add_peer(info.public_key, info.allowed_ips)
@@ -594,16 +594,36 @@ async def evict(request: Request) -> JSONResponse:
     # back.
     live = live_capabilities(channel.repo).get(body["did"])
     if live is None:
-        return JSONResponse({"error": f"{body['did']} holds no live capability"}, status_code=404)
+        # No record. Either they were never admitted, or an earlier /evict
+        # deleted the record and stopped before it closed the tunnel. Their
+        # document says which key to look for, so asking again finishes the job.
+        key = parse_wireguard_service(await resolve(body["did"])).public_key
+        if key not in wg.peers():
+            return JSONResponse(
+                {"error": f"{body['did']} holds no live capability"}, status_code=404
+            )
+        close_tunnel(key)
+        return JSONResponse({"evicted": body["did"], "deleted": "already deleted"})
     rkey, cap = live
-    # The same two steps as admit, undone door first: close the tunnel, then
-    # delete the record. If the second step fails they are already locked
-    # out, and asking again finishes the job, because the record is still
-    # there to find. Removing the peer also ends any session in flight. Their
-    # next packet is dropped unanswered.
-    wg.remove_peer(cap.wg_public_key)
+    # The same two steps as admit, undone in the same order: the decision
+    # first, then the enforcement. If this stops between the two, what is
+    # left is an open tunnel no record explains, which the next /evict (or,
+    # in production, the next reconcile) closes. The other order could leave
+    # a record with no tunnel, and a reconcile would open it again. Removing
+    # the peer also ends any session in flight. Their next packet is dropped
+    # unanswered.
     await channel.delete_record(Capability.nsid, rkey)
+    close_tunnel(cap.wg_public_key)
     return JSONResponse({"evicted": body["did"], "deleted": f"{Capability.nsid}/{rkey}"})
+
+
+def close_tunnel(key: str) -> None:
+    """Remove a kernel peer, unless a live capability still names its key.
+
+    The records decide. Two DIDs admitted with the same tunnel key share one
+    kernel peer, and it closes when the last of their records is gone."""
+    if all(cap.wg_public_key != key for _, cap in live_capabilities(channel.repo).values()):
+        wg.remove_peer(key)
 
 
 async def whoami(request: Request) -> JSONResponse:

@@ -69,7 +69,8 @@ export function connect() {
 }
 
 // A press reaches the conductor only over an open socket. False means it did
-// not go: the buttons are disabled while disconnected, and this is the backstop.
+// not go: Next and the chapter cards are disabled while disconnected, a key
+// concept's card stays open until its Got it lands, and this is the backstop.
 export function send(type, extra = {}) {
   if (socket?.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify({ type, ...extra }));

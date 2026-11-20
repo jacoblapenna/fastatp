@@ -33,8 +33,13 @@ def main(out_dir: str, paths: list[str]) -> int:
         svg = Path(path)
         # as tall as the picture is at 620 wide, so none is cut off at the bottom
         box = re.search(r'viewBox="([^"]+)"', svg.read_text())
-        _, _, w, h = (float(v) for v in box.group(1).split()) if box else (0, 0, 620, 440)
-        height = math.ceil(620 * h / w) + 20
+        try:
+            _, _, w, h = (float(v) for v in box.group(1).split()) if box else (0, 0, 620, 440)
+            height = math.ceil(620 * h / w) + 20
+        except (ValueError, ZeroDivisionError) as e:
+            failed += 1  # a size that cannot be read: skip this picture, render the rest
+            print(f"{svg.name}: not rendered (viewBox: {e})")
+            continue
         png = out / f"{svg.stem}.png"
         png.unlink(missing_ok=True)
         page = out / f"{svg.stem}.html"
