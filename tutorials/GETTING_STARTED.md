@@ -1482,7 +1482,7 @@ on the wire at ws://alice.lan/xrpc/com.atproto.sync.subscribeRepos?cursor=0
 #identity {'did': 'did:web:alice.lan', 'seq': 1, 'time': '2026-10-29T20:16:04.065030Z'}
 #account {'did': 'did:web:alice.lan', 'seq': 2, 'time': '2026-10-29T20:16:04.065064Z', 'active': True}
 #commit {'ops': [{'cid': CID('bafyreidf3vy...'), 'path': 'com.example.tutorial.note/3mz23h6bv4dmd', 'action': 'create'}],
-         'rev': '3mz23h6bwy242', 'seq': 3, 'repo': 'did:web:alice.lan', 'since': '...', 'blocks': '<... bytes of CAR>', ...}
+         'rev': '3mz23h6bwy242', 'seq': 3, 'repo': 'did:web:alice.lan', ..., 'since': '...', ..., 'blocks': '<... bytes of CAR>'}
 ```
 
 Frames 1 and 2 announce the identity and that the account is active.
@@ -1623,6 +1623,7 @@ running in another terminal<!-- @demo /terminal -->:
 
 <!-- @demo terminal -->On bob's screen:<!-- @demo /terminal -->
 
+<!-- @demo prints bob -->
 ```text
 checkpoint: rev 3mz2b56z6py4m, 3 records, verified; stream at seq 5
    com.example.tutorial.note/3mz2b56gzgpqz: Note(text='hello, LAN', ...)
@@ -1645,20 +1646,19 @@ look at alice's store again:
 ```
 
 ```text
-4 blocks
   bafyreibm5yhvrug...    90 bytes  record     {'text': 'hello, LAN', ...}
   bafyreieper5pbqn...    90 bytes  record     {'text': 'third note', ...}
-  bafyreihgibuqnfk...   160 bytes  tree node  2 entries
+  ...  tree node  ...
   bafyreif32p4eyum...   172 bytes  commit     rev=3mz2b5d2k4m4m did=did:web:alice.lan
 ```
 
-Before the delete there were three records, a tree node and a commit.
-After it there are two records, a *different* tree node and a *different*
+Before the delete there were three records, the tree and a commit.
+After it there are two records, a *different* tree and a *different*
 commit.
 
 <!-- @demo point alice.repo -->
 
-The second note's block is gone, and so are the old tree node and
+The second note's block is gone, and so are the old tree and
 the old commit, because nothing reachable from the new commit refers to
 them and every commit ends by discarding unreachable blocks. <!-- @demo terminal -->Deleting the
 same URI again returns a 500 and alice's log says

@@ -54,11 +54,15 @@ updates a guide after the lab changes).
 - The key concepts are the guide's claims. Each one is a `> 🔑` blockquote
   in the markdown; read the ones the output lists to explain what the run
   showed.
-- Not yet checked: that each command's output matches the listing printed
-  under it in the guide. A pass means every step ran, in order, on the
-  right machine, and succeeded or was refused as the guide says. Compare
-  the last lines with the guide's own listings before you tell the user a
-  step printed what the guide prints.
+- The listings are checked too. Every line the guide prints under a
+  command block must have been printed by those commands, in the guide's
+  order. A listing is an excerpt, so lines it leaves out are fine. Values
+  that are new on every run (keys, DIDs made from keys, record keys, CIDs,
+  timestamps, tunnel addresses) are compared by shape; everything else,
+  counts and sequence numbers included, is compared exactly, apart from
+  spacing and where a line wraps. A pass means
+  every step ran, in order, on the right machine, ended the way the guide
+  says, and printed what the guide shows.
 - A full run is 46 commands and 21 key concepts.
 
 ## Other ways to run

@@ -62,12 +62,25 @@ The `tutorial <GUIDE>` job plays each guide under `tutorials/` end to end,
 with nobody watching, against the fastatp in the pull request: three peers
 and the demo engine in Docker, every command the guide runs, in order, over
 a real WireGuard tunnel. It fails if the lab does not build or boot, if the
-play stalls, or if a command ends the wrong way (one the guide means to work
-fails, or one it means to be refused goes through). It then opens the
+play stalls, if a command ends the wrong way (one the guide means to work
+fails, or one it means to be refused goes through), or if a command does
+not print what the listing under it in the guide shows. It then opens the
 conductor's page in a headless Chrome and looks back through every step for
 page errors, a page wider than its window, and a key concept without its
 card or picture. `all tests ran` waits on it, so a guide that does not play
 blocks the merge.
+
+The job keeps the lab image's layers between runs, so a pull request that
+changes no dependency downloads nothing from apt, PyPI or npm. It is no
+faster for it (the build is under half a minute either way); it is less
+traffic, and when every such layer is reused, a slow mirror cannot fail
+the job. A layer is reused only when its Dockerfile line and every file it
+copies from the checkout are byte for byte the same, so the machines always
+run the fastatp, the guide and the lab scripts in the checkout. What a layer downloaded (the system packages)
+is not part of that, so the kept layers are thrown away at the start of
+each week and built from nothing once. `tutorials/lab/compose.ci.yml` is
+the whole of it, and the build step's log says `CACHED` beside each step it
+reused.
 
 Run the same thing locally, from the repository root:
 

@@ -11,13 +11,20 @@ The score says how each command is meant to end. One the guide marks
 `<!-- @demo fails -->` must exit non-zero: a refusal, a ping nobody answers.
 Every other command must exit 0. A command left running may be stopped by
 the guide's own Ctrl-C; a command that was not left running and is killed
-anyway took too long, and that is wrong too. What this does not yet check is
-each command's output against the listing printed under it in the guide.
+anyway took too long, and that is wrong too.
+
+The score also carries the listing the guide prints under a command block,
+and what the commands really printed is held to it (`listing_problems`):
+every line the guide shows must have been printed, in the guide's order.
+A listing is an excerpt, so lines it leaves out are fine, and so is a value
+it cuts short with `...`. Values that are new on every run are compared by
+their shape and not their value; SHAPES is the whole list of those.
 """
 
 import argparse
 import asyncio
 import json
+import re
 import sys
 
 import websockets
@@ -31,6 +38,71 @@ args.add_argument(
 args.add_argument(
     "--until", help="stop, leaving this key concept open on screen (a substring of its title)"
 )
+
+
+BASE58 = "1-9A-HJ-NP-Za-km-z"
+# What is new on every run, and so is compared by shape: (what it is, how to
+# spot one in the guide's listing, what may stand in its place in the output).
+# Everything else in a listing is compared exactly, numbers included (spacing and
+# line wrapping aside: see listing_problems).
+SHAPES = [
+    ("a timestamp", r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z", None),
+    ("the last digits of a timestamp", r"\d\.\d{6}(?=[Z\[])", r"\d\.\d{6}"),
+    ("a did:key", rf"did:key:z[{BASE58}]+", None),
+    ("a key in multibase", rf"(?<![A-Za-z0-9])z[{BASE58}]{{40,}}", rf"z[{BASE58}]{{40,}}"),
+    ("a CID", r"baf[a-z2-7]{8,}", None),
+    ("a WireGuard key in an address", r"(?<=pubkey=)[A-Za-z0-9%+/=]+", None),
+    ("a WireGuard key", r"[A-Za-z0-9+/]{43}=", None),
+    (
+        "how long ago",
+        r"\d+ (?:second|minute|hour)s?(?:, \d+ (?:second|minute)s?)* ago",
+        r"\d+(?:second|minute|hour)s?(?:,\d+(?:second|minute)s?)*ago",
+    ),
+    (
+        "how much traffic",
+        r"\d+(?:\.\d+)? (?:B|KiB|MiB|GiB)(?= (?:received|sent))",
+        r"\d+(?:\.\d+)?(?:B|KiB|MiB|GiB)",
+    ),
+    ("a tunnel address", r"(?:[0-9a-f]{1,4}:){4,7}[0-9a-f]{1,4}", None),
+    ("a private key in hex", r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", r"[0-9a-f]{64}"),
+    ("a twin's name", r"(?<=:)[a-z2-7]{24,40}(?![a-z0-9.])", r"[a-z2-7]{24,40}"),
+    ("a record key or a rev", r"(?<![a-z0-9])3[a-z2-7]{12}(?![a-z0-9])", r"3[a-z2-7]{12}"),
+    ("a value cut short", r"[A-Za-z0-9+/]{4,}(?=\.\.\.)", r"[A-Za-z0-9+/=]+"),
+]
+SPOT = re.compile("|".join(f"(?P<s{n}>{spot})" for n, (_, spot, _) in enumerate(SHAPES)))
+
+
+def line_pattern(line: str) -> str:
+    """One line of a listing as a pattern over output with its whitespace taken out."""
+
+    def exact(text: str) -> str:
+        # `...` in a listing stands for whatever was left out
+        return ".*?".join(re.escape("".join(part.split())) for part in text.split("..."))
+
+    pattern, at = "", 0
+    for found in SPOT.finditer(line):
+        n = int(found.lastgroup[1:])
+        pattern += exact(line[at : found.start()]) + (SHAPES[n][2] or SHAPES[n][1])
+        at = found.end()
+    return pattern + exact(line[at:])
+
+
+def listing_problems(listing: str, printed: list[str]) -> list[str]:
+    """The lines of a guide's listing that the commands did not print, in order.
+
+    Whitespace is not compared: the guide may wrap a long line or show JSON
+    on one line that a command printed on several."""
+    output = "".join("".join(line.split()) for line in printed)
+    missing, at = [], 0
+    for line in listing.splitlines():
+        if not line.strip():
+            continue
+        found = re.compile(line_pattern(line), re.S).search(output, at)
+        if found:
+            at = found.end()
+        else:
+            missing.append(line.strip())
+    return missing
 
 
 NEVER_RAN = (126, 127)  # the shell's own codes: not executable, and command not found
@@ -95,6 +167,21 @@ async def main() -> int:
                             wrong.append(f"step {step['id']} never ended: {step['display'][:70]}")
                     meant = sum(1 for s in steps if s.get("fails"))
                     print(f"{len(ended)} commands ended, {meant} of them meant to fail")
+                    compared = 0
+                    for step in steps:  # at the end: a command left running printed until now
+                        for listing in step.get("listings", []):
+                            compared += 1
+                            printed = [
+                                line
+                                for source in listing["from"]
+                                for line in procs.get(source, {"lines": []})["lines"]
+                            ]
+                            for line in listing_problems(listing["text"], printed):
+                                wrong.append(
+                                    f"step {step['id']}: the guide's listing shows"
+                                    f" {line[:90]!r}, and that was not printed"
+                                )
+                    print(f"{compared} listings compared with what the commands printed")
                     for line in wrong:
                         print(f"WRONG: {line}")
                     return 1 if wrong else 0
