@@ -17,6 +17,7 @@ the score), or not execute records at all. The players are yours to hack.
 """
 
 import asyncio
+import contextlib
 import os
 import re
 import signal
@@ -61,6 +62,7 @@ async def backstage_peer() -> Starlette:
         pds_endpoint=f"http://{host}:1337",
     )
     done = answered()
+    await close_interrupted()
     dids = DIDServer(domain=f"{host}%3A1337", resolver=did_resolver, chain_resolver=chain_resolver)
     return Starlette(routes=[*server.app.routes, *dids.app.routes])
 
@@ -106,7 +108,8 @@ async def run_peer() -> None:
     await peer.wait()
 
 
-async def restart_peer() -> None:
+async def restart_peer() -> bool:
+    """Stop peer.py and start it again; True once it answers, False if it never does."""
     # The stand-in for `./lab.sh restart alice`: peer.py stops and starts
     # again on the same disk. wg0 stays up, where a real reboot rebuilds it.
     if peer is not None and peer.returncode is None:
@@ -118,9 +121,10 @@ async def restart_peer() -> None:
         try:
             async with httpx.AsyncClient(timeout=1) as http:
                 await http.get("http://127.0.0.1/whoami")
-            return
+            return True
         except httpx.HTTPError:
             continue
+    return False
 
 
 # --- cues ---------------------------------------------------------------------
@@ -136,10 +140,28 @@ def answered() -> set[str]:
     already seen. The player's own results are the memory that makes acting
     on each cue exactly once survive both.
     """
+    return cues_of(Result)
+
+
+def cues_of(kind) -> set[str]:
     return {
-        server.repo.get_record(Result.nsid, rkey)["cue"]
-        for rkey, _ in server.repo.list_records(Result.nsid)
+        server.repo.get_record(kind.nsid, rkey)["cue"]
+        for rkey, _ in server.repo.list_records(kind.nsid)
     }
+
+
+async def close_interrupted() -> None:
+    """Answer for every command this player had started when it last stopped.
+
+    A command writes an Output record before it starts, its claim, and a
+    Result when it ends. A claim with no result is a command a restart cut
+    short. It may have taken effect, so it is never run again: it is answered
+    as failed, and the conductor is not left waiting for it.
+    """
+    for uri in cues_of(Output) - done:
+        await write(Output(cue=uri, lines=["[player] restarted while this ran; not run again"]))
+        await write(Result(cue=uri, code=1))
+        done.add(uri)
 
 
 done: set[str] = set()  # filled by backstage_peer(), once the repo is open
@@ -161,60 +183,84 @@ async def on_cue(path: str, record: dict) -> None:
     if record["show"] != show["id"] or uri in done:
         return  # an earlier show's cue, or one already answered
     done.add(uri)
-    if record["action"] == "run":
-        tasks.add(asyncio.create_task(perform(uri, record)))
-    elif record["action"] == "stop":
-        for proc in list(running.values()):
-            if proc.returncode is None:
-                os.killpg(
-                    proc.pid, signal.SIGTERM
-                )  # Ctrl-C, for everything this machine left running
-        await write(Result(cue=uri, code=0))
-    elif record["action"] == "restart":
-        await restart_peer()
-        await write(Result(cue=uri, code=0))
+    try:
+        if record["action"] == "run":
+            tasks.add(asyncio.create_task(perform(uri, record)))
+        elif record["action"] == "stop":
+            for proc in list(running.values()):
+                if proc.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):  # it ended just now
+                        os.killpg(
+                            proc.pid, signal.SIGTERM
+                        )  # Ctrl-C, for everything this machine left running
+            await write(Result(cue=uri, code=0))
+        elif record["action"] == "restart":
+            back = await restart_peer()
+            await write(Result(cue=uri, code=0 if back else 1))
+    except Exception:
+        done.discard(uri)  # not answered: the next checkpoint offers this cue again
+        raise
 
 
 async def perform(uri: str, cue: dict) -> None:
-    proc = await asyncio.create_subprocess_shell(
-        cue["command"],
-        cwd="/srv",
-        env={**os.environ, **cue.get("env", {})},
-        start_new_session=True,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    running[uri] = proc
     buffer: list[str] = []
+    stop = asyncio.Event()
 
-    async def flush_every_so_often():
+    async def flush() -> None:
+        # Take the lines first, then write them: a line that arrives during
+        # the write waits for the next record instead of being lost.
+        if buffer:
+            lines, buffer[:] = buffer[:], []
+            await write(Output(cue=uri, lines=lines))
+
+    async def flush_every_so_often() -> None:
         # One record per line would be one commit per line. A few lines per
         # record is the same story in fewer commits: how fine to cut it is
         # the builder's choice.
-        while True:
+        while not stop.is_set():
             await asyncio.sleep(0.3)
-            if buffer:
-                await write(Output(cue=uri, lines=buffer[:]))
-                buffer.clear()
+            await flush()
 
-    flusher = asyncio.create_task(flush_every_so_often())
+    code = 1  # what is reported if the command never ran, or this player tripped over it
+    flusher: asyncio.Task | None = None
     try:
+        # The claim, before the command starts: an Output with no lines yet.
+        # If this player dies from here on, close_interrupted() finds it.
+        await write(Output(cue=uri, lines=[]))
+        proc = await asyncio.create_subprocess_shell(
+            cue["command"],
+            cwd="/srv",
+            env={**os.environ, **cue.get("env", {})},
+            start_new_session=True,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        running[uri] = proc
+        flusher = asyncio.create_task(flush_every_so_often())
 
-        async def pump():
+        async def pump() -> None:
             async for raw in proc.stdout:
                 buffer.append(raw.decode(errors="replace").rstrip("\n"))
 
-        await asyncio.wait_for(pump(), timeout=None if cue["bg"] else 60)
-    except TimeoutError:
-        os.killpg(proc.pid, signal.SIGTERM)
-    code = await proc.wait()
-    flusher.cancel()
-    if code < 0:
-        buffer.append("^C")
-    if buffer:
-        await write(Output(cue=uri, lines=buffer[:]))
-    await write(Result(cue=uri, code=code))
-    running.pop(uri, None)
+        try:
+            await asyncio.wait_for(pump(), timeout=None if cue["bg"] else 60)
+        except TimeoutError:
+            os.killpg(proc.pid, signal.SIGTERM)
+        code = await proc.wait()
+        if code < 0:
+            buffer.append("^C")
+    except Exception as e:
+        buffer.append(f"[player] could not run this: {e!r}")
+    finally:
+        # Whatever happened, the cue is answered: the conductor waits on the
+        # Result and on nothing else.
+        running.pop(uri, None)
+        stop.set()
+        with contextlib.suppress(Exception):  # a failed write must not cost the Result
+            if flusher is not None:
+                await flusher  # let a write in flight finish; never cut a commit short
+            await flush()
+        await write(Result(cue=uri, code=code))
 
 
 # --- what this machine sees ---------------------------------------------------
@@ -256,10 +302,15 @@ async def watch_view() -> None:
                     seen_key = (who["did"], who["seq"], who["channel"])
                 except Exception:
                     continue
+            # Three short shell commands, run on a thread so nothing else this
+            # player does waits for them.
+            key, ip, peers = await asyncio.to_thread(
+                lambda: (wg_public_key(), lan_ip(), wg_peers())
+            )
             view = View(
-                identity={**who, "wg_public_key": wg_public_key(), "lan_ip": lan_ip()},
+                identity={**who, "wg_public_key": key, "lan_ip": ip},
                 repo=repo_view,
-                wg=wg_peers(),
+                wg=peers,
             )
             snapshot = view.model_dump_json()
             if snapshot != last:
@@ -316,8 +367,9 @@ async def watch_wire() -> None:
         while True:
             await asyncio.sleep(1)
             if pending:
-                await write(Packets(packets=pending[:]))
-                pending.clear()
+                # taken before the write, so a packet seen during it is kept
+                batch, pending[:] = pending[:], []
+                await write(Packets(packets=batch))
 
     tasks.add(asyncio.create_task(publish()))
     try:

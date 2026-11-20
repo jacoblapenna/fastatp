@@ -152,6 +152,7 @@ class Control(Lexicon):
 
 
 OnRecord = Callable[[str, dict], Awaitable[None]]
+MAX_FRAME = 5 * 1024 * 1024  # the sync spec's ceiling for one firehose frame
 
 
 async def follow(did: str, host: str, on_record: OnRecord) -> None:
@@ -162,11 +163,13 @@ async def follow(did: str, host: str, on_record: OnRecord) -> None:
     repeats records already seen, so on_record must be idempotent per path.
     """
     base = f"{host}/xrpc/com.atproto.sync"
+    last_error = ""
     while True:
+        # A fresh mirror and resolver each time: a peer that restarted may
+        # have a new key, and a cached DID document would refuse it.
+        documents = resolver()
         try:
-            # A fresh mirror and resolver each time: a peer that restarted may
-            # have a new key, and a cached DID document would refuse it.
-            mirror = RepoMirror(did, resolver=resolver())
+            mirror = RepoMirror(did, resolver=documents)
             async with httpx.AsyncClient(timeout=5) as http:
                 resp = await http.get(f"http://{base}.getRepo", params={"did": did})
             resp.raise_for_status()
@@ -176,11 +179,20 @@ async def follow(did: str, host: str, on_record: OnRecord) -> None:
                 collection, rkey = key.split("/", 1)
                 await on_record(key, mirror.get_record(collection, rkey))
             url = f"ws://{base}.subscribeRepos?did={quote(did, safe='')}&cursor={seq}"
-            async with websockets.connect(url, max_size=None) as ws:
+            last_error = ""
+            async with websockets.connect(url, max_size=MAX_FRAME) as ws:
                 async for frame in ws:
                     for item in await mirror.handle_frame(frame):
                         await on_record(item["path"], item["record"])
                     if mirror.resync_target is not None:
                         break  # take a fresh checkpoint rather than guess
-        except Exception:
-            await asyncio.sleep(1)
+        except Exception as e:
+            # Whatever went wrong, the remedy is the same: start again from a
+            # checkpoint. Say what it was, once per kind of trouble, so a
+            # follow that never catches up is not a silent one.
+            if repr(e) != last_error:
+                last_error = repr(e)
+                print(f"[follow] {did} via {host}: {last_error}; trying again", flush=True)
+        finally:
+            await documents.aclose()
+        await asyncio.sleep(1)  # also after a clean close: never reconnect in a tight loop
