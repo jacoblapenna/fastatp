@@ -56,6 +56,33 @@ The reports are temporary build artifacts of each CI run, never committed.
 Running the script over a single local run would flag every test your
 machine can't run, which is expected: CI's other jobs cover those.
 
+## In CI: every tutorial is played
+
+The `tutorial <GUIDE>` job plays each guide under `tutorials/` end to end,
+with nobody watching, against the fastatp in the pull request: three peers
+and the demo engine in Docker, every command the guide runs, in order, over
+a real WireGuard tunnel. It fails if the lab does not build or boot, if the
+play stalls, or if a command ends the wrong way (one the guide means to work
+fails, or one it means to be refused goes through). It then opens the
+conductor's page in a headless Chrome and looks back through every step for
+page errors, a page wider than its window, and a key concept without its
+card or picture. `all tests ran` waits on it, so a guide that does not play
+blocks the merge.
+
+Run the same thing locally, from the repository root:
+
+```bash
+tutorials/lab/lab.sh test                        # about five minutes; needs Docker
+uv run python tutorials/tools/page_check.py      # then the page; needs Chrome
+tutorials/lab/lab.sh down
+```
+
+The play is not a pytest run and writes no JUnit report, so it is outside the
+"every test must run somewhere" guard above. A new tutorial adds its file's
+name to the job's list in the pull request that adds the guide;
+[`tutorials/AGENTS.md`](../tutorials/AGENTS.md) explains how to read the
+play's report.
+
 ## Coverage
 
 Coverage is configured (`[tool.coverage.run]`: branch coverage over `fastatp/`)

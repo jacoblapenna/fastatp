@@ -66,9 +66,25 @@ generic identifiers only (`example.com`, `example.org`, `com.example.*`).
 ## What gates a merge
 
 The deterministic test suite and the conformance vectors are the only gate.
-Any AI-assisted review that runs on a pull request is advisory: read it,
-apply what you agree with, and say briefly why you disagree with the rest.
-No review finding, on its own, blocks a merge.
+The suite includes the tutorials: CI plays every guide under `tutorials/`
+end to end against the pull request's own fastatp, checks that each command
+ended the way the guide says, and looks at the page it was shown on. A
+tutorial that breaks when the library changes under it fails the gate like
+any other test. A pull request that adds a tutorial adds it to that job
+(`tutorials` in `.github/workflows/test.yml`) in the same change.
+
+An automated review should run on every pull request. It is advisory: no
+finding, on its own, blocks a merge, and you may disagree with any of them.
+What it asks of you is an answer. Before a maintainer reads your pull
+request, the tests pass and every review thread has a reply and is
+resolved: either the fix, or one or two sentences on why you are leaving
+it. Pushing a fix can draw new comments; answer those too. This is how you
+get a fast review, because by the time a person opens your pull request the
+mechanical questions are settled.
+
+If no automated review ran on yours, say so in the pull request. Which
+reviewer runs, and whether one does, can change; a maintainer decides what
+stands in for it.
 
 ## Decision records
 

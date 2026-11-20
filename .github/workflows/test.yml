@@ -1,5 +1,9 @@
 # The deterministic test suite is the only merge gate. Every job here either
 # passes or fails on reproducible checks; nothing advisory lives in this file.
+# The tutorials are part of the suite: each guide is played end to end and its
+# page looked at, so a tutorial cannot stop working without failing the gate.
+# That job is the one place where time can fail a run: a play that makes no
+# progress for 90 seconds is called a stall, and it is not retried.
 #
 # Every input is pinned: actions by commit SHA, the Rust toolchain by
 # rust-toolchain.toml, Python dependencies by uv.lock, the wasm build tools by

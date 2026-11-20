@@ -328,7 +328,8 @@ cross-implementation tests — is covered in
 The [tutorials](#tutorials) are tests too: `cd tutorials/lab && ./lab.sh test`
 plays `GETTING_STARTED.md` headless against the fastatp in the tree, and
 `uv run pytest` fails when a guide's quoted files drift from the files
-themselves.
+themselves. Every pull request plays every guide in CI, so a tutorial cannot
+stop working without the change that broke it failing its tests.
 
 See [`CONTRIBUTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/CONTRIBUTING.md)
 before opening a pull request, and

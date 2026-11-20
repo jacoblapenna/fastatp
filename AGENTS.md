@@ -155,10 +155,18 @@ the wire follow atproto.
   `reference/`.
 - Never commit anything under `reference/` (vendored, gitignored) and never
   add a runtime dependency for a dev convenience.
-- The deterministic test suite is the only merge gate. AI review (yours
-  included) is advisory, never blocking: apply the findings you agree with in
-  a follow-up commit, note any disagreement briefly, and move on. No finding,
-  severity label or review-tool failure is a reason to halt or retry-loop.
+- The deterministic test suite is the only merge gate, and it includes the
+  tutorials: CI plays every guide end to end against the change
+  (`tutorials/AGENTS.md`), and a pull request that adds a tutorial adds it
+  to that job. AI review (yours included) is advisory, never blocking: no
+  finding or severity label fails a merge, and you may disagree with any.
+  What every review thread is owed is an answer. Before asking for a
+  maintainer's read, reply to each one and resolve it: the fix, or a
+  sentence or two on why you are leaving it. A push can draw new comments;
+  answer those the same way. That is finishing the conversation, not a
+  retry loop: you are done when no thread is open, whether or not the
+  reviewer agrees. A review tool that fails to run is not a reason to halt;
+  say so in the pull request.
 
 One more time, because it is the point of this file: **if the task in front
 of you bends a tenet, say so before you build — and help the human find the
