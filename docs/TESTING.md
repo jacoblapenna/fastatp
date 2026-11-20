@@ -72,10 +72,13 @@ blocks the merge.
 
 The job keeps the lab image's layers between runs, so a pull request that
 changes no dependency installs nothing again. A layer is reused only when
-everything that went into it is byte for byte the same, so the machines
-always run the fastatp, the guide and the lab scripts in the checkout;
-`tutorials/lab/compose.ci.yml` is the whole of it, and the build step's log
-says `CACHED` beside each step it reused.
+its Dockerfile line and every file it copies from the checkout are byte for
+byte the same, so the machines always run the fastatp, the guide and the
+lab scripts in the checkout. What a layer downloaded (the system packages)
+is not part of that, so the kept layers are thrown away at the start of
+each week and built from nothing once. `tutorials/lab/compose.ci.yml` is
+the whole of it, and the build step's log says `CACHED` beside each step it
+reused.
 
 Run the same thing locally, from the repository root:
 

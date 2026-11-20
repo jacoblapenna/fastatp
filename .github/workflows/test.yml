@@ -315,6 +315,9 @@ jobs:
         # the module here means a missing one fails now, by name, and not
         # later as a peer that never boots
         run: sudo modprobe wireguard
+      - name: Which week this is
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Bring back the lab image's layers from an earlier run
         # Built from nothing, the image is about three of this job's minutes
         # and a fresh download of everything it installs. The layers are kept
@@ -324,16 +327,24 @@ jobs:
         # same, so the fastatp, guide and lab scripts in this checkout are
         # always the ones built in: see tutorials/lab/compose.ci.yml. A pull
         # request from a fork can read these layers and cannot replace them.
+        #
+        # What a step downloaded is not one of its inputs: the system
+        # packages `apt-get` installed stay as they were when the layer was
+        # built. So the week is part of the key, and the first run of each
+        # week builds from nothing and picks up whatever is current.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lab-layers
-          key: lab-layers-${{ runner.os }}-${{ hashFiles('tutorials/lab/Dockerfile', 'pyproject.toml', 'uv.lock', 'tutorials/conductor/package-lock.json') }}
-          restore-keys: lab-layers-${{ runner.os }}-
+          key: lab-layers-${{ runner.os }}-${{ steps.week.outputs.week }}-${{ hashFiles('tutorials/lab/Dockerfile', 'pyproject.toml', 'uv.lock', 'tutorials/conductor/package-lock.json') }}
+          restore-keys: lab-layers-${{ runner.os }}-${{ steps.week.outputs.week }}-
       - name: Build the lab's image
         # its log says CACHED beside every step that was reused
         env:
           COMPOSE_FILE: compose.yml:compose.ci.yml
           LAB_CACHE: ${{ runner.temp }}/lab-layers
+          # the builder refuses to read or write a folder outside the one it
+          # is run from unless told it may; the layers' folder is such a one
+          BUILDX_BAKE_ENTITLEMENTS_FS: "0"
         run: |
           # Docker's built-in builder cannot write its layers to a folder; this kind can
           docker buildx create --name "$BUILDX_BUILDER" --driver docker-container

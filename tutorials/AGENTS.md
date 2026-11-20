@@ -59,7 +59,8 @@ updates a guide after the lab changes).
   order. A listing is an excerpt, so lines it leaves out are fine. Values
   that are new on every run (keys, DIDs made from keys, record keys, CIDs,
   timestamps, tunnel addresses) are compared by shape; everything else,
-  counts and sequence numbers included, is compared exactly. A pass means
+  counts and sequence numbers included, is compared exactly, apart from
+  spacing and where a line wraps. A pass means
   every step ran, in order, on the right machine, ended the way the guide
   says, and printed what the guide shows.
 - A full run is 46 commands and 21 key concepts.

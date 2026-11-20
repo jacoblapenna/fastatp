@@ -43,7 +43,8 @@ args.add_argument(
 BASE58 = "1-9A-HJ-NP-Za-km-z"
 # What is new on every run, and so is compared by shape: (what it is, how to
 # spot one in the guide's listing, what may stand in its place in the output).
-# Everything else in a listing is compared exactly, numbers included.
+# Everything else in a listing is compared exactly, numbers included (spacing and
+# line wrapping aside: see listing_problems).
 SHAPES = [
     ("a timestamp", r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z", None),
     ("the last digits of a timestamp", r"\d\.\d{6}(?=[Z\[])", r"\d\.\d{6}"),

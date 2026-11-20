@@ -286,8 +286,15 @@ what bob's follower went on to print
         {"text": "the block's own", "from": [first, second]},
         {"text": "what bob's follower went on to print", "from": [follower]},
     ]
-    with pytest.raises(SystemExit, match="left nothing running"):
+    with pytest.raises(SystemExit, match="has nothing running"):
         md_manifest.parse(page.replace("prints bob", "prints alice"))
+    # a command that was stopped is not on anyone's screen any more
+    stopped = page.replace(
+        "```bash\n./lab.sh alice true", "<!-- @demo stop bob -->\n```bash\n./lab.sh alice true"
+    )
+    assert stopped != page
+    with pytest.raises(SystemExit, match="has nothing running"):
+        md_manifest.parse(stopped)
 
     printed = [
         "checkpoint: rev 3n2r4ij7vh5mg, 1 records, verified; stream at seq 3",
@@ -316,7 +323,9 @@ what bob's follower went on to print
 
     guide = md_manifest.parse((TUTORIALS / "GETTING_STARTED.md").read_text())
     listings = [x for s in guide["steps"] for x in s.get("listings", [])]
-    assert len(listings) >= 20 and all(x["from"] for x in listings)
+    # the count is the guide's own: a listing added or removed changes it on purpose,
+    # and one the parser stops seeing fails here and not silently in the play
+    assert len(listings) == 24 and all(x["from"] for x in listings)
 
 
 def test_the_favicon_is_the_brand_goose():

@@ -351,16 +351,19 @@ def parse(text: str) -> dict:
                 sources = list(last_block)  # the steps themselves: chapters renumber them later
                 if prints_cue:
                     at, who = prints_cue
-                    running = [
-                        s
-                        for s in steps
-                        if s["kind"] == "run" and s["machine"] == who and s.get("bg")
-                    ]
-                    if not running:
+                    running = None  # what `who` has running now: a stop or a reboot ends it
+                    for s in steps:
+                        if s.get("machine") != who:
+                            continue
+                        if s["kind"] == "run" and s.get("bg"):
+                            running = s
+                        elif s["kind"] in ("stop", "restart"):
+                            running = None
+                    if running is None:
                         raise SystemExit(
-                            f"line {at}: @demo prints {who}, and {who} left nothing running"
+                            f"line {at}: @demo prints {who}, and {who} has nothing running"
                         )
-                    sources = running[-1:]
+                    sources = [running]
                 last_block[-1].setdefault("listings", []).append(
                     {"text": "\n".join(body), "from": sources}
                 )
