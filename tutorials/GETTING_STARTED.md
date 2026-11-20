@@ -1932,18 +1932,36 @@ agree on the address: it was never chosen.
 
 <!-- @demo point alice.repo alice.tunnel -->
 
-> ⚠️ **Important: for private repos to work in production, three things
-> must be true on the machine that hosts them.** First, WireGuard's UDP port (51820 here) must be
-> reachable by the peers you admit: open it in the host firewall, forward
-> it through NAT if there is one, and publish the reachable address in the
-> `wg://` endpoint of your DID document. Second, the peer process must be
-> able to run `wg set`, which means root or `CAP_NET_ADMIN`; the lab grants
-> `NET_ADMIN` to each machine. Third, the sync surface must listen
-> *directly* on the tunnel interface with nothing in front of it. A reverse
-> proxy, a load balancer, or a Docker port mapping rewrites the source
-> address, and the doorman then refuses everyone. FastATP logs a warning
-> when it sees that pattern. The public repo can sit behind whatever you
-> like; the gated one cannot.
+> ⚠️ **Important: in production, a private repo's tunnel must end at the
+> peer that serves it.** The doorman knows a caller by the address inside
+> the tunnel, so nothing may sit between the tunnel and the peer. Anything
+> that only carries the encrypted packets is fine in front: NAT, a UDP
+> load balancer, a relay. It holds no key, so it cannot read or change
+> what it carries; this lab's peer was tested behind a plain UDP relay.
+> What cannot sit in front is anything that opens the tunnel or answers in
+> the peer's place: a reverse proxy such as nginx, an HTTP load balancer,
+> a subnet router, a Docker port mapping. Behind one of those every caller
+> arrives from the same address, and the doorman refuses them all. FastATP
+> logs a warning when it sees that pattern. Two more things must be true
+> on that machine. WireGuard's UDP port (51820 here) must be reachable by
+> the peers you admit, with the reachable address in the `wg://` endpoint
+> of your DID document. And the peer process must be able to run `wg set`,
+> which means root or `CAP_NET_ADMIN`; the lab grants `NET_ADMIN` to each
+> machine. To grow past one machine you add peers, and each one adds to
+> the chain of custody. Put a peer at the edge of your network. It ends
+> the tunnel, verifies what arrives, and publishes it onward with its own
+> signature on top. A service inside reads from the edge peer and checks
+> every signature in the chain, back to the peer that first wrote the
+> record, and it can refuse anything that did not come by the hops it
+> expects. Faking that would take the signing key of every peer in the
+> chain. An edge peer can read what passes through it, though it cannot
+> change who wrote it, so it is part of your own infrastructure and a peer
+> you trust. If you do not want that, put a relay there instead, one that
+> only passes the encrypted packets on. Which one is the builder's choice.
+> A load balancer gives you none of this: it tells
+> you a request arrived, never who wrote what or which way it came. You
+> can compose this from records today; the library does not yet ship a
+> ready-made hop. The public repo can sit behind whatever you like.
 
 <!-- @demo point alice.tunnel bob.tunnel -->
 
