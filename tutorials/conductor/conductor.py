@@ -339,7 +339,7 @@ async def commit(step: dict, pace: float) -> None:
     own repo that names this one's URI. The conductor follows their repos and
     waits for those answers: the same shape as waiting for a player's result."""
     record = step["record"]
-    rkey = generate_tid()
+    rkey = step.get("rkey") or generate_tid()  # a fixed key is updated in place
     uri = f"at://{did}/{record['$type']}/{rkey}"
     entry = commits[uri] = {
         "step": step["id"],

@@ -18,15 +18,28 @@ from fractions import Fraction
 import peer  # this machine's peer, exactly as guide one left it
 import uvicorn
 from backstage import follow
-from music import Play, Tone, hertz
+from music import Play, Tempo, Tone, hertz
 from pydantic import ValidationError
 
 CONDUCTOR = os.environ.get("CONDUCTOR") or "did:web:conductor.stage"
 CONDUCTOR_HOST = os.environ.get("CONDUCTOR_HOST", "conductor.stage")
 
+# This member's own table: what each note means, in octave 4, in millihertz
+# (exponent -3). The conductor never says a frequency; tuning is the member's
+# business. Another member could hold another table for the same records.
+NOTES = {
+    "do": 261_626,
+    "re": 293_665,
+    "mi": 329_628,
+    "fa": 349_228,
+    "sol": 391_995,
+    "la": 440_000,
+    "ti": 493_883,
+}
+EXPONENT = -3
+
 # This member's own rule, not the conductor's and not the lexicon's: it only
-# plays what a person can hear. Another member could hold a different rule
-# for the same records. Fractions keep the comparison exact.
+# plays what a person can hear. Fractions keep the comparison exact.
 HEARING = (Fraction(20), Fraction(20_000))
 
 
@@ -34,15 +47,23 @@ def now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def my_parts(path: str, record: dict, me: str) -> list[tuple[str, Tone]]:
-    """What this member writes for one record in the conductor's repo: (rkey, Tone) pairs.
+def pitch_of(note: str, octave: int) -> int | None:
+    """This member's pitch for a note, in millihertz, or None for a note it doesn't know.
 
-    Anything that is not a Play is not ours to act on. A Play this member's
-    model refuses is skipped, not obeyed: reading a record is not a promise
-    to do what it says.
+    Each octave doubles or halves the pitch. Halving an odd number of
+    millihertz leaves half a millihertz over: this member rounds it to the
+    nearest whole one, and its Tone says exactly which number it played."""
+    if note not in NOTES:
+        return None
+    return round(NOTES[note] * Fraction(2) ** (octave - 4))
+
+
+def my_parts(path: str, record: dict, me: str, tick_ms: int) -> list[tuple[str, Tone]]:
+    """What this member writes for one Play in the conductor's repo: (rkey, Tone) pairs.
+
+    A Play this member's model refuses is skipped, not obeyed: reading a
+    record is not a promise to do what it says.
     """
-    if record.get("$type") != Play.nsid:
-        return []
     try:
         play = Play.model_validate(record)
     except ValidationError as e:
@@ -54,16 +75,20 @@ def my_parts(path: str, record: dict, me: str) -> list[tuple[str, Tone]]:
     for i, part in enumerate(play.parts):
         if part.member != me:
             continue  # someone else's part
-        if not HEARING[0] <= hertz(part.pitch, part.pitch_exponent) <= HEARING[1]:
+        pitch = pitch_of(part.note, part.octave)
+        if pitch is None:
+            print(f"[orchestra] {path} part {i}: no note called {part.note!r} here; not playing it")
+            continue
+        if not HEARING[0] <= hertz(pitch, EXPONENT) <= HEARING[1]:
             print(f"[orchestra] {path} part {i}: not a note a person can hear; not playing it")
             continue
         tone = Tone(
-            text=part.text,
+            text=part.note,
             created_at=now(),
             play=f"at://{CONDUCTOR}/{path}",
-            pitch=part.pitch,
-            pitch_exponent=part.pitch_exponent,
-            duration_ms=part.duration_ms,
+            pitch=pitch,
+            pitch_exponent=EXPONENT,
+            duration_ms=part.ticks * tick_ms,
         )
         # The Tone's rkey is the Play's rkey and the part's place in it, so
         # the same part always lands at the same path. That is what makes
@@ -72,14 +97,39 @@ def my_parts(path: str, record: dict, me: str) -> list[tuple[str, Tone]]:
     return tones
 
 
+tempo: dict[str, int | None] = {"tick_ms": None}  # the Tempo in force, once one is seen
+held: list[tuple[str, dict]] = []  # Plays seen before any Tempo: they wait for one
+
+
 async def on_record(path: str, record: dict) -> None:
-    for rkey, tone in my_parts(path, record, peer.identity.did):
+    kind = record.get("$type")
+    if kind == Tempo.nsid:
+        # Not addressed to anyone: every member reads it, and it sets the speed
+        # of everything played from here on. A new one replaces the old.
+        try:
+            tempo["tick_ms"] = Tempo.model_validate(record).tick_ms
+        except ValidationError:
+            print(f"[orchestra] {path} is not a Tempo this member understands")
+            return
+        print(f"[{peer.domain}] tempo: a tick is {tempo['tick_ms']} ms")
+        waiting, held[:] = held[:], []
+        for play_path, play in waiting:
+            await on_record(play_path, play)
+        return
+    if kind != Play.nsid:
+        return  # anything else in the conductor's repo is not ours to act on
+    if tempo["tick_ms"] is None:
+        # A checkpoint lists records by collection, so a late member can meet
+        # Plays before the Tempo. Without a tempo a tick has no length: wait.
+        held.append((path, record))
+        return
+    for rkey, tone in my_parts(path, record, peer.identity.did, tempo["tick_ms"]):
         # A follow that reconnects sees its checkpoint again, Plays and all.
         # A Tone already at this path means this part was played: once is enough.
         if peer.server.repo.get_record(Tone.nsid, rkey) is not None:
             continue
         await peer.server.put_record(Tone.nsid, rkey, tone)
-        print(f"[{peer.domain}] played {tone.text} for {tone.play}")
+        print(f"[{peer.domain}] played {tone.text} for {tone.duration_ms} ms, for {tone.play}")
 
 
 async def main() -> None:

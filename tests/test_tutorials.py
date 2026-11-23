@@ -336,8 +336,9 @@ def test_the_favicon_is_the_brand_goose():
 
 
 def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(monkeypatch):
-    """orchestra.py reads a Play with its own model and rules: it writes a
-    Tone for each part naming it, at a path fixed by the Play and the part
+    """orchestra.py reads a Play with its own model, table and rules: it
+    writes a Tone for each part naming it, with the pitch its own table gives
+    and the length the Tempo gives, at a path fixed by the Play and the part
     (so playing is idempotent), and skips what it refuses instead of obeying."""
     from fractions import Fraction
     from types import SimpleNamespace
@@ -351,40 +352,36 @@ def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(
 
     alice, bob = "did:web:alice.lan", "did:web:bob.lan"
 
-    def part(member, text, pitch, exponent=-3, ms=1500):
-        return {
-            "member": member,
-            "text": text,
-            "pitch": pitch,
-            "pitch_exponent": exponent,
-            "duration_ms": ms,
-        }
+    def part(member, note, octave=4, ticks=4):
+        return {"member": member, "note": note, "octave": octave, "ticks": ticks}
 
     play = {
         "$type": music.Play.nsid,
         "parts": [
-            part(alice, "do", 261626),
-            part(bob, "mi", 329628),
-            part(alice, "bat", 40_000_000),  # 40 kHz: alice's rule says no
-            part(alice, "sol", 392, 0),  # the same rule, another scale
+            part(alice, "do"),
+            part(bob, "mi"),
+            part(alice, "do", octave=12),  # about 67 kHz: alice's rule says no
+            part(alice, "sol", octave=3, ticks=2),
+            part(alice, "zap"),  # not in alice's table
         ],
     }
-    tones = orchestra.my_parts(f"{music.Play.nsid}/3abc", play, alice)
+    path = f"{music.Play.nsid}/3abc"
+    tones = orchestra.my_parts(path, play, alice, tick_ms=250)
     assert [rkey for rkey, _ in tones] == ["3abc-0", "3abc-3"]
-    do = tones[0][1]
-    assert (do.text, do.pitch, do.pitch_exponent, do.duration_ms) == ("do", 261626, -3, 1500)
-    assert do.play == f"at://{orchestra.CONDUCTOR}/{music.Play.nsid}/3abc"
+    do, low_sol = tones[0][1], tones[1][1]
+    assert (do.text, do.pitch, do.pitch_exponent, do.duration_ms) == ("do", 261626, -3, 1000)
+    assert do.play == f"at://{orchestra.CONDUCTOR}/{path}"
     assert music.hertz(do.pitch, do.pitch_exponent) == Fraction(261626, 1000)
-    # the same record read again (a reconnect's checkpoint) lands at the same paths
-    assert [r for r, _ in orchestra.my_parts(f"{music.Play.nsid}/3abc", play, alice)] == [
-        "3abc-0",
-        "3abc-3",
+    # an octave down halves 391995 mHz; alice rounds the half, and her Tone says what she played
+    assert (low_sol.pitch, low_sol.duration_ms) == (195998, 500)
+    # a faster tempo: the same Play, shorter notes
+    assert [t.duration_ms for _, t in orchestra.my_parts(path, play, alice, tick_ms=120)] == [
+        480,
+        240,
     ]
-    # not a Play, or a Play this model refuses: nothing to do
-    cue = {"$type": "com.fastatp.demo.cue"}
-    assert orchestra.my_parts("com.fastatp.demo.cue/x", cue, alice) == []
-    broken = {**play, "parts": [part(alice, "do", 0)]}  # pitch must be at least 1
-    assert orchestra.my_parts(f"{music.Play.nsid}/3abd", broken, alice) == []
+    # a Play this model refuses: nothing to do
+    broken = {**play, "parts": [part(alice, "do", ticks=0)]}  # ticks must be at least 1
+    assert orchestra.my_parts(f"{music.Play.nsid}/3abd", broken, alice, tick_ms=250) == []
 
     # Tone is Note with more: the exported lexicon keeps Note's fields and adds the rest
     tone = music.Tone.to_lexicon_json()["defs"]["main"]["record"]
@@ -392,6 +389,8 @@ def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(
         tone["properties"]
     )
     assert tone["properties"]["pitch"]["minimum"] == 1
+    tempo = music.Tempo.to_lexicon_json()["defs"]["main"]["record"]
+    assert tempo["properties"]["tick_ms"]["minimum"] == 1
 
 
 def test_a_commit_cue_signs_a_record_for_its_members_and_waits_for_their_answers():
@@ -417,12 +416,19 @@ def test_a_commit_cue_signs_a_record_for_its_members_and_waits_for_their_answers
     assert "silent" not in commit
     assert "commit" in md_manifest.VISIBLE  # one press of Next
 
+    # for nobody in particular, at a fixed key: a setting every member reads
+    setting = next(
+        s for s in score("<!-- @demo commit at self -->")["steps"] if s["kind"] == "commit"
+    )
+    assert (setting["machines"], setting["rkey"]) == ([], "self")
+
     quiet = score("<!-- @demo fails 2 -->\n<!-- @demo commit alice bob -->")["steps"]
     assert next(s for s in quiet if s["kind"] == "commit")["silent"] == ["bob"]
 
     for cue, block in [
         ("<!-- @demo commit mallory -->", None),  # not in the cast
-        ("<!-- @demo commit -->", None),  # nobody
+        ("<!-- @demo commit alice at -->", None),  # at, and no key
+        ("<!-- @demo commit at self alice -->", None),  # members come before at
         ("<!-- @demo commit alice -->", "```bash\n./lab.sh alice ls\n```"),  # no record
         ("<!-- @demo commit alice -->", "```json\n{not json}\n```"),
         ("<!-- @demo commit alice -->", '```json\n{"text": "no type"}\n```'),

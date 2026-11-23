@@ -45,12 +45,17 @@ GitHub and fastatp.com do not render:
                                           what the block above it printed. A listing is
                                           otherwise the output of its block's commands, and
                                           the headless play holds the machines to it
-  <!-- @demo commit alice bob -->         the conductor signs the record in the next ```json
+  <!-- @demo commit alice bob [at self] -->
+                                          the conductor signs the record in the next ```json
                                           block into its own repo, for these members, and
                                           waits for each one's answer: a record in that
                                           member's own repo that names the commit's at://
-                                          URI. A fails cue above it names, by position, the
-                                          members meant to stay silent
+                                          URI. With no members it is for nobody in
+                                          particular (a setting every member reads) and
+                                          waits for nothing. `at <rkey>` writes it at that
+                                          key, so committing there again updates it in
+                                          place. A fails cue above it names, by position,
+                                          the members meant to stay silent
   <!-- @demo stop bob -->                 Ctrl-C whatever bob left running
   <!-- @demo wait 5 -->                   let time pass
   <!-- @demo expand eve -->  collapse  focus
@@ -178,7 +183,7 @@ def parse(text: str) -> dict:
     code_cue: dict | None = None  # a code cue waiting for the next bash block
     fails_cue: tuple[int, list[int]] | None = None  # its line, and which commands are meant to fail
     prints_cue: tuple[int, str] | None = None  # its line, and whose terminal the next listing is
-    commit_cue: tuple[int, list[str]] | None = None  # its line, and the members it names
+    commit_cue: tuple[int, list[str], str] | None = None  # its line, its members, its rkey
 
     def emit(step: dict) -> dict:
         step["id"] = len(steps)
@@ -285,14 +290,19 @@ def parse(text: str) -> dict:
             elif verb == "fails":
                 fails_cue = (i, [int(n) for n in arg.split()])
             elif verb == "commit":
-                names = arg.split()
-                strangers = [n for n in names if n not in machines]
-                if not names or strangers:
+                words = arg.split()
+                rkey = ""
+                if "at" in words:
+                    at = words.index("at")
+                    if at + 2 != len(words):
+                        raise SystemExit(f"line {i}: @demo commit ... at <rkey> ends the cue")
+                    words, rkey = words[:at], words[at + 1]
+                if strangers := [n for n in words if n not in machines]:
                     raise SystemExit(
                         f"line {i}: @demo commit names its members from the cast, not {strangers}"
                     )
                 emit_say()
-                commit_cue = (i, names)
+                commit_cue = (i, words, rkey)
             elif verb == "stop":
                 emit_say()
                 emit({"kind": "stop", "machine": arg})
@@ -339,7 +349,7 @@ def parse(text: str) -> dict:
             if not active:
                 continue
             if commit_cue:
-                at, names = commit_cue
+                at, names, rkey = commit_cue
                 if lang != "json":
                     raise SystemExit(f"line {at}: @demo commit needs a ```json record under it")
                 try:
@@ -353,9 +363,11 @@ def parse(text: str) -> dict:
                         "kind": "commit",
                         "machines": names,
                         "record": record,
-                        "display": f"{record['$type']} for {', '.join(names)}",
+                        "display": record["$type"] + (f" for {', '.join(names)}" if names else ""),
                     }
                 )
+                if rkey:
+                    step["rkey"] = rkey
                 if fails_cue:
                     for n in fails_cue[1] or range(1, len(names) + 1):
                         if not 1 <= n <= len(names):
