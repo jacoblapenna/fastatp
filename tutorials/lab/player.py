@@ -90,11 +90,13 @@ tasks: set[asyncio.Task] = set()  # background work this player keeps a referenc
 
 
 async def run_peer() -> None:
-    """peer.py as a child; its output goes to docker's log, as before, and /tmp/peer.log."""
+    """peer.py as a child; its output goes to docker's log, as before, and /tmp/peer.log.
+
+    PEER names a guide's own program that builds on peer.py (orchestra.py), if any."""
     global peer
     peer = await asyncio.create_subprocess_exec(
         "python",
-        "peer.py",
+        os.environ.get("PEER") or "peer.py",
         domain,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,

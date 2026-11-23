@@ -13,21 +13,21 @@ services:
     <<: *machine
     hostname: alice.lan
     command: [alice.lan]
-    environment: {CONDUCTOR: "${CONDUCTOR:-}"}
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
     networks: {lan: {ipv4_address: 192.168.77.11, aliases: [alice.lan]}, stage: {aliases: [alice.stage]}}
     volumes: ["./state/alice.lan:/srv/alice.lan", "./state/backstage/alice.stage:/srv/backstage"]
   bob:
     <<: *machine
     hostname: bob.lan
     command: [bob.lan]
-    environment: {CONDUCTOR: "${CONDUCTOR:-}"}
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
     networks: {lan: {ipv4_address: 192.168.77.12, aliases: [bob.lan]}, stage: {aliases: [bob.stage]}}
     volumes: ["./state/bob.lan:/srv/bob.lan", "./state/backstage/bob.stage:/srv/backstage"]
   eve:
     <<: *machine
     hostname: eve.lan
     command: [eve.lan]
-    environment: {CONDUCTOR: "${CONDUCTOR:-}"}
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
     networks: {lan: {ipv4_address: 192.168.77.13, aliases: [eve.lan]}, stage: {aliases: [eve.stage]}}
     volumes: ["./state/eve.lan:/srv/eve.lan", "./state/backstage/eve.stage:/srv/backstage"]
 

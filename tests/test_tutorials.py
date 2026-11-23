@@ -333,3 +333,63 @@ def test_the_favicon_is_the_brand_goose():
     brand = (TUTORIALS / "conductor" / "src" / "brand" / "brand.js").read_text()
     goose = brand.split("export const goose =")[1].split("'")[1]
     assert f'd="{goose}"' in (TUTORIALS / "conductor" / "public" / "favicon.svg").read_text()
+
+
+def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(monkeypatch):
+    """orchestra.py reads a Play with its own model and rules: it writes a
+    Tone for each part naming it, at a path fixed by the Play and the part
+    (so playing is idempotent), and skips what it refuses instead of obeying."""
+    from fractions import Fraction
+    from types import SimpleNamespace
+
+    monkeypatch.syspath_prepend(str(TUTORIALS / "lab"))
+    # orchestra.py imports this machine's peer.py, which needs WireGuard; stand in for it
+    monkeypatch.setitem(sys.modules, "peer", SimpleNamespace())
+    monkeypatch.delitem(sys.modules, "orchestra", raising=False)
+    music = __import__("music")
+    orchestra = __import__("orchestra")
+
+    alice, bob = "did:web:alice.lan", "did:web:bob.lan"
+
+    def part(member, text, pitch, exponent=-3, ms=1500):
+        return {
+            "member": member,
+            "text": text,
+            "pitch": pitch,
+            "pitch_exponent": exponent,
+            "duration_ms": ms,
+        }
+
+    play = {
+        "$type": music.Play.nsid,
+        "created_at": "2026-11-23T00:00:00Z",
+        "parts": [
+            part(alice, "do", 261626),
+            part(bob, "mi", 329628),
+            part(alice, "bat", 40_000_000),  # 40 kHz: alice's rule says no
+            part(alice, "sol", 392, 0),  # the same rule, another scale
+        ],
+    }
+    tones = orchestra.my_parts(f"{music.Play.nsid}/3abc", play, alice)
+    assert [rkey for rkey, _ in tones] == ["3abc-0", "3abc-3"]
+    do = tones[0][1]
+    assert (do.text, do.pitch, do.pitch_exponent, do.duration_ms) == ("do", 261626, -3, 1500)
+    assert do.play == f"at://{orchestra.CONDUCTOR}/{music.Play.nsid}/3abc"
+    assert music.hertz(do.pitch, do.pitch_exponent) == Fraction(261626, 1000)
+    # the same record read again (a reconnect's checkpoint) lands at the same paths
+    assert [r for r, _ in orchestra.my_parts(f"{music.Play.nsid}/3abc", play, alice)] == [
+        "3abc-0",
+        "3abc-3",
+    ]
+    # not a Play, or a Play this model refuses: nothing to do
+    cue = {"$type": "com.fastatp.demo.cue"}
+    assert orchestra.my_parts("com.fastatp.demo.cue/x", cue, alice) == []
+    broken = {**play, "parts": [part(alice, "do", 0)]}  # pitch must be at least 1
+    assert orchestra.my_parts(f"{music.Play.nsid}/3abd", broken, alice) == []
+
+    # Tone is Note with more: the exported lexicon keeps Note's fields and adds the rest
+    tone = music.Tone.to_lexicon_json()["defs"]["main"]["record"]
+    assert {"text", "created_at", "play", "pitch", "pitch_exponent", "duration_ms"} <= set(
+        tone["properties"]
+    )
+    assert tone["properties"]["pitch"]["minimum"] == 1
