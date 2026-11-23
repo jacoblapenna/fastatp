@@ -3,6 +3,7 @@
 // Nothing here is guessed; every card renders from this one object.
 
 import { setGlossary } from './md.js';
+import { play, playable, unlock } from './sound.js';
 
 export const live = $state({
   connected: false,
@@ -16,6 +17,7 @@ export const live = $state({
   until: null, // a chapter's first step the conductor is hurrying to
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
+  commits: {}, // step -> a record the conductor signed for members, and their answers so far
 });
 
 // What one press of Next shows; what Back looks at again.
@@ -60,6 +62,7 @@ export function connect() {
       live.manifest = msg.manifest;
       live.machines = {};
       live.wire = [];
+      live.commits = {};
       for (const name of msg.manifest.machines) machine(name);
       status(msg);
       for (const ev of msg.events) apply(ev, false);
@@ -72,6 +75,7 @@ export function connect() {
 // not go: Next and the chapter cards are disabled while disconnected, a key
 // concept's card stays open until its Got it lands, and this is the backstop.
 export function send(type, extra = {}) {
+  unlock(); // every press comes through here: the first one opens the speaker
   if (socket?.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify({ type, ...extra }));
   return true;
@@ -91,7 +95,31 @@ function machine(name) {
   });
 }
 
+// Each machine is heard from its own place, left to right in cast order.
+function pan(name) {
+  const cast = live.manifest?.machines ?? [];
+  const i = cast.indexOf(name);
+  return cast.length > 1 && i >= 0 ? -0.7 + (1.4 * i) / (cast.length - 1) : 0;
+}
+
 function apply(ev, fresh) {
+  const step = Number(ev.step);
+  if (ev.type === 'commit' && Number.isInteger(step)) {
+    live.commits[step] = { uri: ev.uri, machines: ev.machines ?? [], answers: {}, silent: null };
+    return;
+  }
+  if (ev.type === 'commit-end' && live.commits[step]) {
+    live.commits[step].silent = ev.silent ?? [];
+    return;
+  }
+  if (ev.type === 'answer') {
+    if (!machine(ev.machine)) return;
+    const note = playable(ev.record);
+    live.commits[step] && (live.commits[step].answers[ev.machine] = { text: ev.record?.text ?? '', ms: note?.ms ?? 0 });
+    // only a note landing now is played: a tab opened late does not hear the past all at once
+    if (fresh && note) play(note, pan(ev.machine));
+    return;
+  }
   if (ev.type === 'wire') {
     live.wire.push({ ...ev, seen: fresh ? Date.now() : 0 });
     if (live.wire.length > 500) live.wire.splice(0, live.wire.length - 500);
@@ -99,7 +127,6 @@ function apply(ev, fresh) {
   }
   const m = machine(ev.machine);
   if (!m) return;
-  const step = Number(ev.step);
   if (['proc', 'out'].includes(ev.type) && !Number.isInteger(step)) return;
   if (ev.type === 'stage') m.stage = ev.state;
   else if (ev.type === 'view') {

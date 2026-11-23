@@ -1,7 +1,7 @@
 <script>
   // The guide's own words for what is happening now.
   import { md } from '../lib/md.js';
-  import { picture } from '../lib/live.svelte.js';
+  import { live, picture } from '../lib/live.svelte.js';
 
   let { script, back = 0 } = $props();
   let svg = $state(null); // the caption's picture, from the conductor's repo
@@ -42,6 +42,17 @@
     <div class="now"><span>{script.step.machine}</span> {script.step.display}</div>
   {:else if script.step?.kind === 'stop'}
     <div class="now"><span>{script.step.machine}</span> Ctrl-C</div>
+  {:else if script.step?.kind === 'commit'}
+    {@const sent = live.commits[script.step.id]}
+    <div class="now">
+      <span>conductor</span> signs {script.step.display} into its own repo
+      {#each script.step.machines as name (name)}
+        {@const answer = sent?.answers[name]}
+        <span class="member" class:answered={answer} class:silent={sent?.silent?.includes(name) && !answer}>
+          {name}{#if answer}&nbsp;♪ {answer.text}, {answer.ms} ms{:else if sent?.silent?.includes(name)}&nbsp;· no answer{:else}&nbsp;…{/if}
+        </span>
+      {/each}
+    </div>
   {/if}
 </div>
 
@@ -72,4 +83,7 @@
   .text :global(li) { margin: 2px 0; }
   .now { margin-top: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); }
   .now span { color: var(--color-on-primary); background: var(--color-primary); border-radius: 4px; padding: 0 6px; margin-right: 4px; }
+  .now .member { color: var(--color-text-muted); background: var(--color-terminal-bg); border: 1px solid var(--color-border); margin-left: 6px; }
+  .now .member.answered { color: var(--color-text); border-color: var(--color-primary); }
+  .now .member.silent { border-style: dashed; }
 </style>
