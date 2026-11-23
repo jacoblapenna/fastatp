@@ -106,6 +106,13 @@ packages = ["fastatp"]
 # The brand folder (logo files and their generator) is the repo's too.
 exclude = ["tutorials/", "brand/"]
 
+[tool.uv]
+# uv.lock's bytes depend on the uv that writes them. CI pins UV_VERSION in
+# .github/workflows/test.yml and release.yml; an older uv here would rewrite
+# the whole lock, so it refuses to run instead. Raise this with UV_VERSION.
+# A floor, not an exact pin, so Dependabot's newer uv can still update the lock.
+required-version = ">=0.13.7"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

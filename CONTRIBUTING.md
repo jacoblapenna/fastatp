@@ -56,6 +56,9 @@ uv run mypy fastatp
 
 `uv` is a convenience for development only. The package must always install
 with plain `pip install -e .`, and CI checks that it does.
+Use the uv that CI pins (`UV_VERSION` in `.github/workflows/test.yml`;
+`uv self update <version>`): `uv.lock` is written differently by each uv
+release, and `pyproject.toml` refuses one older than CI's.
 [`docs/TESTING.md`](docs/TESTING.md) explains the optional tests (browser
 bundle, WireGuard, cross-implementation) and how to enable them.
 
