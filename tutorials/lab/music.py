@@ -12,7 +12,7 @@ from lexicons import Note
 from pydantic import BaseModel, Field
 
 from fastatp import Lexicon
-from fastatp.lex.types import AtUri, Datetime, Did, MaxGraphemes
+from fastatp.lex.types import AtUri, Did, MaxGraphemes
 
 # A frequency is two integers: hertz = pitch x 10^pitch_exponent. Middle C,
 # 261.626 Hz, is pitch 261626 with exponent -3, counted in millihertz. The
@@ -39,8 +39,9 @@ class Play(Lexicon):
     """The conductor, in its own repo: these members, these notes."""
 
     nsid = "com.example.tutorial.play"
+    # No created_at: the record key is a TID, a timestamp already, and the
+    # record in the guide is then exactly the record that gets signed.
     parts: Annotated[list[Part], Field(min_length=1)]  # one part is a note, three are a chord
-    created_at: Datetime
 
 
 class Tone(Note):

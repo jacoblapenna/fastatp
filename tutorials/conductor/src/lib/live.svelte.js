@@ -19,7 +19,7 @@ export const live = $state({
 });
 
 // What one press of Next shows; what Back looks at again.
-export const VISIBLE = ['run', 'restart', 'stop', 'say', 'concept', 'chapter', 'ask'];
+export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask'];
 
 // Looking back: how many visible steps behind the conductor the page is
 // showing. The machines stay where they are, because every step really ran;

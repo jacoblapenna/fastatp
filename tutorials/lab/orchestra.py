@@ -46,7 +46,8 @@ def my_parts(path: str, record: dict, me: str) -> list[tuple[str, Tone]]:
     try:
         play = Play.model_validate(record)
     except ValidationError as e:
-        print(f"[orchestra] {path} is not a Play this member understands: {e.error_count()} errors")
+        problems = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors())
+        print(f"[orchestra] {path} is not a Play this member understands: {problems}")
         return []
     rkey = path.split("/")[1]
     tones = []

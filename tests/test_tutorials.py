@@ -362,7 +362,6 @@ def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(
 
     play = {
         "$type": music.Play.nsid,
-        "created_at": "2026-11-23T00:00:00Z",
         "parts": [
             part(alice, "do", 261626),
             part(bob, "mi", 329628),
@@ -393,3 +392,59 @@ def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(
         tone["properties"]
     )
     assert tone["properties"]["pitch"]["minimum"] == 1
+
+
+def test_a_commit_cue_signs_a_record_for_its_members_and_waits_for_their_answers():
+    """`@demo commit alice bob` above a ```json record is one step: the
+    conductor signs that record into its own repo for those members, and
+    each answers in its own repo. A fails cue names who is meant to stay
+    silent. Getting it wrong stops the parse, not the show."""
+    md_manifest = _tool("md_manifest")
+    play = _tool("play")
+
+    def score(
+        cue: str, block: str = '```json\n{"$type": "com.example.tutorial.play"}\n```'
+    ) -> dict:
+        return md_manifest.parse(
+            f"<!-- @demo machines alice bob eve -->\n<!-- @demo start -->\n\n{cue}\n{block}\n"
+            "\n<!-- @demo end -->\n"
+        )
+
+    steps = score("<!-- @demo commit alice bob -->")["steps"]
+    commit = next(s for s in steps if s["kind"] == "commit")
+    assert commit["machines"] == ["alice", "bob"]
+    assert commit["record"] == {"$type": "com.example.tutorial.play"}
+    assert "silent" not in commit
+    assert "commit" in md_manifest.VISIBLE  # one press of Next
+
+    quiet = score("<!-- @demo fails 2 -->\n<!-- @demo commit alice bob -->")["steps"]
+    assert next(s for s in quiet if s["kind"] == "commit")["silent"] == ["bob"]
+
+    for cue, block in [
+        ("<!-- @demo commit mallory -->", None),  # not in the cast
+        ("<!-- @demo commit -->", None),  # nobody
+        ("<!-- @demo commit alice -->", "```bash\n./lab.sh alice ls\n```"),  # no record
+        ("<!-- @demo commit alice -->", "```json\n{not json}\n```"),
+        ("<!-- @demo commit alice -->", '```json\n{"text": "no type"}\n```'),
+        ("<!-- @demo fails 3 -->\n<!-- @demo commit alice bob -->", None),
+    ]:
+        with pytest.raises(SystemExit):
+            score(cue, block) if block else score(cue)
+
+    # the headless play holds the answers to the guide
+    assert play.commit_verdict(commit, []) is None
+    assert "no answer from bob" in play.commit_verdict(commit, ["bob"])
+    quiet_step = {"silent": ["bob"]}
+    assert play.commit_verdict(quiet_step, ["bob"]) is None
+    assert "stays silent, and answered" in play.commit_verdict(quiet_step, [])
+
+    # an answer is any record that names the request's URI, wherever it keeps it
+    sys.path.insert(0, str(TUTORIALS / "lab"))
+    try:
+        backstage = __import__("backstage")
+    finally:
+        sys.path.pop(0)
+    uri = "at://did:web:conductor.stage/com.example.tutorial.play/3abc"
+    assert backstage.mentions({"play": uri, "text": "do"}, uri)
+    assert backstage.mentions({"parts": [{"source": {"uri": uri}}]}, uri)
+    assert not backstage.mentions({"play": uri + "x", "text": uri[:-1]}, uri)

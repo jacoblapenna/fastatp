@@ -9,7 +9,9 @@ stalls, or a command ended the wrong way.
 
 The score says how each command is meant to end. One the guide marks
 `<!-- @demo fails -->` must exit non-zero: a refusal, a ping nobody answers.
-Every other command must exit 0. A command left running may be stopped by
+Every other command must exit 0. A record the conductor commits for some
+members is answered by each of them, except the members the guide's fails
+cue names, who must stay silent. A command left running may be stopped by
 the guide's own Ctrl-C; a command that was not left running and is killed
 anyway took too long, and that is wrong too.
 
@@ -126,9 +128,20 @@ def verdict(step: dict, code: int, lines: list[str] | None = None) -> str | None
     return f"the guide says this works, and it exited {code}"
 
 
+def commit_verdict(step: dict, silent: list[str]) -> str | None:
+    """What is wrong with who answered a committed record, or None if it went as the guide says."""
+    meant = set(step.get("silent", []))
+    if unexpected := sorted(set(silent) - meant):
+        return f"no answer from {', '.join(unexpected)}"
+    if spoke := sorted(meant - set(silent)):
+        return f"the guide says {', '.join(spoke)} stays silent, and answered"
+    return None
+
+
 async def main() -> int:
     procs: dict[int, dict] = {}
     ended: set[int] = set()
+    committed: set[int] = set()  # commit steps whose wait for answers is over
     wrong: list[str] = []
     for _ in range(60):  # the conductor may still be starting
         try:
@@ -165,6 +178,11 @@ async def main() -> int:
                     for step in steps:  # a refusal that never came is not a refusal
                         if step.get("fails") and step["id"] not in ended:
                             wrong.append(f"step {step['id']} never ended: {step['display'][:70]}")
+                    for step in steps:
+                        if step["kind"] == "commit" and step["id"] not in committed:
+                            wrong.append(
+                                f"step {step['id']} never finished: {step['display'][:70]}"
+                            )
                     meant = sum(1 for s in steps if s.get("fails"))
                     print(f"{len(ended)} commands ended, {meant} of them meant to fail")
                     compared = 0
@@ -189,6 +207,16 @@ async def main() -> int:
                 ev = msg["event"]
                 if ev["type"] == "proc" and ev["state"] == "start":
                     procs[ev["step"]] = {"lines": [], **ev}
+                elif ev["type"] == "commit":
+                    step = steps[ev["step"]]
+                    print(f"{ev['step']:4d} conductor commits {step['display'][:70]}")
+                elif ev["type"] == "answer":
+                    print(f"            └ {ev['machine']} answered: {ev['uri']}")
+                elif ev["type"] == "commit-end":
+                    committed.add(ev["step"])
+                    if problem := commit_verdict(steps[ev["step"]], ev["silent"]):
+                        wrong.append(f"step {ev['step']}: {problem}")
+                        print(f"            ✗ {problem}")
                 elif ev["type"] == "out" and ev["step"] in procs:
                     procs[ev["step"]]["lines"].append(ev["line"])
                 elif ev["type"] == "proc" and ev["state"] == "exit":
