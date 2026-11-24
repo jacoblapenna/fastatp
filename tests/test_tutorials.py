@@ -405,7 +405,7 @@ def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(
     assert (do.text, do.pitch, do.pitch_exponent, do.duration_ms) == ("do", 261626, -3, 1000)
     assert do.play == f"at://{orchestra.CONDUCTOR}/{path}"
     assert music.hertz(do.pitch, do.pitch_exponent) == Fraction(261626, 1000)
-    # an octave down halves 391995 mHz; alice rounds the half, and her Tone says what she played
+    # an octave down halves 391995 mHz; alice rounds the half, and alice's Tone says what was played
     assert (low_sol.pitch, low_sol.duration_ms) == (195998, 500)
     # a faster tempo: the same Play, shorter notes
     assert [t.duration_ms for _, t in orchestra.my_parts(path, play, alice, tick_ms=120)] == [
@@ -494,7 +494,7 @@ def test_the_conductor_and_the_orchestra_is_a_playable_score(monkeypatch):
     records, not commands: every Play it commits is one the members' own
     model accepts and names only the cast, the scale and the tune are
     sequences the conductor conducts one record at a time, and bob's part is
-    the one meant to go unanswered while he is offline."""
+    the one meant to go unanswered while bob is offline."""
     md_manifest = _tool("md_manifest")
     score = md_manifest.parse((TUTORIALS / "CONDUCTOR_AND_ORCHESTRA.md").read_text())
     steps = score["steps"]

@@ -1,6 +1,6 @@
 // The page's speaker. The machines have none of their own, so the page plays
 // a member's note when that member's signed record of it lands: the sound is
-// what alice wrote, at the pitch and for the length she wrote, not what the
+// what alice wrote, at the pitch and for the length alice wrote, not what the
 // conductor asked for.
 //
 // Browsers keep a page silent until someone presses something on it, so the

@@ -63,7 +63,7 @@ In four chapters:
 1. **Backstage.** One command on alice, and the two signed records behind
    it: who asked, and who did it.
 2. **The orchestra.** The conductor writes down a note and alice plays it.
-   Bob is offline when his part is written, and plays it when he gets back.
+   Bob is offline when its part is written, and plays it on coming back.
 3. **Scales and chords.** A scale passed from member to member, chords for
    two and three, then a tune, each note signed only once the last was heard.
 4. **The show is a repo.** Eve reads the whole show back from the
@@ -529,7 +529,7 @@ own: alice's backstage repo.
 No request went to alice, and alice sent no reply. Each side read the
 other's repo.
 
-Bob had no part in any of that. He can still check it, from the two repos
+Bob had no part in any of that. Bob can still check it, from the two repos
 alone.
 
 <!-- @demo ask Bob checks what alice was asked and what alice answered. Whose word does bob take for either? -->
@@ -570,7 +570,7 @@ the answer. Two records, two signatures, two signers.
 > ordinary peer holds port 80, so the backstage one takes 1337.
 
 <!-- @demo chapter 2 "The orchestra" -->
-<!-- @demo blurb The conductor writes down a note, and alice plays it in her own repo. Bob is offline when his part is written, and plays it when he gets back. -->
+<!-- @demo blurb The conductor writes down a note, and alice plays it in its own repo. Bob is offline when its part is written, and plays it on coming back. -->
 
 ## Part 2: the orchestra
 
@@ -600,8 +600,8 @@ hold it: `do`, in octave 4, for 4 ticks. It never says a frequency.
 {"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 4}]}
 ```
 
-Alice's. Her own table says `do` in octave 4 is 261.626 hertz, and the
-tempo says 4 ticks is one second. She wrote both into a Tone in her own
+Alice's. Alice's own table says `do` in octave 4 is 261.626 hertz, and the
+tempo says 4 ticks is one second. Alice wrote both into a Tone in its own
 repo, and the page played the Tone, not the Play.
 
 <!-- @demo point alice.repo -->
@@ -624,12 +624,11 @@ repo, and the page played the Tone, not the Play.
 > is rounded and printed differs between languages and machines, and a
 > signature covers bytes, not intentions. Two whole numbers are the same
 > bytes everywhere. The record says exactly what alice played, and nobody
-> downstream gets to round it differently: a chain of custody with no
-> pennies skimmed off the top.
+> downstream gets to round it differently.
 
 ![261.626 hertz is written as pitch 261626 and pitch_exponent minus 3](sketches/whole-numbers.svg)
 
-Now take bob offline. His member stops, and his machine stays up.
+Now take bob offline. Bob's member stops, and the machine stays up.
 
 ```bash
 ./lab.sh bob pkill -xf "python orchestra.py bob.lan"
@@ -643,11 +642,11 @@ The conductor writes a Play for two: `mi` for alice and `sol` for bob.
 {"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 4, "ticks": 4}]}
 ```
 
-Alice plays her part. Bob says nothing, because nobody is there to read
+Alice plays its part. Bob says nothing, because nobody is there to read
 the Play. The conductor waits a few seconds for bob's answer, then moves
 on without it.
 
-<!-- @demo ask Bob was offline when the conductor wrote his part. Is bob's part lost? -->
+<!-- @demo ask Bob was offline when the conductor wrote bob's part. Is it lost? -->
 
 ```bash
 ./lab.sh restart bob
@@ -672,8 +671,8 @@ land on its own, well after alice's `mi`.
 
 > 💡 **Did you know: bob wrote exactly one Tone.** Coming back, bob read
 > every Play in the conductor's repo from the top, alice's solo included,
-> and wrote one Tone: the part that names him. Had he played it before, he
-> would have written nothing. A Tone's record key is the Play's key plus
+> and wrote one Tone: the part that names bob. Had bob played it before,
+> bob would have written nothing. A Tone's record key is the Play's key plus
 > the part's place in it, so a part already played is already at its
 > path, and bob skips it. Acting once per record is the rule for any
 > follower, because every reconnect starts again from the whole repo.
@@ -802,7 +801,7 @@ Every step of this show, the captions included, was a cue the conductor
 signed into its own repo. So was every note, and every press of the
 page's buttons.
 
-<!-- @demo ask Eve never saw this guide's markdown. Can she tell you what the show was? -->
+<!-- @demo ask Eve never saw this guide's markdown. Can eve tell you what the show was? -->
 
 ```bash
 ./lab.sh eve python replay.py
@@ -826,7 +825,7 @@ the first: step 0, a chapter: 'Backstage'
 
 <!-- @demo point eve.terminal -->
 
-She can. Eve checked the conductor's signature over the whole repo, then
+Yes. Eve checked the conductor's signature over the whole repo, then
 read the show out of it: which guide, every step in the order it was
 signed, and every press. Nothing came from the guide or from the page.
 
@@ -885,8 +884,8 @@ Here each one is a signed record in its owner's repo.
 - Take a member offline mid-tune. While the "Ode to Joy" plays, run
   `./lab.sh eve pkill -xf "python orchestra.py eve.lan"` in a second
   terminal. Each note naming eve now waits for an answer that never comes,
-  then moves on without her. `./lab.sh restart eve` brings her back, and
-  she plays every part she missed, late, all at once.
+  then moves on without it. `./lab.sh restart eve` brings eve back, and
+  eve plays every part it missed, late, all at once.
 
 ## Where this leads
 
