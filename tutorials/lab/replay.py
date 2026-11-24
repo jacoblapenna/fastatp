@@ -36,6 +36,9 @@ async def main() -> None:
         if path.startswith(f"{Cue.nsid}/")
     ]
     mine = [cue for cue in cues if cue["show"] == show["id"]]
+    if not mine:
+        print("no cues yet: this show has not started")
+        return
     print(f"{len(mine)} cues in this show, one per step, in the order they were signed:")
     for action, count in sorted(Counter(cue["action"] for cue in mine).items()):
         print(f"  {count:4d} {action}")

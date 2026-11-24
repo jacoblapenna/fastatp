@@ -46,6 +46,8 @@ async def main() -> None:
     conductor = await checkpoint(CONDUCTOR, "conductor.stage")
     cue_collection, cue_rkey = cue_uri.removeprefix(f"at://{CONDUCTOR}/").split("/")
     cue = conductor.get_record(cue_collection, cue_rkey)
+    if cue["to"] != PLAYER:  # an answer to a cue for someone else proves nothing about this one
+        sys.exit(f"{machine}'s last answer names a cue addressed to {cue['to'] or 'nobody'}")
 
     print(f"asked:    {cue_uri}")
     print(f"          signed by {CONDUCTOR}, verified")

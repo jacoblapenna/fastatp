@@ -184,6 +184,8 @@ async def main() -> None:
     conductor = await checkpoint(CONDUCTOR, "conductor.stage")
     cue_collection, cue_rkey = cue_uri.removeprefix(f"at://{CONDUCTOR}/").split("/")
     cue = conductor.get_record(cue_collection, cue_rkey)
+    if cue["to"] != PLAYER:  # an answer to a cue for someone else proves nothing about this one
+        sys.exit(f"{machine}'s last answer names a cue addressed to {cue['to'] or 'nobody'}")
 
     print(f"asked:    {cue_uri}")
     print(f"          signed by {CONDUCTOR}, verified")
@@ -333,6 +335,9 @@ EXPONENT = -3
 # This member's own rule, not the conductor's and not the lexicon's: it only
 # plays what a person can hear. Fractions keep the comparison exact.
 HEARING = (Fraction(20), Fraction(20_000))
+# Above octave 10 every note in the table is past hearing, so this member
+# stops there, before working out a pitch that could have any number of digits.
+HIGHEST_OCTAVE = 10
 
 
 def now() -> str:
@@ -367,6 +372,9 @@ def my_parts(path: str, record: dict, me: str, tick_ms: int) -> list[tuple[str, 
     for i, part in enumerate(play.parts):
         if part.member != me:
             continue  # someone else's part
+        if part.octave > HIGHEST_OCTAVE:
+            print(f"[orchestra] {path} part {i}: not a note a person can hear; not playing it")
+            continue
         pitch = pitch_of(part.note, part.octave)
         if pitch is None:
             print(f"[orchestra] {path} part {i}: no note called {part.note!r} here; not playing it")
@@ -489,6 +497,9 @@ async def main() -> None:
         if path.startswith(f"{Cue.nsid}/")
     ]
     mine = [cue for cue in cues if cue["show"] == show["id"]]
+    if not mine:
+        print("no cues yet: this show has not started")
+        return
     print(f"{len(mine)} cues in this show, one per step, in the order they were signed:")
     for action, count in sorted(Counter(cue["action"] for cue in mine).items()):
         print(f"  {count:4d} {action}")
@@ -620,9 +631,9 @@ repo, and the page played the Tone, not the Play.
 > 🔑 **Key concept: numbers are whole, and carry their scale.** atproto
 > records have no floats. Alice's 261.626 hertz is two whole numbers:
 > `pitch: 261626` and `pitch_exponent: -3`, which means "counted in
-> thousandths of a hertz". Inside one program a float is exact, but how it
-> is rounded and printed differs between languages and machines, and a
-> signature covers bytes, not intentions. Two whole numbers are the same
+> thousandths of a hertz". A float is a binary approximation: no float is
+> exactly 261.626, and how the nearest one is rounded and printed differs
+> between languages and machines. A signature covers bytes, not intentions. Two whole numbers are the same
 > bytes everywhere. The record says exactly what alice played, and nobody
 > downstream gets to round it differently.
 
@@ -875,8 +886,8 @@ Here each one is a signed record in its owner's repo.
 
 - Retune the orchestra. Change `NOTES` in `orchestra.py` (A at 432 hertz
   instead of 440, say), `./lab.sh clean` and play the guide again. The
-  conductor's records don't change; every Tone does, because tuning is the
-  members' business.
+  conductor's records don't change; every Tone for that note does, because
+  tuning is the members' business.
 - Ask for a note nobody knows. Change one part in the tune to
   `"note": "zap"` and play it again: that member refuses, the conductor
   waits out its answer, and the tune stalls for a moment, then carries on.

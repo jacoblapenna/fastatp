@@ -305,6 +305,13 @@ def parse(text: str) -> dict:
                     if at + 2 != len(words):
                         raise SystemExit(f"line {i}: @demo commit ... at <rkey> ends the cue")
                     words, rkey = words[:at], words[at + 1]
+                    if words:
+                        # a key reused while members still owe an answer to the old
+                        # record would take their late answer as one to the new
+                        raise SystemExit(
+                            f"line {i}: @demo commit ... at <rkey> is a setting for nobody in"
+                            " particular, so it names no members"
+                        )
                 if strangers := [n for n in words if n not in machines]:
                     raise SystemExit(
                         f"line {i}: @demo commit names its members from the cast, not {strangers}"
@@ -370,6 +377,7 @@ def parse(text: str) -> dict:
                 if isinstance(value, list) and rkey:
                     raise SystemExit(f"line {at}: a sequence of records cannot share one key")
                 what = records[0]["$type"] + (f" x{len(records)}" if len(records) > 1 else "")
+                emit_say()  # words between the cue and its record are said before it is signed
                 step = emit(
                     {
                         "kind": "commit",

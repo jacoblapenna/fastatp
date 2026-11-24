@@ -60,7 +60,7 @@
   // machines, and once a commit is what last happened, the repos are what
   // to watch: each machine's fills its panel until the next command.
   let commits = $derived(live.manifest?.steps.some((s) => s.kind === 'commit') ?? false);
-  let repos = $derived(commits && script.last === 'commit' && !['run', 'restart', 'stop'].includes(script.step?.kind));
+  let repos = $derived(commits && script.last === 'commit');
 
   function size(name) {
     if (panels.has(name) || focused(name)) return 'open'; // pointed at, or running: open for this step
@@ -98,7 +98,7 @@
   <main class="machines">
     {#each live.manifest?.machines ?? [] as name (name)}
       <MachinePanel m={live.machines[name]} size={size(name)} active={script.active === name && !concept}
-        focus={focused(name)} {repos} {pointed} {kept} {now} />
+        focus={focused(name) && !repos} {repos} {pointed} {kept} {now} />
       {#if script.code?.machine === name && live.manifest?.files?.[script.code.file]}
         {#key script.code.file + script.code.focus}
           <CodeCard name={script.code.file} file={live.manifest.files[script.code.file]} focus={script.code.focus} />

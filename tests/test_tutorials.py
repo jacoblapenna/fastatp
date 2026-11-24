@@ -399,6 +399,10 @@ def test_an_orchestra_member_plays_only_its_own_parts_and_only_what_it_can_hear(
         ],
     }
     path = f"{music.Play.nsid}/3abc"
+    # an octave past hearing is turned down before any pitch is worked out,
+    # however many digits it has
+    huge = {"$type": music.Play.nsid, "parts": [part(alice, "do", octave=10**9)]}
+    assert orchestra.my_parts(path, huge, alice, tick_ms=250) == []
     tones = orchestra.my_parts(path, play, alice, tick_ms=250)
     assert [rkey for rkey, _ in tones] == ["3abc-0", "3abc-3"]
     do, low_sol = tones[0][1], tones[1][1]
@@ -455,6 +459,10 @@ def test_a_commit_cue_signs_a_record_for_its_members_and_waits_for_their_answers
     )
     assert (setting["machines"], setting["rkey"]) == ([], "self")
 
+    # words between the cue and its record are a caption before the commit, not after
+    told = score("<!-- @demo commit alice -->\n\nAlice, play.\n")["steps"]
+    assert [s["kind"] for s in told if s["kind"] in ("say", "commit")] == ["say", "commit"]
+
     quiet = score("<!-- @demo fails 2 -->\n<!-- @demo commit alice bob -->")["steps"]
     assert next(s for s in quiet if s["kind"] == "commit")["silent"] == ["bob"]
 
@@ -462,6 +470,7 @@ def test_a_commit_cue_signs_a_record_for_its_members_and_waits_for_their_answers
         ("<!-- @demo commit mallory -->", None),  # not in the cast
         ("<!-- @demo commit alice at -->", None),  # at, and no key
         ("<!-- @demo commit at self alice -->", None),  # members come before at
+        ("<!-- @demo commit alice at self -->", None),  # a setting names no members
         ("<!-- @demo commit alice -->", "```bash\n./lab.sh alice ls\n```"),  # no record
         ("<!-- @demo commit alice -->", "```json\n{not json}\n```"),
         ("<!-- @demo commit alice -->", '```json\n{"text": "no type"}\n```'),
@@ -476,6 +485,8 @@ def test_a_commit_cue_signs_a_record_for_its_members_and_waits_for_their_answers
     quiet_step = {"silent": ["bob"]}
     assert play.commit_verdict(quiet_step, ["bob"]) is None
     assert "stays silent, and answered" in play.commit_verdict(quiet_step, [])
+    # in a sequence, a record that does not name bob does not expect bob's silence
+    assert play.commit_verdict(quiet_step, [], meant=[]) is None
 
     # an answer is any record that names the request's URI, wherever it keeps it
     sys.path.insert(0, str(TUTORIALS / "lab"))

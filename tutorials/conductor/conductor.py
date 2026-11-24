@@ -166,6 +166,9 @@ cue_step: dict[str, int] = {}  # cue path -> score step
 results: dict[int, asyncio.Event] = {}
 output: dict[int, list[str]] = {}
 seen: set[tuple[str, str]] = set()  # (machine, path) already turned into events
+# A machine's own records already told, by path and CID: a checkpoint after a
+# reconnect repeats what was told, and only a record whose content changed is new.
+seen_member: set[tuple[str, str, str]] = set()
 # A commit step's record, by its at:// URI: which step signed it, and which
 # members have not answered yet. Kept for the whole show, so an answer that
 # lands after its step moved on is still told: a late member still plays.
@@ -250,9 +253,10 @@ def member_listener(machine: str):
     """What to do with each verified record from one machine's own repo."""
 
     async def on_record(path: str, record: dict) -> None:
-        if (f"{machine}.lan", path) in seen:
+        cid = cid_of(record)
+        if (machine, path, cid) in seen_member:
             return
-        seen.add((f"{machine}.lan", path))
+        seen_member.add((machine, path, cid))
         # every record in its own repo, the moment it is verified: the page
         # shows it before the machine's once-a-second view catches up
         await tell(
@@ -261,11 +265,12 @@ def member_listener(machine: str):
                 "machine": machine,
                 "t": time.time(),
                 "path": path,
-                "cid": cid_of(record),
+                "cid": cid,
                 "value": shown(record),
             }
         )
-        for uri, entry in commits.items():
+        # a snapshot: a commit step can add an entry while this one is telling the page
+        for uri, entry in list(commits.items()):
             if machine in entry["waiting"] and mentions(record, uri):
                 entry["waiting"].discard(machine)
                 held = record.get("duration_ms")
@@ -277,6 +282,7 @@ def member_listener(machine: str):
                         "machine": machine,
                         "t": time.time(),
                         "step": entry["step"],
+                        "commit": uri,  # the record it answers
                         "uri": f"at://{member(machine)}/{path}",
                         "record": record,
                     }
@@ -449,6 +455,8 @@ async def commit_one(step: dict, record: dict, names: list[str], n: int, of: int
             "step": step["id"],
             "uri": uri,
             "silent": sorted(entry["waiting"]),
+            # of the members this record names, those meant to stay silent
+            "meant": sorted(entry["silent"]),
             "index": n,
             "of": of,
         }

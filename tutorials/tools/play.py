@@ -128,9 +128,12 @@ def verdict(step: dict, code: int, lines: list[str] | None = None) -> str | None
     return f"the guide says this works, and it exited {code}"
 
 
-def commit_verdict(step: dict, silent: list[str]) -> str | None:
-    """What is wrong with who answered a committed record, or None if it went as the guide says."""
-    meant = set(step.get("silent", []))
+def commit_verdict(step: dict, silent: list[str], meant: list[str] | None = None) -> str | None:
+    """What is wrong with who answered a committed record, or None if it went as the guide says.
+
+    meant is who the conductor says was meant to stay silent among the members
+    this one record names: in a sequence, a record may not name them all."""
+    meant = set(step.get("silent", []) if meant is None else meant)
     if unexpected := sorted(set(silent) - meant):
         return f"no answer from {', '.join(unexpected)}"
     if spoke := sorted(meant - set(silent)):
@@ -218,7 +221,7 @@ async def main() -> int:
                         print(f"            └ {ev['machine']} answered: {ev['uri']}")
                 elif ev["type"] == "commit-end":
                     committed.add(ev["step"])
-                    if problem := commit_verdict(steps[ev["step"]], ev["silent"]):
+                    if problem := commit_verdict(steps[ev["step"]], ev["silent"], ev.get("meant")):
                         wrong.append(f"step {ev['step']}: {problem}")
                         print(f"            ✗ {problem}")
                 elif ev["type"] == "out" and ev["step"] in procs:

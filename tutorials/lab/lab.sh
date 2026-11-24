@@ -12,14 +12,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 self="$PWD/$(basename "$0")"   # this script by its whole path, so it can call itself from here
+# a guide's name, checked before anything is built or cleaned: a typo stops here, not in the conductor
+guide() { [ -f "../$1.md" ] || { echo "no guide called $1: give its name without .md, like CONDUCTOR_AND_ORCHESTRA" >&2; exit 1; }; }
 case "${1:-}" in
   up)      mkdir -p state; docker compose up --build -d --wait "${@:2}" ;;
   conductor) mkdir -p state; export SCORE="${2:-${SCORE:-GETTING_STARTED}}"
+           guide "$SCORE"
            # a guide names the program its machines run (<!-- @demo peer orchestra.py -->); peer.py if not
            export PEER="${PEER:-$(sed -n 's/^<!-- @demo peer \([a-z_]*\.py\) -->$/\1/p' "../$SCORE.md" | head -1)}"
            CONDUCTOR=did:web:conductor.stage docker compose --profile conductor up --build -d --wait
            echo "the conductor is up: open http://localhost:8080" ;;
-  test)    "$self" clean >/dev/null 2>&1; SCORE="${2:-GETTING_STARTED}" "$self" conductor >/dev/null
+  test)    guide "${2:-GETTING_STARTED}"; "$self" clean >/dev/null 2>&1; SCORE="${2:-GETTING_STARTED}" "$self" conductor >/dev/null
            docker compose exec -T conductor python play.py --speed "${SPEED:-4}" ;;
   down)    docker compose --profile conductor down ;;
   clean)   docker compose --profile conductor down; docker run --rm -v "$PWD/state:/state" alpine:3.20 sh -c 'rm -rf /state/*' ;;

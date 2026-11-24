@@ -160,7 +160,11 @@ function apply(ev, fresh) {
   if (ev.type === 'answer') {
     if (!machine(ev.machine)) return;
     const note = playable(ev.record);
-    live.commits[step] && (live.commits[step].answers[ev.machine] = { text: ev.record?.text ?? '', ms: note?.ms ?? 0 });
+    // an answer is shown against the record it answers: a late one for an
+    // earlier record in a sequence is heard, but not shown under the next
+    const entry = live.commits[step];
+    if (entry && (!ev.commit || entry.uri === ev.commit))
+      entry.answers[ev.machine] = { text: ev.record?.text ?? '', ms: note?.ms ?? 0 };
     // only a note landing now is played: a tab opened late does not hear the past all at once
     if (fresh && note) play(note, pan(ev.machine));
     return;

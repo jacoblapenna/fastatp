@@ -6,7 +6,7 @@
   // once, when the row is added, and only for a record that landed a moment ago
   function flash(el) {
     const age = Date.now() - (record.landed || 0);
-    if (age > 1200) return;
+    if (age > 1200 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     el.animate(
       [
         { background: 'color-mix(in srgb, var(--color-highlight) 45%, var(--color-surface-raised))', borderColor: 'var(--color-highlight)' },

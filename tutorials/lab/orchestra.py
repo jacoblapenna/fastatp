@@ -41,6 +41,9 @@ EXPONENT = -3
 # This member's own rule, not the conductor's and not the lexicon's: it only
 # plays what a person can hear. Fractions keep the comparison exact.
 HEARING = (Fraction(20), Fraction(20_000))
+# Above octave 10 every note in the table is past hearing, so this member
+# stops there, before working out a pitch that could have any number of digits.
+HIGHEST_OCTAVE = 10
 
 
 def now() -> str:
@@ -75,6 +78,9 @@ def my_parts(path: str, record: dict, me: str, tick_ms: int) -> list[tuple[str, 
     for i, part in enumerate(play.parts):
         if part.member != me:
             continue  # someone else's part
+        if part.octave > HIGHEST_OCTAVE:
+            print(f"[orchestra] {path} part {i}: not a note a person can hear; not playing it")
+            continue
         pitch = pitch_of(part.note, part.octave)
         if pitch is None:
             print(f"[orchestra] {path} part {i}: no note called {part.note!r} here; not playing it")

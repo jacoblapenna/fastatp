@@ -325,8 +325,9 @@ peer ships pre-built). Running the full suite — browser/WASM, WireGuard, and
 cross-implementation tests — is covered in
 [`docs/TESTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/docs/TESTING.md).
 
-The [tutorials](#tutorials) are tests too: `cd tutorials/lab && ./lab.sh test <GUIDE>`
-plays a guide headless against the fastatp in the tree, and
+The [tutorials](#tutorials) are tests too: `cd tutorials/lab && ./lab.sh test [GUIDE]`
+plays a guide headless against the fastatp in the tree (`GETTING_STARTED`
+unless you name another, such as `CONDUCTOR_AND_ORCHESTRA`), and
 `uv run pytest` fails when a guide's quoted files drift from the files
 themselves. Every pull request plays every guide in CI, so a tutorial cannot
 stop working without the change that broke it failing its tests.

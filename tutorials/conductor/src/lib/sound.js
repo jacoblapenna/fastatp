@@ -35,10 +35,13 @@ export function play({ hz, ms }, pan = 0) {
   const end = start + ms / 1000;
   const tone = new OscillatorNode(ctx, { type: 'triangle', frequency: hz });
   const level = new GainNode(ctx, { gain: 0 });
-  // a short rise and fall, so a note starts and stops without a click
+  // a short rise and fall, so a note starts and stops without a click; a
+  // very short note gets a rise and a fall to fit inside it
+  const rise = Math.min(0.02, (end - start) / 4);
+  const fall = Math.min(0.08, (end - start) / 2);
   level.gain.setValueAtTime(0, start);
-  level.gain.linearRampToValueAtTime(0.18, start + 0.02);
-  level.gain.setValueAtTime(0.18, Math.max(start + 0.02, end - 0.08));
+  level.gain.linearRampToValueAtTime(0.18, start + rise);
+  level.gain.setValueAtTime(0.18, Math.max(start + rise, end - fall));
   level.gain.linearRampToValueAtTime(0, end);
   tone.connect(level).connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
   tone.start(start);

@@ -21,7 +21,7 @@
 </script>
 
 <div class="records" class:grow bind:this={box} onscroll={scrolled}>
-  {#each records as record (record.path)}
+  {#each records as record (record.path + record.cid)}
     <RecordCard {record} />
   {:else}
     <div class="muted">empty</div>
