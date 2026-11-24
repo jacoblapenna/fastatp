@@ -16,7 +16,7 @@ ask you about any step, and you can run it again or by hand to answer
 ([README.md](README.md) has the other ways to run a guide).
 
 `./lab.sh test` deletes the lab's state (`lab/state/`, throwaway keys and
-repos), boots three machines and the demo engine in Docker, and plays the
+repos), boots the guide's machines and the demo engine in Docker, and plays the
 guide with nobody watching. It prints every command the guide runs, on
 which machine, with its exit code and last line of output, and the title of
 every key concept as the guide reaches it. It exits 0 when the whole guide

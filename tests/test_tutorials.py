@@ -2,6 +2,7 @@
 conductor plays the guides as scores. Both must hold without Docker."""
 
 import importlib.util
+import re
 import sys
 from itertools import pairwise
 from pathlib import Path
@@ -119,6 +120,7 @@ def test_getting_started_is_a_playable_score():
     captions = " ".join(s["text"] for s in score["steps"] if s["kind"] == "say")
     assert "Your rkey will differ" not in captions
     assert score["peer"] == "peer.py"  # guide one's machines run the plain peer
+    assert score["peers"] == {"alice": "peer.py", "bob": "peer.py", "eve": "peer.py"}
     # four chapters
     assert [c["title"] for c in score["chapters"]][2:] == [
         "The private side",
@@ -510,6 +512,7 @@ def test_the_conductor_and_the_orchestra_is_a_playable_score(monkeypatch):
     score = md_manifest.parse((TUTORIALS / "CONDUCTOR_AND_ORCHESTRA.md").read_text())
     steps = score["steps"]
     assert score["peer"] == "orchestra.py"
+    assert set(score["peers"].values()) == {"orchestra.py"}
     assert [c["title"] for c in score["chapters"]] == [
         "Backstage",
         "The orchestra",
@@ -538,3 +541,33 @@ def test_the_conductor_and_the_orchestra_is_a_playable_score(monkeypatch):
     back = next(i for i, s in enumerate(steps) if s["kind"] == "restart")
     silent = next(i for i, s in enumerate(steps) if s.get("silent"))
     assert offline < silent < back and steps[back]["machine"] == "bob"
+
+
+def test_a_guide_names_its_cast_and_what_each_machine_runs():
+    """`@demo machines` is the cast, the machines that boot and no others;
+    `@demo peer` gives every machine a program, or one machine its own, and a
+    machine's own wins. lab.sh boots only machines compose.yml defines."""
+    md_manifest = _tool("md_manifest")
+
+    def score(cues: str) -> dict:
+        return md_manifest.parse(f"<!-- @demo machines alice bank cab-17 -->\n{cues}\n")
+
+    assert score("")["peers"] == {"alice": "peer.py", "bank": "peer.py", "cab-17": "peer.py"}
+    peers = score("<!-- @demo peer orchestra.py -->\n<!-- @demo peer bank bank.py -->")["peers"]
+    assert peers == {"alice": "orchestra.py", "bank": "bank.py", "cab-17": "orchestra.py"}
+    for bad in (
+        "<!-- @demo peer eve eve.py -->",  # not in the cast
+        "<!-- @demo peer bank -->",  # a machine, and no program
+        "<!-- @demo peer bank bank.py extra -->",
+        "<!-- @demo peer ../peer.py -->",  # a file name, not a path
+    ):
+        with pytest.raises(SystemExit):
+            score(bad)
+
+    # the machines lab.sh will boot are the ones compose.yml defines
+    lab = TUTORIALS / "lab"
+    listed = re.search(r'^MACHINES="([^"]+)"', (lab / "lab.sh").read_text(), re.M)
+    # a machine is a service with a name on the LAN; the tap and the conductor are not
+    compose = (lab / "compose.yml").read_text()
+    services = re.findall(r"^    hostname: ([a-z0-9-]+)\.lan$", compose, re.M)
+    assert listed and set(listed.group(1).split()) == set(services)

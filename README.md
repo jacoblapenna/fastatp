@@ -51,7 +51,7 @@ is the thing the wire replaces.
 ## Tutorials
 
 Runnable guides, one per pull request, each building on the one before it.
-Every guide runs against the fastatp in the tree: three machines on a private
+Every guide runs against the fastatp in the tree: its machines on a private
 LAN inside Docker, each a personal data server of its own, read along and
 typed, watched as a show in the browser, or played headless, so a guide breaks
 in the same change as the code it teaches. You need Docker with the compose

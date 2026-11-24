@@ -25,6 +25,17 @@ ip link set wg0 up
 # No peers yet. The peer process adds them as it admits DIDs (the admitting side) or
 # as pair.py is run (reader side). Until then wg0 is a locked door.
 # Part 4 (`./lab.sh conductor`): this machine's player starts peer.py and takes the demo's cues.
-# PEER picks the program: peer.py, or a guide's own that builds on it (orchestra.py).
+# PEER picks the program: peer.py, or a guide's own that builds on it. It is
+# one program for every machine (orchestra.py), one per machine
+# (bank=bank.py hoot=hoot.py), or both; this machine's own wins.
+PROGRAM=peer.py
+for word in ${PEER:-}; do
+  case "$word" in
+    "${DOMAIN%.lan}="*) PROGRAM="${word#*=}"; break ;;
+    *=*) ;;
+    *) PROGRAM="$word" ;;
+  esac
+done
+export PEER="$PROGRAM"
 [ -n "$CONDUCTOR" ] && exec python player.py "$DOMAIN"
-exec python "${PEER:-peer.py}" "$DOMAIN"
+exec python "$PEER" "$DOMAIN"

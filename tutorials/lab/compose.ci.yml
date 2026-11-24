@@ -18,6 +18,9 @@ services:
   alice: *reads
   bob: *reads
   eve: *reads
+  bank: *reads
+  hoot: *reads
+  cab-17: *reads
   conductor:
     build:
       cache_from: ["type=local,src=${LAB_CACHE}"]

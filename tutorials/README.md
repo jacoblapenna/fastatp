@@ -15,8 +15,9 @@ what happened on the machines.
 | 3 | Hoot | Agents with models and tools, a verified chain of custody | next |
 | 4 | The browser app | A person reaching an app from a browser tab with no secret on the wire | after 3 |
 
-Everything they run is shared: `lab/` is three machines on a LAN inside
-Docker and the scripts baked into their image, `conductor/` is the demo
+Everything they run is shared: `lab/` is the machines on a LAN inside
+Docker and the scripts baked into their image (each guide names its cast,
+`<!-- @demo machines alice bob eve -->`, and only those machines boot), `conductor/` is the demo
 engine's page, and `tools/` turns a guide into the score the conductor
 plays and keeps a guide's quoted files equal to the files themselves. A new
 guide adds one markdown file, whatever scripts it needs, and one line in
