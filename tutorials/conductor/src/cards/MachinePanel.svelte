@@ -1,20 +1,23 @@
 <script>
   // One machine, as that machine sees itself: its terminal, its own repo,
-  // and its tunnel. The terminal is always open; the repo and the tunnel
-  // fold to one line each until the viewer opens them, the score points at
-  // them, or a cue keeps them open. Every section is an anchor a key
-  // concept can point at.
+  // and its tunnel. The terminal is open; the repo and the tunnel fold to
+  // one line each until the viewer opens them, the score points at them, or
+  // a cue keeps them open. While records are what is happening (repos), it
+  // is the other way round: the repo fills the panel and the terminal folds
+  // to its last command. Every section is an anchor a key concept can point at.
   import Terminal from './Terminal.svelte';
-  import RecordCard from './RecordCard.svelte';
+  import RepoList from './RepoList.svelte';
   import WgPeers from './WgPeers.svelte';
 
-  let { m, size, active, focus = false, pointed = new Set(), kept = new Set(), now } = $props();
+  let { m, size, active, focus = false, repos = false, pointed = new Set(), kept = new Set(), now } = $props();
   let id = $derived(m.identity);
-  let chosen = $state({ repo: false, tunnel: false }); // what the viewer opened by hand
+  let chosen = $state({ repo: false, tunnel: false, terminal: false }); // what the viewer opened by hand
+  let last = $derived(m.order.length ? m.procs[m.order.at(-1)].display.replace(`./lab.sh ${m.name} `, '') : '');
 
   const anchor = (s) => `${m.name}.${s}`;
   const isPointed = (s) => pointed.has(anchor(s));
-  const shown = (s) => chosen[s] || isPointed(s) || kept.has(anchor(s));
+  const shown = (s) => chosen[s] || isPointed(s) || kept.has(anchor(s)) || (repos && s === 'repo');
+  let termOpen = $derived(!repos || chosen.terminal || isPointed('terminal') || focus);
   // A click toggles from what is on screen, not from the hidden flag: closing a
   // section the show is holding open means "not by my hand", so it folds when the show lets go.
   let open = $derived(m.wg.filter((p) => p.latest_handshake && now / 1000 - p.latest_handshake < 150).length);
@@ -30,28 +33,29 @@
   {#if size === 'collapsed'}
     <div class="summary">
       {m.repo?.records.length ?? 0} records · {m.wg.length} tunnel peers
-      {#if m.order.length}· last: {m.procs[m.order.at(-1)].display.replace(`./lab.sh ${m.name} `, '')}{/if}
+      {#if last}· last: {last}{/if}
     </div>
   {:else}
     <div class="body">
-      <div class="section term" class:focus class:pointed={isPointed('terminal')} data-anchor={anchor('terminal')}>
-        <div class="h4">terminal</div>
-        <Terminal {m} />
+      <div class="section" class:term={termOpen} class:focus class:pointed={isPointed('terminal')} data-anchor={anchor('terminal')}>
+        {#if repos}
+          <button class="h4" onclick={() => (chosen.terminal = !termOpen)} aria-expanded={termOpen}>
+            <span class="tri">{termOpen ? '▾' : '▸'}</span> terminal
+            {#if !termOpen && last}<span class="meta">{m.name}$ {last}</span>{/if}
+          </button>
+        {:else}
+          <div class="h4">terminal</div>
+        {/if}
+        {#if termOpen}<Terminal {m} />{/if}
       </div>
 
-      <div class="section" class:pointed={isPointed('repo')} data-anchor={anchor('repo')}>
+      <div class="section" class:repo={repos && shown('repo')} class:pointed={isPointed('repo')} data-anchor={anchor('repo')}>
         <button class="h4" onclick={() => (chosen.repo = !shown('repo'))} aria-expanded={shown('repo')}>
           <span class="tri">{shown('repo') ? '▾' : '▸'}</span> public repo
-          <span class="meta">{m.repo?.records.length ?? 0} record{m.repo?.records.length === 1 ? '' : 's'}{#if m.repo} · rev {m.repo.rev}{/if}</span>
+          <span class="meta">{m.repo?.records.length ?? 0} record{m.repo?.records.length === 1 ? '' : 's'}{#if m.repo?.rev} · rev {m.repo.rev}{/if}</span>
         </button>
         {#if shown('repo')}
-          <div class="records">
-            {#each m.repo?.records ?? [] as record (record.path)}
-              <RecordCard {record} />
-            {:else}
-              <div class="muted">empty</div>
-            {/each}
-          </div>
+          <RepoList records={m.repo?.records ?? []} grow={repos} />
           {#if id?.channel}
             <div class="channel" title={id.channel}>
               gated channel <code>{id.channel.slice(0, 22)}…</code>
@@ -104,7 +108,7 @@
   button.h4:hover { color: var(--color-text); }
   .tri { width: 10px; display: inline-block; }
   .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .records { max-height: 96px; overflow: auto; }
+  .section.repo { flex: 1 1 0; display: flex; flex-direction: column; min-height: 90px; }
   .channel { font-size: 11.5px; margin-top: 3px; }
   .muted { color: var(--color-text-muted); font-size: 11.5px; }
 </style>

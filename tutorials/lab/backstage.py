@@ -81,10 +81,18 @@ class Cue(Lexicon):
     focus: str = ""  # ...open at the first line holding this
     wait_ms: int = 0  # a wait, in milliseconds: the data model has no floats
     chapter: int = 0  # a chapter's number, where one begins
+    record: str = ""  # the at:// URI of the record a commit step signed into this repo
 
     @classmethod
     def for_step(
-        cls, step: dict, *, show: str, to: str, command: str, env: dict[str, str]
+        cls,
+        step: dict,
+        *,
+        show: str,
+        to: str,
+        command: str,
+        env: dict[str, str],
+        record: str = "",
     ) -> "Cue":
         """The cue for one step of the score, with all the step says in it."""
         kind = step["kind"]
@@ -108,6 +116,7 @@ class Cue(Lexicon):
             focus=code.get("focus", ""),
             wait_ms=int(step.get("seconds", 0) * 1000),
             chapter=step.get("number", 0),
+            record=record,
         )
 
 
@@ -152,10 +161,26 @@ class Control(Lexicon):
 
 
 OnRecord = Callable[[str, dict], Awaitable[None]]
+
+
+def mentions(value: Any, uri: str) -> bool:
+    """Whether a record names uri anywhere in it: how an answer points at its request.
+
+    No field name is assumed. A Tone keeps it in `play`, another record type
+    may keep it elsewhere, and the conductor reads them all the same way."""
+    if isinstance(value, dict):
+        return any(mentions(v, uri) for v in value.values())
+    if isinstance(value, list):
+        return any(mentions(v, uri) for v in value)
+    return value == uri
+
+
 MAX_FRAME = 5 * 1024 * 1024  # the sync spec's ceiling for one firehose frame
 
 
-async def follow(did: str, host: str, on_record: OnRecord) -> None:
+async def follow(
+    did: str, host: str, on_record: OnRecord, resolve: Callable[[], Any] = resolver
+) -> None:
     """Follow one repo forever: checkpoint, then tail, verifying every commit.
 
     on_record(path, record) is called for every record in the checkpoint and
@@ -167,7 +192,7 @@ async def follow(did: str, host: str, on_record: OnRecord) -> None:
     while True:
         # A fresh mirror and resolver each time: a peer that restarted may
         # have a new key, and a cached DID document would refuse it.
-        documents = resolver()
+        documents = resolve()
         try:
             mirror = RepoMirror(did, resolver=documents)
             async with httpx.AsyncClient(timeout=5) as http:

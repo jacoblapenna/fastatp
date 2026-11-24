@@ -25,5 +25,6 @@ ip link set wg0 up
 # No peers yet. The peer process adds them as it admits DIDs (the admitting side) or
 # as pair.py is run (reader side). Until then wg0 is a locked door.
 # Part 4 (`./lab.sh conductor`): this machine's player starts peer.py and takes the demo's cues.
+# PEER picks the program: peer.py, or a guide's own that builds on it (orchestra.py).
 [ -n "$CONDUCTOR" ] && exec python player.py "$DOMAIN"
-exec python peer.py "$DOMAIN"
+exec python "${PEER:-peer.py}" "$DOMAIN"

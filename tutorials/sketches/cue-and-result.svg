@@ -1,0 +1,32 @@
+<!-- the request and the answer are both records, each in its owner's repo, and each side follows the other -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="the conductor's repo holds the cue; alice's backstage repo holds the result; each follows the other's repo, and nothing is sent">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-primary: #ff9a3d; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-primary: #ff9a3d; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <defs>
+    <marker id="head-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-primary, var(--fb-primary, #ff9a3d))" /></marker>
+    <marker id="head-verified" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-verified, var(--fb-verified, #256f1c))" /></marker>
+  </defs>
+  <rect x="12" y="30" width="128" height="92" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="2" />
+  <text x="76" y="48" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">conductor's repo</text>
+  <text x="76" y="62" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">did:web:conductor.stage</text>
+  <rect x="22" y="74" width="108" height="36" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <text x="76" y="89" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">cue</text>
+  <text x="76" y="102" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">alice: run hostname</text>
+  <rect x="180" y="30" width="128" height="92" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="244" y="48" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">backstage repo</text>
+  <text x="244" y="62" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">did:web:alice.stage%3A1337</text>
+  <rect x="190" y="74" width="108" height="36" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <text x="244" y="89" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">result</text>
+  <text x="244" y="102" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">exit 0, for that cue</text>
+  <path d="M180 56 C160 40, 160 40, 141 52" fill="none" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="1.5" marker-end="url(#head-primary)" />
+  <text x="160" y="26" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-primary, var(--fb-primary, #ff9a3d))">alice follows</text>
+  <path d="M140 104 C160 120, 160 120, 179 108" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <text x="160" y="136" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-verified, var(--fb-verified, #256f1c))">the conductor follows</text>
+  <text x="160" y="166" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">the request and the answer are both records</text>
+  <text x="160" y="182" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">nothing is sent, nothing is returned</text>
+</svg>

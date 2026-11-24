@@ -24,8 +24,9 @@ import re
 import time
 from pathlib import Path
 
+import httpx
 import uvicorn
-from backstage import Control, Cue, File, Image, Show, follow
+from backstage import Control, Cue, File, Image, Show, follow, mentions
 from dids import resolver
 from starlette.applications import Starlette
 from starlette.responses import FileResponse, JSONResponse
@@ -33,7 +34,8 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from fastatp import DIDServer, Identity, build_did_document
+from fastatp import DIDServer, Identity, WebResolver, build_did_document, dagcbor, datamodel
+from fastatp.cid import CID
 from fastatp.tid import generate_tid
 
 SCORE = os.environ.get("SCORE", "GETTING_STARTED")
@@ -80,10 +82,69 @@ def player(machine: str) -> str:
     return f"did:web:{machine}.stage%3A1337"
 
 
+def member(machine: str) -> str:
+    """A machine's own DID, the one the guide's records name."""
+    return f"did:web:{machine}.lan"
+
+
+class _OverStage(httpx.AsyncHTTPTransport):
+    """The conductor is not on the LAN, so it fetches a machine's DID document
+    from the same peer over the stage wire: alice.lan is asked as alice.stage.
+    The document, and the key that verifies alice's repo, are the same; the
+    LAN carries only the guide's own traffic."""
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if host.endswith(".lan"):
+            host = host.removesuffix(".lan") + ".stage"
+        request.url = request.url.copy_with(scheme="http", host=host)
+        return await super().handle_async_request(request)
+
+
+def over_stage() -> WebResolver:
+    return WebResolver(client=httpx.AsyncClient(transport=_OverStage()))
+
+
 async def write(record) -> str:
     rkey = generate_tid()
-    await server.put_record(record.nsid, rkey, record)
+    await sign(record.nsid, rkey, record)
     return f"{record.nsid}/{rkey}"
+
+
+def shown(value):
+    """A record as the page lists it: a long string (a lab file's whole text) cut short."""
+    if isinstance(value, str):
+        return value if len(value) <= 200 else value[:200] + "…"
+    if isinstance(value, dict):
+        return {k: shown(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [shown(v) for v in value]
+    return value
+
+
+def cid_of(record: dict) -> str:
+    """A verified record's CID, from its bytes, as its repo has it."""
+    return CID.for_dag_cbor(dagcbor.encode(datamodel.from_json(record))).encode()
+
+
+async def sign(collection: str, rkey: str, record) -> None:
+    """Every write into the conductor's repo goes through here, so the page
+    shows the repo growing record by record: cues, presses, the guide's own
+    records, all of it, each the moment it is signed."""
+    if await server.put_record(collection, rkey, record) is None:
+        return  # the same record again: nothing new was signed
+    value = server.repo.get_record(collection, rkey)
+    await tell(
+        {
+            "type": "signed",
+            "t": time.time(),
+            "path": f"{collection}/{rkey}",
+            "cid": cid_of(value),
+            "value": shown(value),
+            "rev": server.repo.rev,
+            "count": server.repo.record_count(),
+        }
+    )
 
 
 # --- the show ---------------------------------------------------------------
@@ -105,6 +166,14 @@ cue_step: dict[str, int] = {}  # cue path -> score step
 results: dict[int, asyncio.Event] = {}
 output: dict[int, list[str]] = {}
 seen: set[tuple[str, str]] = set()  # (machine, path) already turned into events
+# A machine's own records already told, by path and CID: a checkpoint after a
+# reconnect repeats what was told, and only a record whose content changed is new.
+seen_member: set[tuple[str, str, str]] = set()
+# A commit step's record, by its at:// URI: which step signed it, and which
+# members have not answered yet. Kept for the whole show, so an answer that
+# lands after its step moved on is still told: a late member still plays.
+commits: dict[str, dict] = {}
+ANSWER_SECONDS = 10  # how long a commit step waits for its members before it moves on
 wake = asyncio.Event()
 
 
@@ -180,6 +249,50 @@ def listener(machine: str):
     return on_record
 
 
+def member_listener(machine: str):
+    """What to do with each verified record from one machine's own repo."""
+
+    async def on_record(path: str, record: dict) -> None:
+        cid = cid_of(record)
+        if (machine, path, cid) in seen_member:
+            return
+        seen_member.add((machine, path, cid))
+        # every record in its own repo, the moment it is verified: the page
+        # shows it before the machine's once-a-second view catches up
+        await tell(
+            {
+                "type": "record",
+                "machine": machine,
+                "t": time.time(),
+                "path": path,
+                "cid": cid,
+                "value": shown(record),
+            }
+        )
+        # a snapshot: a commit step can add an entry while this one is telling the page
+        for uri, entry in list(commits.items()):
+            if machine in entry["waiting"] and mentions(record, uri):
+                entry["waiting"].discard(machine)
+                held = record.get("duration_ms")
+                if isinstance(held, int) and held > 0:  # it says how long it sounds
+                    entry["ends"] = max(entry["ends"], time.time() + held / 1000)
+                await tell(
+                    {
+                        "type": "answer",
+                        "machine": machine,
+                        "t": time.time(),
+                        "step": entry["step"],
+                        "commit": uri,  # the record it answers
+                        "uri": f"at://{member(machine)}/{path}",
+                        "record": record,
+                    }
+                )
+                if not entry["waiting"] - entry["silent"]:
+                    entry["answered"].set()
+
+    return on_record
+
+
 def first_json(lines: list[str]) -> dict:
     m = re.search(r"\{.*\}", "\n".join(lines), re.S)
     try:
@@ -188,7 +301,7 @@ def first_json(lines: list[str]) -> dict:
         return {}
 
 
-async def cue(step: dict, command: str = "") -> int:
+async def cue(step: dict, command: str = "", record: str = "") -> int:
     """Sign a cue into the conductor's repo; the player sees it on the firehose.
 
     The cue carries the whole step (its words, its targets, the code on show),
@@ -200,6 +313,7 @@ async def cue(step: dict, command: str = "") -> int:
             to=player(step["machine"]) if "machine" in step else "",
             command=command,
             env=env,
+            record=record,
         )
     )
     cue_step[path] = step["id"]
@@ -211,7 +325,7 @@ async def cue(step: dict, command: str = "") -> int:
 # these. A key concept waits for Got it, and Got it is also Next: the step
 # the concept set up follows without another press. Play (auto) paces
 # everything by the speed instead.
-VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter", "ask")
+VISIBLE = ("run", "restart", "stop", "commit", "say", "concept", "chapter", "ask")
 PAUSES = tuple(k for k in VISIBLE if k != "concept")
 
 
@@ -255,6 +369,9 @@ async def perform(step: dict) -> None:
                     subs[save["literal"]] = uri.rsplit("/", 1)[-1]
             await asyncio.sleep(1.2 * pace)
         return
+    if kind == "commit":
+        await commit(step, pace)
+        return
     await cue(step)  # the rest of the score is in the repo too: the show is a record
     if kind == "heading":
         await asyncio.sleep(1.5 * pace)
@@ -270,6 +387,81 @@ async def perform(step: dict) -> None:
             await wake.wait()
     elif kind == "wait":
         await asyncio.sleep(step["seconds"])
+
+
+async def commit(step: dict, pace: float) -> None:
+    """Sign the guide's record into this repo, then wait for the members' answers.
+
+    Nothing is sent to a member. Each one follows this repo, reads the record
+    with its own model, and answers, if it chooses to, with a record in its
+    own repo that names this one's URI. The conductor follows their repos and
+    waits for those answers: the same shape as waiting for a player's result.
+
+    A sequence is conducted, not scheduled. The conductor signs one record,
+    waits until the members it names have answered and their sound has gone
+    to the page, waits out how long they said it lasts, and only then signs
+    the next. Nothing is written ahead, so a late answer delays everything
+    after it, as a late player holds up a real orchestra."""
+    sequence = "records" in step
+    records = step["records"] if sequence else [step["record"]]
+    for n, record in enumerate(records, 1):
+        # in a sequence, each record waits for the members it names
+        names = (
+            [m for m in step["machines"] if mentions(record, member(m))]
+            if sequence
+            else step["machines"]
+        )
+        entry = await commit_one(step, record, names, n, len(records))
+        if sequence:
+            await asyncio.sleep(max(0.0, entry["ends"] - time.time()))
+    await asyncio.sleep(1.2 * pace)
+
+
+async def commit_one(step: dict, record: dict, names: list[str], n: int, of: int) -> dict:
+    """One record, signed, and the wait for its answers."""
+    rkey = step.get("rkey") or generate_tid()  # a fixed key is updated in place
+    uri = f"at://{did}/{record['$type']}/{rkey}"
+    entry = commits[uri] = {
+        "step": step["id"],
+        "waiting": set(names),
+        "silent": set(step.get("silent", [])) & set(names),  # meant not to answer
+        "answered": asyncio.Event(),
+        "ends": 0.0,  # when the longest sound an answer reported is over
+    }
+    await sign(record["$type"], rkey, record)
+    await cue(step, record=uri)
+    await tell(
+        {
+            "type": "commit",
+            "t": time.time(),
+            "step": step["id"],
+            "uri": uri,
+            "machines": names,
+            "record": record,
+            "index": n,
+            "of": of,
+        }
+    )
+    if entry["silent"] >= entry["waiting"]:
+        entry["answered"].set()  # nobody is meant to answer: only the grace below
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(entry["answered"].wait(), timeout=ANSWER_SECONDS)
+    if entry["silent"]:
+        await asyncio.sleep(3)  # long enough for a member meant to be silent to show it is not
+    await tell(
+        {
+            "type": "commit-end",
+            "t": time.time(),
+            "step": step["id"],
+            "uri": uri,
+            "silent": sorted(entry["waiting"]),
+            # of the members this record names, those meant to stay silent
+            "meant": sorted(entry["silent"]),
+            "index": n,
+            "of": of,
+        }
+    )
+    return entry
 
 
 async def director() -> None:
@@ -366,21 +558,33 @@ async def browser(ws: WebSocket) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
-    await server.put_record(
-        Show.nsid, "self", Show(id=SHOW, score=SCORE)
-    )  # before any cue: "this is the show now"
+    # what the repo held before this show, from every earlier boot: the page counts them
+    await tell({"type": "repo", "t": time.time(), "count": server.repo.record_count()})
+    # before any cue: "this is the show now"
+    await sign(Show.nsid, "self", Show(id=SHOW, score=SCORE))
     for name, lab_file in score.get("files", {}).items():  # the code a cue can put on show
-        await server.put_record(File.nsid, name, File(show=SHOW, name=name, **lab_file))
+        await sign(File.nsid, name, File(show=SHOW, name=name, **lab_file))
     for name, image in score.get("images", {}).items():  # the pictures, as blobs beside the repo
         data = Path(name).read_bytes()
         blob = server.repo.add_blob(data, "image/svg+xml" if name.endswith(".svg") else "image/png")
-        await server.put_record(
+        await sign(
             Image.nsid,
             name.replace("/", "-"),
             Image(show=SHOW, name=name, alt=image["alt"], image=blob),
         )
         image["cid"] = blob.ref.ref  # the page fetches it from this repo with getBlob
     tasks = [asyncio.create_task(director())]
+    if any(step["kind"] == "commit" for step in steps):
+        # a score that commits records for the machines follows their own
+        # repos too, where their answers land
+        for machine in score["machines"]:
+            tasks.append(
+                asyncio.create_task(
+                    follow(
+                        member(machine), f"{machine}.stage", member_listener(machine), over_stage
+                    )
+                )
+            )
     for machine in score["machines"]:
         tasks.append(
             asyncio.create_task(follow(player(machine), f"{machine}.stage:1337", listener(machine)))

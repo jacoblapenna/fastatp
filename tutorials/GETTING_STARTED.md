@@ -2421,8 +2421,9 @@ None of this is free, and the price is worth stating plainly:
 > record, addressed to one machine. That machine follows the conductor,
 > performs the step, and signs what happened into its own repo, which the
 > conductor follows before it moves on. Every command you just watched was
-> asked for, and answered, in signed records. The demo engine tutorial,
-> next, takes the conductor apart and has the machines play a scale.
+> asked for, and answered, in signed records. The next guide, the
+> conductor and the orchestra, takes the conductor apart and has the
+> machines play a tune.
 
 <!-- @demo end -->
 
@@ -2481,10 +2482,12 @@ support host networking.
 You can orchestrate workloads with signed records too. Everything the
 conductor did in Part 4, cueing three machines and waiting for each one's
 signed answer, was asked for and answered in records, with no connection
-held and no secret shared. The next tutorial looks under the hood at how
-these tutorials get orchestrated by FastATP: the demo engine, taken apart,
-which is the same request-and-answer pattern as an agent asking a tool for
-work, with no model in the way yet. After it come Hoot, where the agents
+held and no secret shared. The next tutorial,
+[the conductor and the orchestra](CONDUCTOR_AND_ORCHESTRA.md), looks under
+the hood at how these tutorials get orchestrated by FastATP, then puts the
+engine to work: a task is a signed record in the asker's repo, its result a
+signed record in the worker's, the same request-and-answer pattern as an
+agent asking a tool for work, with no model in the way yet. After it come Hoot, where the agents
 are real, and the browser app, where a person reaches an app without ever
 sending a secret across the wire. Each guide builds on the one before it.
 

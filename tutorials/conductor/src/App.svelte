@@ -7,6 +7,7 @@
   import Controls from './cards/Controls.svelte';
   import Caption from './cards/Caption.svelte';
   import MachinePanel from './cards/MachinePanel.svelte';
+  import ConductorPanel from './cards/ConductorPanel.svelte';
   import NetDiagram from './cards/NetDiagram.svelte';
   import WireLane from './cards/WireLane.svelte';
   import KeyConcept from './cards/KeyConcept.svelte';
@@ -55,6 +56,11 @@
   let pointed = $derived(new Set(concept?.point ?? (script.step?.kind === 'say' ? script.step.point ?? [] : [])));
   let panels = $derived(new Set([...pointed].map((t) => t.split('.')[0])));
   let kept = $derived(script.open); // sections a cue keeps open
+  // A score that commits records shows the conductor's repo beside the
+  // machines, and once a commit is what last happened, the repos are what
+  // to watch: each machine's fills its panel until the next command.
+  let commits = $derived(live.manifest?.steps.some((s) => s.kind === 'commit') ?? false);
+  let repos = $derived(commits && script.last === 'commit');
 
   function size(name) {
     if (panels.has(name) || focused(name)) return 'open'; // pointed at, or running: open for this step
@@ -92,13 +98,14 @@
   <main class="machines">
     {#each live.manifest?.machines ?? [] as name (name)}
       <MachinePanel m={live.machines[name]} size={size(name)} active={script.active === name && !concept}
-        focus={focused(name)} {pointed} {kept} {now} />
+        focus={focused(name) && !repos} {repos} {pointed} {kept} {now} />
       {#if script.code?.machine === name && live.manifest?.files?.[script.code.file]}
         {#key script.code.file + script.code.focus}
           <CodeCard name={script.code.file} file={live.manifest.files[script.code.file]} focus={script.code.focus} />
         {/key}
       {/if}
     {/each}
+    {#if commits}<ConductorPanel {pointed} wide={repos} />{/if}
   </main>
 
   <footer>

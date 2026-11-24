@@ -3,6 +3,7 @@
 // Nothing here is guessed; every card renders from this one object.
 
 import { setGlossary } from './md.js';
+import { play, playable, unlock } from './sound.js';
 
 export const live = $state({
   connected: false,
@@ -16,10 +17,18 @@ export const live = $state({
   until: null, // a chapter's first step the conductor is hurrying to
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
+  commits: {}, // step -> a record the conductor signed for members, and their answers so far
+  conductor: emptyRepo(), // the conductor's own repo: every record it signs, as it signs it
 });
 
+function emptyRepo() {
+  return { before: 0, count: 0, rev: '', records: [] };
+}
+
+const KEEP = 400; // records the conductor's list keeps on screen; its count says how many there are
+
 // What one press of Next shows; what Back looks at again.
-export const VISIBLE = ['run', 'restart', 'stop', 'say', 'concept', 'chapter', 'ask'];
+export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask'];
 
 // Looking back: how many visible steps behind the conductor the page is
 // showing. The machines stay where they are, because every step really ran;
@@ -60,6 +69,8 @@ export function connect() {
       live.manifest = msg.manifest;
       live.machines = {};
       live.wire = [];
+      live.commits = {};
+      live.conductor = emptyRepo();
       for (const name of msg.manifest.machines) machine(name);
       status(msg);
       for (const ev of msg.events) apply(ev, false);
@@ -72,6 +83,7 @@ export function connect() {
 // not go: Next and the chapter cards are disabled while disconnected, a key
 // concept's card stays open until its Got it lands, and this is the backstop.
 export function send(type, extra = {}) {
+  unlock(); // every press comes through here: the first one opens the speaker
   if (socket?.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify({ type, ...extra }));
   return true;
@@ -87,11 +99,76 @@ function status(msg) {
 function machine(name) {
   if (!live.manifest?.machines?.includes(name)) return null;
   return (live.machines[name] ??= {
-    name, identity: null, repo: null, wg: [], stage: 'down', log: [], procs: {}, order: [],
+    name, identity: null, repo: null, wg: [], stage: 'down', log: [], procs: {}, order: [], landed: [],
   });
 }
 
+// A machine's repo as its view reports it, with the records the conductor saw
+// land since: a view is a second behind, so a just-landed record would vanish
+// and come back. One the view still lacks after a few seconds is let go.
+function merged(records, m) {
+  const now = Date.now();
+  m.landed = m.landed.filter((r) => now - r.kept < 5000);
+  const byPath = new Map(records.map((r) => [r.path, r]));
+  for (const r of m.landed) if (byPath.has(r.path)) byPath.get(r.path).landed ||= r.landed;
+  const extra = m.landed.filter((r) => !byPath.has(r.path));
+  return { rev: m.repo?.rev ?? '', records: [...records, ...extra].sort((a, b) => (a.path < b.path ? -1 : 1)) };
+}
+
+// Each machine is heard from its own place, left to right in cast order.
+function pan(name) {
+  const cast = live.manifest?.machines ?? [];
+  const i = cast.indexOf(name);
+  return cast.length > 1 && i >= 0 ? -0.7 + (1.4 * i) / (cast.length - 1) : 0;
+}
+
 function apply(ev, fresh) {
+  const step = Number(ev.step);
+  if (ev.type === 'repo') {
+    live.conductor.before = live.conductor.count = Number(ev.count) || 0;
+    return;
+  }
+  if (ev.type === 'signed') {
+    const c = live.conductor;
+    // a record updated in place (the show now, the tempo) moves to the end: it was just signed
+    const i = c.records.findIndex((r) => r.path === ev.path);
+    if (i >= 0) c.records.splice(i, 1);
+    c.records.push({ path: ev.path, cid: ev.cid, value: ev.value, landed: fresh ? Date.now() : 0 });
+    if (c.records.length > KEEP) c.records.splice(0, c.records.length - KEEP);
+    Object.assign(c, { count: ev.count, rev: ev.rev });
+    return;
+  }
+  if (ev.type === 'record') {
+    const m = machine(ev.machine);
+    if (!m) return;
+    // a record in the machine's own repo, verified by the conductor the moment
+    // it landed: shown now, until the machine's own view of its repo has it too
+    const rec = { path: ev.path, cid: ev.cid, value: ev.value, landed: fresh ? Date.now() : 0, kept: Date.now() };
+    m.landed = [...m.landed.filter((r) => r.path !== ev.path), rec];
+    if (m.repo) m.repo = merged(m.repo.records, m);
+    else m.repo = { rev: '', records: [rec] };
+    return;
+  }
+  if (ev.type === 'commit' && Number.isInteger(step)) {
+    live.commits[step] = { uri: ev.uri, machines: ev.machines ?? [], answers: {}, silent: null, index: ev.index ?? 1, of: ev.of ?? 1 };
+    return;
+  }
+  if (ev.type === 'commit-end' && live.commits[step]) {
+    live.commits[step].silent = ev.silent ?? [];
+    return;
+  }
+  if (ev.type === 'answer') {
+    if (!machine(ev.machine)) return;
+    const note = playable(ev.record);
+    // an answer is shown against the record it answers: a late one for an
+    // earlier record in a sequence is heard, but not shown under the next
+    const entry = live.commits[step];
+    if (entry && (!ev.commit || entry.uri === ev.commit))
+      entry.answers[ev.machine] = { text: ev.record?.text ?? '', ms: note?.ms ?? 0 };
+    // only a note landing now is played: a tab opened late does not hear the past all at once
+    if (fresh && note) play(note, pan(ev.machine));
+    return;
+  }
   if (ev.type === 'wire') {
     live.wire.push({ ...ev, seen: fresh ? Date.now() : 0 });
     if (live.wire.length > 500) live.wire.splice(0, live.wire.length - 500);
@@ -99,7 +176,6 @@ function apply(ev, fresh) {
   }
   const m = machine(ev.machine);
   if (!m) return;
-  const step = Number(ev.step);
   if (['proc', 'out'].includes(ev.type) && !Number.isInteger(step)) return;
   if (ev.type === 'stage') m.stage = ev.state;
   else if (ev.type === 'view') {
@@ -158,7 +234,7 @@ export function nameOf({ key, ip, did }) {
 // --- where the script is ------------------------------------------------------
 
 export function scriptState(manifest, cursor) {
-  const s = { part: '', section: '', say: '', ask: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null };
+  const s = { part: '', section: '', say: '', ask: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null, last: null };
   if (!manifest) return s;
   for (const name of manifest.machines) s.layout[name] = 'open';
   let answered = false; // the step before this one was a key concept: its question is answered
@@ -171,9 +247,12 @@ export function scriptState(manifest, cursor) {
     if (step.kind === 'heading') [s.say, s.code, s.ask] = ['', null, ''];
     // a command shows the file it runs, beside its machine, until the next command
     if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
+    if (step.kind === 'commit') s.code = step.code && step.machines.length ? { ...step.code, machine: step.machines[0] } : null;
     if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];
     if (step.kind === 'ask') s.ask = step.text; // stays up through the command it asks about
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
+    // what last happened: a command (watch its terminal) or a commit (watch the repos)
+    if (['run', 'restart', 'stop', 'commit'].includes(step.kind)) s.last = step.kind;
     if (step.kind === 'layout' && (step.action === 'open' || step.action === 'close')) {
       for (const target of step.targets) step.action === 'open' ? s.open.add(target) : s.open.delete(target);
     } else if (step.kind === 'layout') {

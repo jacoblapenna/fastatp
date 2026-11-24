@@ -32,7 +32,16 @@ from pathlib import Path
 
 import websockets
 
-VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter", "ask")  # one press of Next each
+VISIBLE = (
+    "run",
+    "restart",
+    "stop",
+    "commit",
+    "say",
+    "concept",
+    "chapter",
+    "ask",
+)  # one press of Next each
 WIDTH, HEIGHT = 1500, 1000
 
 CARD = "document.querySelector('.gotit')?.closest('.card')"

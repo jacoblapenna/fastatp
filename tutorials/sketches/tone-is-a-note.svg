@@ -1,0 +1,31 @@
+<!-- Tone inherits Note: it keeps Note's fields and rules and adds its own -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="Note has text and created_at; Tone inherits both and adds play, pitch, pitch_exponent and duration_ms">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-primary: #ff9a3d; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-primary: #ff9a3d; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <defs>
+    <marker id="head-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-primary, var(--fb-primary, #ff9a3d))" /></marker>
+  </defs>
+  <rect x="14" y="40" width="112" height="64" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <text x="70" y="58" text-anchor="middle" font-size="12" font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="600" fill="var(--color-text, var(--fb-text, #15181b))">Note</text>
+  <text x="70" y="76" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">text</text>
+  <text x="70" y="90" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">created_at</text>
+  <text x="70" y="124" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">Getting Started</text>
+  <rect x="178" y="22" width="128" height="150" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="2" />
+  <text x="242" y="40" text-anchor="middle" font-size="12" font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="600" fill="var(--color-text, var(--fb-text, #15181b))">Tone(Note)</text>
+  <text x="242" y="60" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">text</text>
+  <text x="242" y="74" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">created_at</text>
+  <path d="M190 82 H294" fill="none" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <text x="242" y="98" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">play</text>
+  <text x="242" y="112" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">pitch</text>
+  <text x="242" y="126" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">pitch_exponent</text>
+  <text x="242" y="140" text-anchor="middle" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">duration_ms</text>
+  <text x="242" y="160" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">its own nsid</text>
+  <path d="M127 72 H176" fill="none" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="1.5" marker-end="url(#head-primary)" />
+  <text x="152" y="64" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-primary, var(--fb-primary, #ff9a3d))">inherits</text>
+  <text x="160" y="192" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">kept: Note's fields and their rules</text>
+</svg>

@@ -66,8 +66,8 @@ did.
 | # | Guide | What it shows | Status |
 | --- | --- | --- | --- |
 | 1 | [`GETTING_STARTED.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/GETTING_STARTED.md) | Three sovereign peers on a private LAN: a PDS on each machine, signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
-| 2 | The demo engine | The conductor that plays guide 1, taken apart: workloads orchestrated with signed records, no model in the way yet | next |
-| 3 | Hoot | Agents with models and tools, a verified chain of custody | after 2 |
+| 2 | [`CONDUCTOR_AND_ORCHESTRA.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/CONDUCTOR_AND_ORCHESTRA.md) | The engine that plays guide 1, taken apart, then put to work: a conductor orchestrates three machines with signed records, from one note to a tune, and nobody holds a connection open for a task | runs |
+| 3 | Hoot | Agents with models and tools, a verified chain of custody | next |
 | 4 | The browser app | A person accessing an app from a browser tab with no secret on the wire | after 3 |
 
 To watch the first one as a show, with every machine's terminal, the network
@@ -325,8 +325,9 @@ peer ships pre-built). Running the full suite — browser/WASM, WireGuard, and
 cross-implementation tests — is covered in
 [`docs/TESTING.md`](https://github.com/jacoblapenna/fastatp/blob/main/docs/TESTING.md).
 
-The [tutorials](#tutorials) are tests too: `cd tutorials/lab && ./lab.sh test`
-plays `GETTING_STARTED.md` headless against the fastatp in the tree, and
+The [tutorials](#tutorials) are tests too: `cd tutorials/lab && ./lab.sh test [GUIDE]`
+plays a guide headless against the fastatp in the tree (`GETTING_STARTED`
+unless you name another, such as `CONDUCTOR_AND_ORCHESTRA`), and
 `uv run pytest` fails when a guide's quoted files drift from the files
 themselves. Every pull request plays every guide in CI, so a tutorial cannot
 stop working without the change that broke it failing its tests.

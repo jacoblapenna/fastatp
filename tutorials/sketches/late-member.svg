@@ -1,0 +1,33 @@
+<!-- the Play waits in the conductor's repo; a member that was offline answers when it is back -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="the conductor writes a Play for alice and bob; alice answers at once; bob is offline, comes back later, reads the Play and answers then">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-danger: #b3243f; --fb-primary: #ff9a3d; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-danger: #ff7a85; --fb-primary: #ff9a3d; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <defs>
+    <marker id="head-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-primary, var(--fb-primary, #ff9a3d))" /></marker>
+    <marker id="head-verified" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-verified, var(--fb-verified, #256f1c))" /></marker>
+  </defs>
+  <text x="14" y="38" text-anchor="start" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">conductor</text>
+  <text x="14" y="88" text-anchor="start" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">alice</text>
+  <text x="14" y="138" text-anchor="start" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bob</text>
+  <path d="M72 34 H306" fill="none" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <path d="M72 84 H306" fill="none" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <path d="M72 134 H180" fill="none" stroke="var(--color-danger, var(--fb-danger, #b3243f))" stroke-width="1.5" stroke-dasharray="4 4" />
+  <path d="M180 134 H306" fill="none" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="1" />
+  <rect x="80" y="22" width="52" height="24" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="2" />
+  <text x="106" y="38" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">Play</text>
+  <path d="M118 47 L132 72" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <rect x="124" y="72" width="52" height="24" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="150" y="88" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">Tone</text>
+  <text x="126" y="150" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-danger, var(--fb-danger, #b3243f))">offline</text>
+  <text x="194" y="150" text-anchor="start" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">back</text>
+  <path d="M126 47 C190 70, 220 100, 236 122" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#head-verified)" />
+  <rect x="224" y="122" width="52" height="24" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="250" y="138" text-anchor="middle" font-size="10" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">Tone</text>
+  <text x="160" y="176" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text, var(--fb-text, #15181b))">the Play stays in the repo until bob reads it</text>
+  <text x="160" y="190" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">nobody waited, nothing was lost</text>
+</svg>

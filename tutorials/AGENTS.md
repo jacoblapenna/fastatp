@@ -7,6 +7,7 @@ on the user's machine, and you can run it yourself and read what happened.
 ```bash
 cd tutorials/lab         # from the repository root
 ./lab.sh test            # GETTING_STARTED.md, on fresh machines; about five minutes
+./lab.sh test CONDUCTOR_AND_ORCHESTRA   # guide two, the same way
 ```
 
 Then tell the user what you saw, in their terms: which machine ran what,
@@ -63,7 +64,12 @@ updates a guide after the lab changes).
   spacing and where a line wraps. A pass means
   every step ran, in order, on the right machine, ended the way the guide
   says, and printed what the guide shows.
-- A full run is 46 commands and 21 key concepts.
+- In guide two, the conductor also commits records the machines answer:
+  `conductor commits ...` then `└ alice answered: at://...`, or `conductor
+  conducts ... x30` for a sequence it signs one record at a time. Each
+  member it names must answer with a signed record in its own repo, except
+  one the guide marks as meant to stay silent; a `✗` names any that did not.
+- A full run of Getting Started is 46 commands and 21 key concepts.
 
 ## Other ways to run
 
@@ -81,10 +87,10 @@ updates a guide after the lab changes).
 | Guide | Runs headless | What it shows |
 | --- | --- | --- |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | yes | sovereign peers, signed records, verified following, a private channel behind WireGuard |
+| [CONDUCTOR_AND_ORCHESTRA.md](CONDUCTOR_AND_ORCHESTRA.md) | yes | orchestrating work with signed records: a task in the asker's repo, its result in the worker's, sequence and fan-out, a worker that was offline catching up |
 
 The guides are a series, each building on the last, and they arrive one at
-a time: the demo engine (the conductor that plays this guide, taken apart),
-then Hoot (agents with models and tools), then the browser app (a person
+a time: after these two come Hoot (agents with models and tools), then the browser app (a person
 reaching an app with no secret on the wire).
 
 ## Do not

@@ -17,6 +17,8 @@ lists keep their lines. Everything else is a cue in an HTML comment, which
 GitHub and fastatp.com do not render:
 
   <!-- @demo machines alice bob eve -->   who is in the cast
+  <!-- @demo peer orchestra.py -->        the program the machines run in place of peer.py
+                                          (`./lab.sh conductor` reads it from the guide)
   <!-- @demo start -->  <!-- @demo end --> what the screen plays (any number of ranges)
   <!-- @demo chapter 3 "The private side" -->
   <!-- @demo blurb Eve reads the public repo like anyone... -->
@@ -45,6 +47,22 @@ GitHub and fastatp.com do not render:
                                           what the block above it printed. A listing is
                                           otherwise the output of its block's commands, and
                                           the headless play holds the machines to it
+  <!-- @demo commit alice bob -->  or  <!-- @demo commit at self -->
+                                          the conductor signs the record in the next ```json
+                                          block into its own repo, for these members, and
+                                          waits for each one's answer: a record in that
+                                          member's own repo that names the commit's at://
+                                          URI. With no members it is for nobody in
+                                          particular (a setting every member reads) and
+                                          waits for nothing. `at <rkey>` writes it at that
+                                          key, so committing there again updates it in
+                                          place; it is only for such a setting, and takes
+                                          no members, since a key signed again must have
+                                          no answer still owed to it. A fails cue above it names, by position,
+                                          the members meant to stay silent. A ```json list
+                                          of records is a sequence: the conductor signs one,
+                                          waits for the named members it mentions to answer
+                                          and for what they played to end, then the next
   <!-- @demo stop bob -->                 Ctrl-C whatever bob left running
   <!-- @demo wait 5 -->                   let time pass
   <!-- @demo expand eve -->  collapse  focus
@@ -141,12 +159,22 @@ def without_terminal(text: str, inside: bool) -> tuple[str, bool]:
     return "\n".join(" ".join(line.split()) for line in text.split("\n")).strip(), inside
 
 
-VISIBLE = ("run", "restart", "stop", "say", "concept", "chapter", "ask")  # one press of Next each
+VISIBLE = (
+    "run",
+    "restart",
+    "stop",
+    "commit",
+    "say",
+    "concept",
+    "chapter",
+    "ask",
+)  # one press of Next each
 LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until they give up
 
 
 def parse(text: str) -> dict:
     machines: list[str] = []
+    peer = "peer.py"  # the program the machines run
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
@@ -163,6 +191,7 @@ def parse(text: str) -> dict:
     code_cue: dict | None = None  # a code cue waiting for the next bash block
     fails_cue: tuple[int, list[int]] | None = None  # its line, and which commands are meant to fail
     prints_cue: tuple[int, str] | None = None  # its line, and whose terminal the next listing is
+    commit_cue: tuple[int, list[str], str] | None = None  # its line, its members, its rkey
 
     def emit(step: dict) -> dict:
         step["id"] = len(steps)
@@ -219,6 +248,8 @@ def parse(text: str) -> dict:
             i += 1
             if verb == "machines":
                 machines = arg.split()
+            elif verb == "peer":
+                peer = arg
             elif verb == "start":
                 active = True
             elif verb == "end":
@@ -268,6 +299,27 @@ def parse(text: str) -> dict:
                 prints_cue = (i, arg)
             elif verb == "fails":
                 fails_cue = (i, [int(n) for n in arg.split()])
+            elif verb == "commit":
+                words = arg.split()
+                rkey = ""
+                if "at" in words:
+                    at = words.index("at")
+                    if at + 2 != len(words):
+                        raise SystemExit(f"line {i}: @demo commit ... at <rkey> ends the cue")
+                    words, rkey = words[:at], words[at + 1]
+                    if words:
+                        # a key reused while members still owe an answer to the old
+                        # record would take their late answer as one to the new
+                        raise SystemExit(
+                            f"line {i}: @demo commit ... at <rkey> is a setting for nobody in"
+                            " particular, so it names no members"
+                        )
+                if strangers := [n for n in words if n not in machines]:
+                    raise SystemExit(
+                        f"line {i}: @demo commit names its members from the cast, not {strangers}"
+                    )
+                emit_say()
+                commit_cue = (i, words, rkey)
             elif verb == "stop":
                 emit_say()
                 emit({"kind": "stop", "machine": arg})
@@ -312,6 +364,52 @@ def parse(text: str) -> dict:
                 file_section["text"] = "\n".join(body)
                 file_section = None
             if not active:
+                continue
+            if commit_cue:
+                at, names, rkey = commit_cue
+                if lang != "json":
+                    raise SystemExit(f"line {at}: @demo commit needs a ```json record under it")
+                try:
+                    value = json.loads("\n".join(body))
+                except ValueError as e:
+                    raise SystemExit(f"line {at}: the record under @demo commit: {e}") from None
+                records = value if isinstance(value, list) else [value]
+                if not records or not all(isinstance(r, dict) and r.get("$type") for r in records):
+                    raise SystemExit(f"line {at}: each record under @demo commit needs a $type")
+                if isinstance(value, list) and rkey:
+                    raise SystemExit(f"line {at}: a sequence of records cannot share one key")
+                what = records[0]["$type"] + (f" x{len(records)}" if len(records) > 1 else "")
+                emit_say()  # words between the cue and its record are said before it is signed
+                step = emit(
+                    {
+                        "kind": "commit",
+                        "machines": names,
+                        "display": what + (f" for {', '.join(names)}" if names else ""),
+                    }
+                )
+                if isinstance(value, list):
+                    step["records"] = records  # a sequence: one at a time, each heard out
+                else:
+                    step["record"] = value
+                if rkey:
+                    step["rkey"] = rkey
+                if code_cue:
+                    step["code"] = dict(code_cue)  # shown beside the first member
+                    code_cue = None
+                if fails_cue:
+                    for n in fails_cue[1] or range(1, len(names) + 1):
+                        if not 1 <= n <= len(names):
+                            raise SystemExit(
+                                f"line {fails_cue[0]}: @demo fails {n}, but the commit names"
+                                f" {len(names)} members"
+                            )
+                    step["silent"] = [
+                        names[n - 1] for n in fails_cue[1] or range(1, len(names) + 1)
+                    ]
+                commit_cue = fails_cue = None
+                last_block = []  # a listing under it would be nobody's output
+                recent_image = None
+                replace_next_bash = False
                 continue
             if lang == "bash":
                 if skip_next_bash or replace_next_bash:
@@ -453,12 +551,15 @@ def parse(text: str) -> dict:
             continue
         i += 1
 
+    if commit_cue:
+        raise SystemExit(f"line {commit_cue[0]}: @demo commit needs a ```json record under it")
     menu = chapters(steps)  # puts the steps in playing order and numbers them
     for step in steps:
         for listing in step.get("listings", []):  # now that every step has its number
             listing["from"] = [source["id"] for source in listing["from"]]
     return {
         "machines": machines,
+        "peer": peer,
         "chapters": menu,
         "files": files,
         "images": images,
