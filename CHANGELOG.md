@@ -43,7 +43,10 @@ To upgrade safely within one minor line, pin with `~=`, for example
   its machines run (`<!-- @demo peer orchestra.py -->`), and
   `tutorials/lab/lab.sh conductor <GUIDE>` and `lab.sh test <GUIDE>` read
   it. The conductor's page plays each member's note, from the member's own
-  signed record, as it lands.
+  signed record, as it lands. In a guide with commits it also shows the
+  conductor's own repo, every record as it is signed, and once records are
+  what is happening, each machine's repo fills its panel, its records
+  appearing as they land, while the terminals fold until the next command.
 
 ## [0.3.0] - 2026-11-20
 

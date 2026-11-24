@@ -18,7 +18,14 @@ export const live = $state({
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
   commits: {}, // step -> a record the conductor signed for members, and their answers so far
+  conductor: emptyRepo(), // the conductor's own repo: every record it signs, as it signs it
 });
+
+function emptyRepo() {
+  return { before: 0, count: 0, rev: '', records: [] };
+}
+
+const KEEP = 400; // records the conductor's list keeps on screen; its count says how many there are
 
 // What one press of Next shows; what Back looks at again.
 export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask'];
@@ -63,6 +70,7 @@ export function connect() {
       live.machines = {};
       live.wire = [];
       live.commits = {};
+      live.conductor = emptyRepo();
       for (const name of msg.manifest.machines) machine(name);
       status(msg);
       for (const ev of msg.events) apply(ev, false);
@@ -91,8 +99,20 @@ function status(msg) {
 function machine(name) {
   if (!live.manifest?.machines?.includes(name)) return null;
   return (live.machines[name] ??= {
-    name, identity: null, repo: null, wg: [], stage: 'down', log: [], procs: {}, order: [],
+    name, identity: null, repo: null, wg: [], stage: 'down', log: [], procs: {}, order: [], landed: [],
   });
+}
+
+// A machine's repo as its view reports it, with the records the conductor saw
+// land since: a view is a second behind, so a just-landed record would vanish
+// and come back. One the view still lacks after a few seconds is let go.
+function merged(records, m) {
+  const now = Date.now();
+  m.landed = m.landed.filter((r) => now - r.kept < 5000);
+  const byPath = new Map(records.map((r) => [r.path, r]));
+  for (const r of m.landed) if (byPath.has(r.path)) byPath.get(r.path).landed ||= r.landed;
+  const extra = m.landed.filter((r) => !byPath.has(r.path));
+  return { rev: m.repo?.rev ?? '', records: [...records, ...extra].sort((a, b) => (a.path < b.path ? -1 : 1)) };
 }
 
 // Each machine is heard from its own place, left to right in cast order.
@@ -104,6 +124,31 @@ function pan(name) {
 
 function apply(ev, fresh) {
   const step = Number(ev.step);
+  if (ev.type === 'repo') {
+    live.conductor.before = live.conductor.count = Number(ev.count) || 0;
+    return;
+  }
+  if (ev.type === 'signed') {
+    const c = live.conductor;
+    // a record updated in place (the show now, the tempo) moves to the end: it was just signed
+    const i = c.records.findIndex((r) => r.path === ev.path);
+    if (i >= 0) c.records.splice(i, 1);
+    c.records.push({ path: ev.path, cid: ev.cid, value: ev.value, landed: fresh ? Date.now() : 0 });
+    if (c.records.length > KEEP) c.records.splice(0, c.records.length - KEEP);
+    Object.assign(c, { count: ev.count, rev: ev.rev });
+    return;
+  }
+  if (ev.type === 'record') {
+    const m = machine(ev.machine);
+    if (!m) return;
+    // a record in the machine's own repo, verified by the conductor the moment
+    // it landed: shown now, until the machine's own view of its repo has it too
+    const rec = { path: ev.path, cid: ev.cid, value: ev.value, landed: fresh ? Date.now() : 0, kept: Date.now() };
+    m.landed = [...m.landed.filter((r) => r.path !== ev.path), rec];
+    if (m.repo) m.repo = merged(m.repo.records, m);
+    else m.repo = { rev: '', records: [rec] };
+    return;
+  }
   if (ev.type === 'commit' && Number.isInteger(step)) {
     live.commits[step] = { uri: ev.uri, machines: ev.machines ?? [], answers: {}, silent: null, index: ev.index ?? 1, of: ev.of ?? 1 };
     return;
@@ -185,7 +230,7 @@ export function nameOf({ key, ip, did }) {
 // --- where the script is ------------------------------------------------------
 
 export function scriptState(manifest, cursor) {
-  const s = { part: '', section: '', say: '', ask: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null };
+  const s = { part: '', section: '', say: '', ask: '', step: null, active: null, layout: {}, open: new Set(), code: null, chapter: null, last: null };
   if (!manifest) return s;
   for (const name of manifest.machines) s.layout[name] = 'open';
   let answered = false; // the step before this one was a key concept: its question is answered
@@ -202,6 +247,8 @@ export function scriptState(manifest, cursor) {
     if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];
     if (step.kind === 'ask') s.ask = step.text; // stays up through the command it asks about
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
+    // what last happened: a command (watch its terminal) or a commit (watch the repos)
+    if (['run', 'restart', 'stop', 'commit'].includes(step.kind)) s.last = step.kind;
     if (step.kind === 'layout' && (step.action === 'open' || step.action === 'close')) {
       for (const target of step.targets) step.action === 'open' ? s.open.add(target) : s.open.delete(target);
     } else if (step.kind === 'layout') {

@@ -34,7 +34,8 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from fastatp import DIDServer, Identity, WebResolver, build_did_document
+from fastatp import DIDServer, Identity, WebResolver, build_did_document, dagcbor, datamodel
+from fastatp.cid import CID
 from fastatp.tid import generate_tid
 
 SCORE = os.environ.get("SCORE", "GETTING_STARTED")
@@ -106,8 +107,44 @@ def over_stage() -> WebResolver:
 
 async def write(record) -> str:
     rkey = generate_tid()
-    await server.put_record(record.nsid, rkey, record)
+    await sign(record.nsid, rkey, record)
     return f"{record.nsid}/{rkey}"
+
+
+def shown(value):
+    """A record as the page lists it: a long string (a lab file's whole text) cut short."""
+    if isinstance(value, str):
+        return value if len(value) <= 200 else value[:200] + "…"
+    if isinstance(value, dict):
+        return {k: shown(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [shown(v) for v in value]
+    return value
+
+
+def cid_of(record: dict) -> str:
+    """A verified record's CID, from its bytes, as its repo has it."""
+    return CID.for_dag_cbor(dagcbor.encode(datamodel.from_json(record))).encode()
+
+
+async def sign(collection: str, rkey: str, record) -> None:
+    """Every write into the conductor's repo goes through here, so the page
+    shows the repo growing record by record: cues, presses, the guide's own
+    records, all of it, each the moment it is signed."""
+    if await server.put_record(collection, rkey, record) is None:
+        return  # the same record again: nothing new was signed
+    value = server.repo.get_record(collection, rkey)
+    await tell(
+        {
+            "type": "signed",
+            "t": time.time(),
+            "path": f"{collection}/{rkey}",
+            "cid": cid_of(value),
+            "value": shown(value),
+            "rev": server.repo.rev,
+            "count": server.repo.record_count(),
+        }
+    )
 
 
 # --- the show ---------------------------------------------------------------
@@ -216,6 +253,18 @@ def member_listener(machine: str):
         if (f"{machine}.lan", path) in seen:
             return
         seen.add((f"{machine}.lan", path))
+        # every record in its own repo, the moment it is verified: the page
+        # shows it before the machine's once-a-second view catches up
+        await tell(
+            {
+                "type": "record",
+                "machine": machine,
+                "t": time.time(),
+                "path": path,
+                "cid": cid_of(record),
+                "value": shown(record),
+            }
+        )
         for uri, entry in commits.items():
             if machine in entry["waiting"] and mentions(record, uri):
                 entry["waiting"].discard(machine)
@@ -373,7 +422,7 @@ async def commit_one(step: dict, record: dict, names: list[str], n: int, of: int
         "answered": asyncio.Event(),
         "ends": 0.0,  # when the longest sound an answer reported is over
     }
-    await server.put_record(record["$type"], rkey, record)
+    await sign(record["$type"], rkey, record)
     await cue(step, record=uri)
     await tell(
         {
@@ -501,15 +550,16 @@ async def browser(ws: WebSocket) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
-    await server.put_record(
-        Show.nsid, "self", Show(id=SHOW, score=SCORE)
-    )  # before any cue: "this is the show now"
+    # what the repo held before this show, from every earlier boot: the page counts them
+    await tell({"type": "repo", "t": time.time(), "count": server.repo.record_count()})
+    # before any cue: "this is the show now"
+    await sign(Show.nsid, "self", Show(id=SHOW, score=SCORE))
     for name, lab_file in score.get("files", {}).items():  # the code a cue can put on show
-        await server.put_record(File.nsid, name, File(show=SHOW, name=name, **lab_file))
+        await sign(File.nsid, name, File(show=SHOW, name=name, **lab_file))
     for name, image in score.get("images", {}).items():  # the pictures, as blobs beside the repo
         data = Path(name).read_bytes()
         blob = server.repo.add_blob(data, "image/svg+xml" if name.endswith(".svg") else "image/png")
-        await server.put_record(
+        await sign(
             Image.nsid,
             name.replace("/", "-"),
             Image(show=SHOW, name=name, alt=image["alt"], image=blob),
