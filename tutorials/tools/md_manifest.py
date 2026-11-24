@@ -57,7 +57,10 @@ GitHub and fastatp.com do not render:
                                           waits for nothing. `at <rkey>` writes it at that
                                           key, so committing there again updates it in
                                           place. A fails cue above it names, by position,
-                                          the members meant to stay silent
+                                          the members meant to stay silent. A ```json list
+                                          of records is a sequence: the conductor signs one,
+                                          waits for the named members it mentions to answer
+                                          and for what they played to end, then the next
   <!-- @demo stop bob -->                 Ctrl-C whatever bob left running
   <!-- @demo wait 5 -->                   let time pass
   <!-- @demo expand eve -->  collapse  focus
@@ -358,19 +361,26 @@ def parse(text: str) -> dict:
                 if lang != "json":
                     raise SystemExit(f"line {at}: @demo commit needs a ```json record under it")
                 try:
-                    record = json.loads("\n".join(body))
+                    value = json.loads("\n".join(body))
                 except ValueError as e:
                     raise SystemExit(f"line {at}: the record under @demo commit: {e}") from None
-                if not isinstance(record, dict) or not record.get("$type"):
-                    raise SystemExit(f"line {at}: the record under @demo commit needs a $type")
+                records = value if isinstance(value, list) else [value]
+                if not records or not all(isinstance(r, dict) and r.get("$type") for r in records):
+                    raise SystemExit(f"line {at}: each record under @demo commit needs a $type")
+                if isinstance(value, list) and rkey:
+                    raise SystemExit(f"line {at}: a sequence of records cannot share one key")
+                what = records[0]["$type"] + (f" x{len(records)}" if len(records) > 1 else "")
                 step = emit(
                     {
                         "kind": "commit",
                         "machines": names,
-                        "record": record,
-                        "display": record["$type"] + (f" for {', '.join(names)}" if names else ""),
+                        "display": what + (f" for {', '.join(names)}" if names else ""),
                     }
                 )
+                if isinstance(value, list):
+                    step["records"] = records  # a sequence: one at a time, each heard out
+                else:
+                    step["record"] = value
                 if rkey:
                     step["rkey"] = rkey
                 if code_cue:

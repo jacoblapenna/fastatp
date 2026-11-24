@@ -45,8 +45,8 @@
   {:else if script.step?.kind === 'commit'}
     {@const sent = live.commits[script.step.id]}
     <div class="now">
-      <span>conductor</span> signs {script.step.display} into its own repo
-      {#each script.step.machines as name (name)}
+      <span>conductor</span> signs {script.step.display} into its own repo{#if sent?.of > 1}, {sent.index} of {sent.of}{/if}
+      {#each sent?.of > 1 ? sent.machines : script.step.machines as name (name)}
         {@const answer = sent?.answers[name]}
         <span class="member" class:answered={answer} class:silent={sent?.silent?.includes(name) && !answer}>
           {name}{#if answer}&nbsp;♪ {answer.text}, {answer.ms} ms{:else if sent?.silent?.includes(name)}&nbsp;· no answer{:else}&nbsp;…{/if}

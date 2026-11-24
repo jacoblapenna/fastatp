@@ -105,7 +105,7 @@ function pan(name) {
 function apply(ev, fresh) {
   const step = Number(ev.step);
   if (ev.type === 'commit' && Number.isInteger(step)) {
-    live.commits[step] = { uri: ev.uri, machines: ev.machines ?? [], answers: {}, silent: null };
+    live.commits[step] = { uri: ev.uri, machines: ev.machines ?? [], answers: {}, silent: null, index: ev.index ?? 1, of: ev.of ?? 1 };
     return;
   }
   if (ev.type === 'commit-end' && live.commits[step]) {

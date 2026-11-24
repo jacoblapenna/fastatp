@@ -209,9 +209,13 @@ async def main() -> int:
                     procs[ev["step"]] = {"lines": [], **ev}
                 elif ev["type"] == "commit":
                     step = steps[ev["step"]]
-                    print(f"{ev['step']:4d} conductor commits {step['display'][:70]}")
+                    if ev.get("of", 1) == 1:
+                        print(f"{ev['step']:4d} conductor commits {step['display'][:70]}")
+                    elif ev["index"] == 1:
+                        print(f"{ev['step']:4d} conductor conducts {step['display'][:70]}")
                 elif ev["type"] == "answer":
-                    print(f"            └ {ev['machine']} answered: {ev['uri']}")
+                    if steps[ev["step"]].get("records") is None:  # a sequence is too many to list
+                        print(f"            └ {ev['machine']} answered: {ev['uri']}")
                 elif ev["type"] == "commit-end":
                     committed.add(ev["step"])
                     if problem := commit_verdict(steps[ev["step"]], ev["silent"]):

@@ -219,6 +219,9 @@ def member_listener(machine: str):
         for uri, entry in commits.items():
             if machine in entry["waiting"] and mentions(record, uri):
                 entry["waiting"].discard(machine)
+                held = record.get("duration_ms")
+                if isinstance(held, int) and held > 0:  # it says how long it sounds
+                    entry["ends"] = max(entry["ends"], time.time() + held / 1000)
                 await tell(
                     {
                         "type": "answer",
@@ -337,15 +340,38 @@ async def commit(step: dict, pace: float) -> None:
     Nothing is sent to a member. Each one follows this repo, reads the record
     with its own model, and answers, if it chooses to, with a record in its
     own repo that names this one's URI. The conductor follows their repos and
-    waits for those answers: the same shape as waiting for a player's result."""
-    record = step["record"]
+    waits for those answers: the same shape as waiting for a player's result.
+
+    A sequence is conducted, not scheduled. The conductor signs one record,
+    waits until the members it names have answered and their sound has gone
+    to the page, waits out how long they said it lasts, and only then signs
+    the next. Nothing is written ahead, so a late answer delays everything
+    after it, as a late player holds up a real orchestra."""
+    sequence = "records" in step
+    records = step["records"] if sequence else [step["record"]]
+    for n, record in enumerate(records, 1):
+        # in a sequence, each record waits for the members it names
+        names = (
+            [m for m in step["machines"] if mentions(record, member(m))]
+            if sequence
+            else step["machines"]
+        )
+        entry = await commit_one(step, record, names, n, len(records))
+        if sequence:
+            await asyncio.sleep(max(0.0, entry["ends"] - time.time()))
+    await asyncio.sleep(1.2 * pace)
+
+
+async def commit_one(step: dict, record: dict, names: list[str], n: int, of: int) -> dict:
+    """One record, signed, and the wait for its answers."""
     rkey = step.get("rkey") or generate_tid()  # a fixed key is updated in place
     uri = f"at://{did}/{record['$type']}/{rkey}"
     entry = commits[uri] = {
         "step": step["id"],
-        "waiting": set(step["machines"]),
-        "silent": set(step.get("silent", [])),  # members the guide says will not answer
+        "waiting": set(names),
+        "silent": set(step.get("silent", [])) & set(names),  # meant not to answer
         "answered": asyncio.Event(),
+        "ends": 0.0,  # when the longest sound an answer reported is over
     }
     await server.put_record(record["$type"], rkey, record)
     await cue(step, record=uri)
@@ -355,8 +381,10 @@ async def commit(step: dict, pace: float) -> None:
             "t": time.time(),
             "step": step["id"],
             "uri": uri,
-            "machines": step["machines"],
+            "machines": names,
             "record": record,
+            "index": n,
+            "of": of,
         }
     )
     if entry["silent"] >= entry["waiting"]:
@@ -372,9 +400,11 @@ async def commit(step: dict, pace: float) -> None:
             "step": step["id"],
             "uri": uri,
             "silent": sorted(entry["waiting"]),
+            "index": n,
+            "of": of,
         }
     )
-    await asyncio.sleep(1.2 * pace)
+    return entry
 
 
 async def director() -> None:
