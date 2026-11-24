@@ -47,7 +47,7 @@ GitHub and fastatp.com do not render:
                                           what the block above it printed. A listing is
                                           otherwise the output of its block's commands, and
                                           the headless play holds the machines to it
-  <!-- @demo commit alice bob [at self] -->
+  <!-- @demo commit alice bob -->  or  <!-- @demo commit at self -->
                                           the conductor signs the record in the next ```json
                                           block into its own repo, for these members, and
                                           waits for each one's answer: a record in that
@@ -56,7 +56,9 @@ GitHub and fastatp.com do not render:
                                           particular (a setting every member reads) and
                                           waits for nothing. `at <rkey>` writes it at that
                                           key, so committing there again updates it in
-                                          place. A fails cue above it names, by position,
+                                          place; it is only for such a setting, and takes
+                                          no members, since a key signed again must have
+                                          no answer still owed to it. A fails cue above it names, by position,
                                           the members meant to stay silent. A ```json list
                                           of records is a sequence: the conductor signs one,
                                           waits for the named members it mentions to answer
