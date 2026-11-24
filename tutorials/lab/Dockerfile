@@ -22,7 +22,7 @@ COPY tutorials/lab/entrypoint.sh tutorials/lab/lexicons.py tutorials/lab/dids.py
      tutorials/lab/pair.py tutorials/lab/follow.py tutorials/lab/tail.py tutorials/lab/verify.py tutorials/lab/blocks.py ./
 # Backstage, for `./lab.sh conductor` only: this machine's player in the demo engine.
 COPY tutorials/lab/backstage.py tutorials/lab/player.py ./
-COPY tutorials/lab/music.py tutorials/lab/orchestra.py tutorials/lab/trace.py ./
+COPY tutorials/lab/music.py tutorials/lab/orchestra.py tutorials/lab/trace.py tutorials/lab/replay.py ./
 RUN chmod +x entrypoint.sh
 ENTRYPOINT ["./entrypoint.sh"]
 

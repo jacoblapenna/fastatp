@@ -59,11 +59,15 @@ player follows it, and answers in a repo of its own.
 
 ![the conductor's repo holds a cue; a machine's backstage repo holds the result; each follows the other](sketches/cue-and-result.svg)
 
-In two chapters:
+In four chapters:
 1. **Backstage.** One command on alice, and the two signed records behind
    it: who asked, and who did it.
 2. **The orchestra.** The conductor writes down a note and alice plays it.
    Bob is offline when his part is written, and plays it when he gets back.
+3. **Scales and chords.** A scale passed from member to member, chords for
+   two and three, then a tune, each note signed only once the last was heard.
+4. **The show is a repo.** Eve reads the whole show back from the
+   conductor's repo, and the one rule every follower has to choose.
 
 <!-- @demo glossary -->
 The rest of the guide's words, each one line. On the conductor's screen a
@@ -113,7 +117,7 @@ writes those, and only the conductor holds its key.<!-- @demo /terminal -->
 
 The machines are the ones from Getting Started, with one change: they run
 `orchestra.py` in place of `peer.py`. The guide asks for that itself, in a
-line `./lab.sh conductor` reads. Three files are new:
+line `./lab.sh conductor` reads. Four files are new:
 
 ```text
 tutorials/
@@ -121,7 +125,8 @@ tutorials/
 └── lab/
     ├── trace.py                 who asked, and who did it
     ├── music.py                 the orchestra's record types
-    └── orchestra.py             one member of the orchestra: peer.py, plus a follow of the conductor
+    ├── orchestra.py             one member of the orchestra: peer.py, plus a follow of the conductor
+    └── replay.py                the show, read back from the conductor's repo
 ```
 
 ### `trace.py`: who asked, and who did it
@@ -439,6 +444,66 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### `replay.py`: the show, read back
+
+`replay.py` reads the conductor's repo as anyone could: one checkpoint,
+verified, and what the records in it say about the show, with no guide
+and no page.
+
+```python
+"""Read the show back from the conductor's repo, the way anyone could: python replay.py
+
+No guide, no score file, no page: one checkpoint of the conductor's repo,
+verified against its DID document, and what the records in it say.
+"""
+
+import asyncio
+from collections import Counter
+
+import httpx
+from backstage import Control, Cue, Show
+from dids import resolver
+
+from fastatp import RepoMirror
+
+CONDUCTOR = "did:web:conductor.stage"
+
+
+async def main() -> None:
+    mirror = RepoMirror(CONDUCTOR, resolver=resolver())
+    async with httpx.AsyncClient(timeout=10) as http:
+        response = await http.get(
+            "http://conductor.stage/xrpc/com.atproto.sync.getRepo", params={"did": CONDUCTOR}
+        )
+    response.raise_for_status()
+    await mirror.load_checkpoint(response.content)  # the signature and every hash, checked
+    print(f"{CONDUCTOR}: {len(mirror.entries)} records, verified")
+
+    show = mirror.get_record(Show.nsid, "self")  # which show is playing now
+    print(f"the show now: {show['score']}")
+
+    # Record keys are TIDs, so sorting the paths puts the cues in the order they were signed.
+    cues = [
+        mirror.get_record(*path.split("/"))
+        for path in sorted(mirror.entries)
+        if path.startswith(f"{Cue.nsid}/")
+    ]
+    mine = [cue for cue in cues if cue["show"] == show["id"]]
+    print(f"{len(mine)} cues in this show, one per step, in the order they were signed:")
+    for action, count in sorted(Counter(cue["action"] for cue in mine).items()):
+        print(f"  {count:4d} {action}")
+    first = mine[0]
+    print(
+        f"the first: step {first['step']}, a {first['action']}: {first['title'] or first['text']!r}"
+    )
+
+    presses = sum(1 for path in mirror.entries if path.startswith(f"{Control.nsid}/"))
+    print(f"{presses} presses of the page's buttons, every show's, each one signed")
+
+
+asyncio.run(main())
+```
+
 <!-- @demo start -->
 <!-- @demo chapter 1 "Backstage" -->
 
@@ -613,7 +678,226 @@ land on its own, well after alice's `mi`.
 > path, and bob skips it. Acting once per record is the rule for any
 > follower, because every reconnect starts again from the whole repo.
 
+<!-- @demo chapter 3 "Scales and chords" -->
+<!-- @demo blurb A scale passed from member to member, one note at a time, then chords for two and three, then Beethoven, conducted note by note. -->
+
+## Part 3: scales and chords
+
+So far each note was a step of its own, and you pressed Next for each.
+A scale is eight notes in a row, passed round alice, bob and eve.
+
+The conductor doesn't write the scale down and walk away. It signs the
+first note and waits. When alice's Tone lands, the conductor sends its
+sound to the page, waits as long as alice says the note lasts, and only
+then signs the next one, for bob. Nothing is written ahead.
+
+<!-- @demo ask Eight notes, one member at a time. Who decides when each next note starts? -->
+<!-- @demo commit alice bob eve -->
+```json
+[
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:bob.lan", "note": "re", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:eve.lan", "note": "mi", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "fa", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:bob.lan", "note": "sol", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:eve.lan", "note": "la", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "ti", "octave": 4, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:bob.lan", "note": "do", "octave": 5, "ticks": 2}]}
+]
+```
+
+The conductor did, from what it saw. Each note started once the one
+before it had landed and been heard out. The small gaps you heard are
+real: the time it took a member to read a Play and sign a Tone, and for
+the conductor to see it.
+
+Now the other way round: one Play for several members at once. First two
+of them, alice and bob, `do` and `sol`.
+
+<!-- @demo commit alice bob -->
+```json
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 8}, {"member": "did:web:bob.lan", "note": "sol", "octave": 4, "ticks": 8}]}
+```
+
+Then all three: `do`, `mi` and `sol`, the chord of C major.
+
+<!-- @demo ask One record names all three. Will the three notes start at the same instant? -->
+<!-- @demo commit alice bob eve -->
+```json
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 8}, {"member": "did:web:bob.lan", "note": "mi", "octave": 4, "ticks": 8}, {"member": "did:web:eve.lan", "note": "sol", "octave": 4, "ticks": 8}]}
+```
+
+Close, but not quite. Each member read the same Play and answered in its
+own time, and each note sounded when its own Tone landed. Nobody lined
+them up; they were reading the same record.
+
+> 🔑 **Key concept: sequence and fan-out.** Two shapes cover most
+> orchestration. In a sequence, the asker writes one task, waits for its
+> answer, and only then writes the next: a scale, or a pipeline where each
+> step needs the last one's result. In a fan-out, one task names several
+> workers, and the asker waits for all of them: a chord, or one job split
+> three ways. Both are plain records and follows. The only difference is
+> when the conductor writes the next record.
+
+![in a sequence the conductor signs a Play and waits for its Tone before the next; in a fan-out one Play names three members and their Tones land in their own time](sketches/sequence-and-fan-out.svg)
+
+Last, a tune. The conductor speeds up first: a new tempo, at the same key
+as the old one, so it replaces it.
+
+<!-- @demo commit at self -->
+```json
+{"$type": "com.example.tutorial.tempo", "tick_ms": 125}
+```
+
+Then the opening of Beethoven's "Ode to Joy", long in the public domain.
+Alice has the tune; bob and eve play under it. Thirty Plays, each signed
+only once the one before it was heard out.
+
+<!-- @demo commit alice bob eve -->
+```json
+[
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "fa", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "sol", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "sol", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "fa", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 6}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 6}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 6}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 2}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 2}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 8}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 8}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 8}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "fa", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "sol", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "sol", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "fa", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 4}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "mi", "octave": 4, "ticks": 4}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 4}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 4}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "re", "octave": 4, "ticks": 6}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 6}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 6}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 2}, {"member": "did:web:bob.lan", "note": "sol", "octave": 2, "ticks": 2}, {"member": "did:web:eve.lan", "note": "re", "octave": 3, "ticks": 2}]},
+{"$type": "com.example.tutorial.play", "parts": [{"member": "did:web:alice.lan", "note": "do", "octave": 4, "ticks": 8}, {"member": "did:web:bob.lan", "note": "do", "octave": 3, "ticks": 8}, {"member": "did:web:eve.lan", "note": "sol", "octave": 3, "ticks": 8}]}
+]
+```
+
+The conductor kept time from what it saw. A slow answer from any member
+would have held up every note after it, the way one late player holds up
+an orchestra.
+
+<!-- @demo chapter 4 "The show is a repo" -->
+<!-- @demo blurb Eve reads the whole show back from the conductor's repo alone. Then the one rule every follower has to choose, and where this goes next. -->
+
+## Part 4: the show is a repo
+
+Every step of this show, the captions included, was a cue the conductor
+signed into its own repo. So was every note, and every press of the
+page's buttons.
+
+<!-- @demo ask Eve never saw this guide's markdown. Can she tell you what the show was? -->
+
+```bash
+./lab.sh eve python replay.py
+```
+
+```text
+did:web:conductor.stage: ... records, verified
+the show now: CONDUCTOR_AND_ORCHESTRA
+100 cues in this show, one per step, in the order they were signed:
+     8 ask
+     4 chapter
+    44 commit
+     8 concept
+     4 heading
+     1 restart
+     4 run
+    27 say
+the first: step 0, a chapter: 'Backstage'
+... presses of the page's buttons, every show's, each one signed
+```
+
+<!-- @demo point eve.terminal -->
+
+She can. Eve checked the conductor's signature over the whole repo, then
+read the show out of it: which guide, every step in the order it was
+signed, and every press. Nothing came from the guide or from the page.
+
+> 🔑 **Key concept: the show is a repo.** The conductor keeps everything
+> the show is in its own repo: which guide is playing, one cue per step
+> with that step's words, the code it showed, the music, the pictures, and
+> a signed record of every press. Anyone who can read the repo can replay
+> the show and check every signature, long after it ended. The guide is
+> where the show came from; the repo is the show.
+
+![the conductor's repo holds the show record, one cue per step, the music, the lab files and pictures, and every press of a button](sketches/show-is-a-repo.svg)
+
+> ⚠️ **Important: what a follower does with a record is its own choice, so
+> choose it.** Each player in this lab runs any shell line a cue carries,
+> as long as the cue verifies as the conductor's. That is remote execution
+> authorized by a signature: fine for a toy on your own computer, and
+> nowhere else. The members are narrower. They act only on a Play their
+> own model accepts, and only by writing a Tone. Both are policies, chosen
+> by whoever runs the follower; nothing in FastATP makes a peer obey a
+> record. A real deployment picks the narrow one, or checks each command
+> against an allow-list, or keeps the follower behind a VPN's access rules.
+
+A note is a harmless thing to ask for. What about a task that matters,
+like your AI concierge booking you a ride, and paying for it? It is the
+same shape: a request record, an answer record, and a follower deciding
+what it will do. That is the next guide, Hoot.
+
 <!-- @demo end -->
+
+## What you just ran, in orchestration terms
+
+| In this guide | In the systems you may know |
+| --- | --- |
+| The conductor | The orchestrator: a workflow engine, a job scheduler, an agent loop |
+| A `Play` | A task or a job, written where the workers can read it |
+| A `Tone` | The task's result, written by the worker, signed by the worker |
+| Following a repo | Subscribing to a queue or a topic, with every message signed |
+| The `Tempo` | Shared configuration every worker reads |
+| A member offline, then back | A worker that was down, catching up from where the queue says |
+| `replay.py` | An audit log, kept by the system itself, that anyone can verify |
+
+The difference is the last column's hidden part: in those systems the
+queue, the log and the results live on infrastructure you have to trust.
+Here each one is a signed record in its owner's repo.
+
+## Things to try
+
+- Retune the orchestra. Change `NOTES` in `orchestra.py` (A at 432 hertz
+  instead of 440, say), `./lab.sh clean` and play the guide again. The
+  conductor's records don't change; every Tone does, because tuning is the
+  members' business.
+- Ask for a note nobody knows. Change one part in the tune to
+  `"note": "zap"` and play it again: that member refuses, the conductor
+  waits out its answer, and the tune stalls for a moment, then carries on.
+  The guide is the score, so editing it is editing the show.
+- Take a member offline mid-tune. While the "Ode to Joy" plays, run
+  `./lab.sh eve pkill -xf "python orchestra.py eve.lan"` in a second
+  terminal. Each note naming eve now waits for an answer that never comes,
+  then moves on without her. `./lab.sh restart eve` brings her back, and
+  she plays every part she missed, late, all at once.
+
+## Where this leads
+
+Next is Hoot: the same shape, with work that matters. A person asks an AI
+concierge for something, the concierge asks other agents, and every
+request and every answer is a signed record in its owner's repo, with a
+chain of custody you can check end to end.
+
+For code to build on now, `examples/workorder.py` in this repository is
+request and answer as a framework, with `PeerApp` dispatching your own
+lexicons to handlers.
 
 ## Cleanup
 
