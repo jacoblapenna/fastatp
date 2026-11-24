@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The whole docker surface of this tutorial:
 #   ./lab.sh up                  build the image and boot alice, bob and eve
-#   ./lab.sh conductor           Part 4: boot them with the demo engine, its page on http://localhost:8080
+#   ./lab.sh conductor [SCORE]   boot them with the demo engine playing a guide, its page on http://localhost:8080
 #   ./lab.sh test [SCORE]        clean, boot the demo engine, play a guide with nobody watching, report (AGENTS.md)
 #   ./lab.sh logs alice          what alice's process prints (Ctrl-C to stop watching)
 #   ./lab.sh alice <command...>  run a command on alice's machine (curl, python follow.py, wg show, ...)
@@ -14,7 +14,10 @@ cd "$(dirname "$0")"
 self="$PWD/$(basename "$0")"   # this script by its whole path, so it can call itself from here
 case "${1:-}" in
   up)      mkdir -p state; docker compose up --build -d --wait "${@:2}" ;;
-  conductor) mkdir -p state; CONDUCTOR=did:web:conductor.stage docker compose --profile conductor up --build -d --wait
+  conductor) mkdir -p state; export SCORE="${2:-${SCORE:-GETTING_STARTED}}"
+           # a guide names the program its machines run (<!-- @demo peer orchestra.py -->); peer.py if not
+           export PEER="${PEER:-$(sed -n 's/^<!-- @demo peer \([a-z_]*\.py\) -->$/\1/p' "../$SCORE.md" | head -1)}"
+           CONDUCTOR=did:web:conductor.stage docker compose --profile conductor up --build -d --wait
            echo "the conductor is up: open http://localhost:8080" ;;
   test)    "$self" clean >/dev/null 2>&1; SCORE="${2:-GETTING_STARTED}" "$self" conductor >/dev/null
            docker compose exec -T conductor python play.py --speed "${SPEED:-4}" ;;

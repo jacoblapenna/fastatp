@@ -17,6 +17,8 @@ lists keep their lines. Everything else is a cue in an HTML comment, which
 GitHub and fastatp.com do not render:
 
   <!-- @demo machines alice bob eve -->   who is in the cast
+  <!-- @demo peer orchestra.py -->        the program the machines run in place of peer.py
+                                          (`./lab.sh conductor` reads it from the guide)
   <!-- @demo start -->  <!-- @demo end --> what the screen plays (any number of ranges)
   <!-- @demo chapter 3 "The private side" -->
   <!-- @demo blurb Eve reads the public repo like anyone... -->
@@ -167,6 +169,7 @@ LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until 
 
 def parse(text: str) -> dict:
     machines: list[str] = []
+    peer = "peer.py"  # the program the machines run
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
@@ -240,6 +243,8 @@ def parse(text: str) -> dict:
             i += 1
             if verb == "machines":
                 machines = arg.split()
+            elif verb == "peer":
+                peer = arg
             elif verb == "start":
                 active = True
             elif verb == "end":
@@ -368,6 +373,9 @@ def parse(text: str) -> dict:
                 )
                 if rkey:
                     step["rkey"] = rkey
+                if code_cue:
+                    step["code"] = dict(code_cue)  # shown beside the first member
+                    code_cue = None
                 if fails_cue:
                     for n in fails_cue[1] or range(1, len(names) + 1):
                         if not 1 <= n <= len(names):
@@ -531,6 +539,7 @@ def parse(text: str) -> dict:
             listing["from"] = [source["id"] for source in listing["from"]]
     return {
         "machines": machines,
+        "peer": peer,
         "chapters": menu,
         "files": files,
         "images": images,

@@ -3,7 +3,7 @@
 # exact commit the guide is tested against, and the demo engine can carry the guides.
 FROM python:3.12-slim AS machine
 RUN apt-get update \
- && apt-get install -y --no-install-recommends wireguard-tools iproute2 iputils-ping curl tcpdump \
+ && apt-get install -y --no-install-recommends wireguard-tools iproute2 iputils-ping curl tcpdump procps \
  && rm -rf /var/lib/apt/lists/*
 # fastatp's runtime dependencies exactly as the repo's uv.lock pins them, hashes
 # checked; then fastatp itself from the tree. No version is named anywhere.
@@ -22,7 +22,7 @@ COPY tutorials/lab/entrypoint.sh tutorials/lab/lexicons.py tutorials/lab/dids.py
      tutorials/lab/pair.py tutorials/lab/follow.py tutorials/lab/tail.py tutorials/lab/verify.py tutorials/lab/blocks.py ./
 # Backstage, for `./lab.sh conductor` only: this machine's player in the demo engine.
 COPY tutorials/lab/backstage.py tutorials/lab/player.py ./
-COPY tutorials/lab/music.py tutorials/lab/orchestra.py ./
+COPY tutorials/lab/music.py tutorials/lab/orchestra.py tutorials/lab/trace.py ./
 RUN chmod +x entrypoint.sh
 ENTRYPOINT ["./entrypoint.sh"]
 
@@ -38,8 +38,9 @@ RUN npx vite build
 
 # The conductor: a peer of its own, the scores built from the guides, and the page.
 FROM machine AS conductor
-COPY tutorials/conductor/conductor.py tutorials/tools/md_manifest.py tutorials/tools/play.py tutorials/GETTING_STARTED.md ./
+COPY tutorials/conductor/conductor.py tutorials/tools/md_manifest.py tutorials/tools/play.py tutorials/GETTING_STARTED.md tutorials/CONDUCTOR_AND_ORCHESTRA.md ./
 COPY tutorials/sketches ./sketches
 RUN python md_manifest.py GETTING_STARTED.md > GETTING_STARTED.json
+RUN python md_manifest.py CONDUCTOR_AND_ORCHESTRA.md > CONDUCTOR_AND_ORCHESTRA.json
 COPY --from=page /page/dist ./page/
 ENTRYPOINT ["python", "conductor.py"]

@@ -198,6 +198,7 @@ export function scriptState(manifest, cursor) {
     if (step.kind === 'heading') [s.say, s.code, s.ask] = ['', null, ''];
     // a command shows the file it runs, beside its machine, until the next command
     if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
+    if (step.kind === 'commit') s.code = step.code && step.machines.length ? { ...step.code, machine: step.machines[0] } : null;
     if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];
     if (step.kind === 'ask') s.ask = step.text; // stays up through the command it asks about
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
