@@ -63,8 +63,10 @@ with nobody watching, against the fastatp in the pull request: three peers
 and the demo engine in Docker, every command the guide runs, in order, over
 a real WireGuard tunnel. It fails if the lab does not build or boot, if the
 play stalls, if a command ends the wrong way (one the guide means to work
-fails, or one it means to be refused goes through), or if a command does
-not print what the listing under it in the guide shows. It then opens the
+fails, or one it means to be refused goes through), if a command does
+not print what the listing under it in the guide shows, or if a record the
+conductor commits is not answered the way the guide says (a member that
+should play stays silent, or one that should stay silent plays). It then opens the
 conductor's page in a headless Chrome and looks back through every step for
 page errors, a page wider than its window, and a key concept without its
 card or picture. `all tests ran` waits on it, so a guide that does not play

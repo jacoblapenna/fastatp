@@ -15,7 +15,35 @@ To upgrade safely within one minor line, pin with `~=`, for example
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- Developing with an older uv than CI's is refused (`[tool.uv]
+  required-version` in `pyproject.toml`), so a local `uv lock` can no
+  longer rewrite `uv.lock` in another uv's format. `CONTRIBUTING.md` says
+  to use the uv CI pins.
+
+### Docs
+- The second tutorial, `tutorials/CONDUCTOR_AND_ORCHESTRA.md`: the demo
+  engine that plays the first guide, taken apart, then put to work. Bob
+  checks one cue and its result from the two repos alone; the machines
+  become members of an orchestra, each running `peer.py` unchanged plus a
+  follow of the conductor's repo, and play a note, a scale, chords and the
+  opening of Beethoven's "Ode to Joy". A task is a signed record in the
+  asker's repo and its result a signed record in the worker's: a member
+  that was offline when its part was written plays it when it comes back,
+  and the show itself is read back from the conductor's repo. It teaches a
+  record type built on another (`class Tone(Note)`) and numbers kept whole
+  with their scale, since atproto records have no floats. CI plays it on
+  every pull request beside the first guide.
+- The demo engine gains what the guide needs, all under `tutorials/`, none
+  of it in the package. A score can have the conductor commit a record for
+  named machines and wait for their answers (`<!-- @demo commit alice bob
+  -->` above a JSON record), with no names for a setting every machine
+  reads, and a list of records is conducted one at a time, the next signed
+  only once the last was answered and heard out. A guide names the program
+  its machines run (`<!-- @demo peer orchestra.py -->`), and
+  `tutorials/lab/lab.sh conductor <GUIDE>` and `lab.sh test <GUIDE>` read
+  it. The conductor's page plays each member's note, from the member's own
+  signed record, as it lands.
 
 ## [0.3.0] - 2026-11-20
 

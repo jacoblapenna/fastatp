@@ -289,19 +289,21 @@ jobs:
     # command the guide runs, in order, over a real WireGuard tunnel. It
     # fails if the lab does not build or boot, if the play stalls, if a
     # command ends the wrong way (one meant to work fails, or one meant to be
-    # refused goes through), or if a command does not print what the guide's
-    # listing shows. Then it opens the conductor's page in a headless
+    # refused goes through), if a command does not print what the guide's
+    # listing shows, or if a record the conductor commits is not answered as
+    # the guide says. Then it opens the conductor's page in a headless
     # Chrome and looks back through every step of the show it just played.
     #
     # One entry per guide: a new tutorial adds its file's name here (and its
-    # score to tutorials/lab/Dockerfile), in the pull request that adds it.
+    # score to tutorials/lab/Dockerfile, and its name to GUIDES in
+    # tests/test_tutorials.py), in the pull request that adds it.
     name: tutorial ${{ matrix.guide }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        guide: [GETTING_STARTED]
+        guide: [GETTING_STARTED, CONDUCTOR_AND_ORCHESTRA]
     env:
       GUIDE: ${{ matrix.guide }}
       # every build in this job, the play's own `up --build` included, goes to

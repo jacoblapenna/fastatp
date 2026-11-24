@@ -11,8 +11,8 @@ what happened on the machines.
 | # | Guide | What it shows | Status |
 | --- | --- | --- | --- |
 | 1 | [GETTING_STARTED.md](GETTING_STARTED.md) | Three sovereign peers on a private LAN: signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
-| 2 | The demo engine | The conductor that plays guide 1, taken apart: workloads orchestrated with signed records, no model in the way yet | next |
-| 3 | Hoot | Agents with models and tools, a verified chain of custody | after 2 |
+| 2 | [CONDUCTOR_AND_ORCHESTRA.md](CONDUCTOR_AND_ORCHESTRA.md) | The engine that plays guide 1, taken apart, then put to work: a conductor orchestrates three machines with signed records, from one note to a tune | runs |
+| 3 | Hoot | Agents with models and tools, a verified chain of custody | next |
 | 4 | The browser app | A person reaching an app from a browser tab with no secret on the wire | after 3 |
 
 Everything they run is shared: `lab/` is three machines on a LAN inside
@@ -46,6 +46,10 @@ cd tutorials/lab             # from the repository root
 ./lab.sh clean               # start from the first minted identity
 ./lab.sh conductor           # boots the machines with the demo engine
 ```
+
+That plays Getting Started; `./lab.sh conductor CONDUCTOR_AND_ORCHESTRA`
+plays guide two, whose machines run its own program (the guide names it,
+`<!-- @demo peer orchestra.py -->`, and `lab.sh` reads it).
 
 Then open <http://localhost:8080> and press **Start**. Each press of **Next**
 is one step: a caption from the guide, or one command on one machine, with
