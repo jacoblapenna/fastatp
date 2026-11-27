@@ -194,6 +194,8 @@ class Hold(Lexicon):
 
     nsid = "com.example.bank.hold"
     authorize: Ref
+    owner: Did  # whose account the money is held from, and which: the hold says,
+    account: Annotated[str, MaxLength(32)]  # so the ledger needs nothing else to count it
     payee: Did
     amount: Money
     created_at: Datetime

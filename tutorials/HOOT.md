@@ -505,6 +505,8 @@ class Hold(Lexicon):
 
     nsid = "com.example.bank.hold"
     authorize: Ref
+    owner: Did  # whose account the money is held from, and which: the hold says,
+    account: Annotated[str, MaxLength(32)]  # so the ledger needs nothing else to count it
     payee: Did
     amount: Money
     created_at: Datetime
@@ -1071,13 +1073,13 @@ def decide(seen: Seen, now: datetime) -> Plan:
     # 3. the money is held: the ride is booked with the winner, who alone stays
     #    in "rides" until the bank has paid it
     settled = {s.hold.uri for _, s in seen.all(Settlement, by=BANK)}
-    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
+    refused = {(r.authorize.uri, r.authorize.cid) for _, r in seen.all(Refusal, by=BANK)}
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
         held = [ref for ref, h in seen.all(Hold, by=BANK) if h.authorize == authorize_ref]
         if key not in requests:
             continue
-        if authorize_ref.uri in refused:
+        if (authorize_ref.uri, authorize_ref.cid) in refused:
             continue  # no money, no ride: the payee is let go with everyone else
         if not held or held[0].uri not in settled:
             plan.let("rides", authorize.payee)
@@ -1284,19 +1286,13 @@ LIMITS = {payee: dollars(10000) for payee in COMPANIES}
 WAIT = "wait"  # not a refusal: something it needs has not reached this bank yet
 
 
-def account_of(seen: Seen, hold: Hold) -> tuple[str, str] | None:
-    """Whose account, and which, a hold was taken from: from the request it answered."""
-    authorize = seen.get(hold.authorize, Authorize)
-    return None if authorize is None else (seen.who(authorize.allowance), authorize.account)
-
-
 def spoken_for(seen: Seen, account: tuple[str, str]) -> int:
     """Cents of this account already gone or set aside: what each settled hold
     paid out, and each open hold in full."""
     settled = {(s.hold.uri, s.hold.cid): s for _, s in seen.all(Settlement, by=BANK)}
     cents = 0
     for ref, hold in seen.all(Hold, by=BANK):
-        if account_of(seen, hold) == account:
+        if (hold.owner, hold.account) == account:
             done = settled.get((ref.uri, ref.cid))
             cents += done.paid.amount if done else hold.amount.amount
     return cents
@@ -1371,6 +1367,8 @@ def decide(seen: Seen, now: datetime) -> Plan:
             continue
         hold = Hold(
             authorize=authorize_ref,
+            owner=seen.who(authorize.allowance),
+            account=authorize.account,
             payee=authorize.payee,
             amount=authorize.amount,
             created_at=peer.now(),

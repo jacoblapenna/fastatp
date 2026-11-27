@@ -47,19 +47,13 @@ LIMITS = {payee: dollars(10000) for payee in COMPANIES}
 WAIT = "wait"  # not a refusal: something it needs has not reached this bank yet
 
 
-def account_of(seen: Seen, hold: Hold) -> tuple[str, str] | None:
-    """Whose account, and which, a hold was taken from: from the request it answered."""
-    authorize = seen.get(hold.authorize, Authorize)
-    return None if authorize is None else (seen.who(authorize.allowance), authorize.account)
-
-
 def spoken_for(seen: Seen, account: tuple[str, str]) -> int:
     """Cents of this account already gone or set aside: what each settled hold
     paid out, and each open hold in full."""
     settled = {(s.hold.uri, s.hold.cid): s for _, s in seen.all(Settlement, by=BANK)}
     cents = 0
     for ref, hold in seen.all(Hold, by=BANK):
-        if account_of(seen, hold) == account:
+        if (hold.owner, hold.account) == account:
             done = settled.get((ref.uri, ref.cid))
             cents += done.paid.amount if done else hold.amount.amount
     return cents
@@ -134,6 +128,8 @@ def decide(seen: Seen, now: datetime) -> Plan:
             continue
         hold = Hold(
             authorize=authorize_ref,
+            owner=seen.who(authorize.allowance),
+            account=authorize.account,
             payee=authorize.payee,
             amount=authorize.amount,
             created_at=peer.now(),

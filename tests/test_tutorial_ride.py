@@ -252,7 +252,12 @@ def test_a_company_sends_no_car_on_a_hold_that_is_not_the_bank_s(lab):
     quote_ref = seen.all(ride.Quote, by=hoot)[0][0]
     # a "hold" the concierge wrote itself, in its own repo: nobody's money
     fake = ride.Hold(
-        authorize=request_ref, payee=hoot, amount=ride.dollars(4000), created_at=stamp(T0)
+        authorize=request_ref,
+        owner=ride.ALICE,
+        account="checking",
+        payee=hoot,
+        amount=ride.dollars(4000),
+        created_at=stamp(T0),
     )
     put(seen, ride.CONCIERGE, "3kride", fake, T0)
     fake_ref = seen.all(ride.Hold, by=ride.CONCIERGE)[0][0]
@@ -440,4 +445,23 @@ def test_a_refused_payee_is_let_go(lab):
     put(seen, ride.BANK, "3kride", refusal, late)
     act(seen, ride.CONCIERGE, lab.concierge.decide, late, lab)
     assert lab.last[ride.CONCIERGE].readers["rides"] == {ride.ALICE}
-    assert request_ref  # the request itself stays: the record of what was asked
+    assert seen.get(request_ref, ride.Request) is not None  # what was asked stays on record
+
+
+def test_a_hold_keeps_its_account_whatever_happens_to_the_request(lab):
+    """The ledger counts each hold by the account written on the hold itself,
+    so rewriting the request it answered can't free the money it holds."""
+    ride = lab.ride
+    seen = ride.Seen()
+    hold = ride.Hold(
+        authorize=ride.Ref(
+            uri="at://did:web:concierge.lan/com.example.bank.authorize/3k", cid=_cid()
+        ),
+        owner=ride.ALICE,
+        account="checking",
+        payee="did:web:hoot.lan",
+        amount=ride.dollars(20000),
+        created_at=stamp(T0),
+    )
+    put(seen, ride.BANK, "3k", hold, T0)  # the request it answered is nowhere in sight
+    assert lab.bank.spoken_for(seen, (ride.ALICE, "checking")) == 20000

@@ -167,13 +167,13 @@ def decide(seen: Seen, now: datetime) -> Plan:
     # 3. the money is held: the ride is booked with the winner, who alone stays
     #    in "rides" until the bank has paid it
     settled = {s.hold.uri for _, s in seen.all(Settlement, by=BANK)}
-    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
+    refused = {(r.authorize.uri, r.authorize.cid) for _, r in seen.all(Refusal, by=BANK)}
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
         held = [ref for ref, h in seen.all(Hold, by=BANK) if h.authorize == authorize_ref]
         if key not in requests:
             continue
-        if authorize_ref.uri in refused:
+        if (authorize_ref.uri, authorize_ref.cid) in refused:
             continue  # no money, no ride: the payee is let go with everyone else
         if not held or held[0].uri not in settled:
             plan.let("rides", authorize.payee)
