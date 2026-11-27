@@ -85,7 +85,7 @@
 
 <svelte:window onkeydown={key} />
 
-<div class="app">
+<div class="app" class:with-map={privateRepos}>
   <header>
     <div class="brand"><BrandWordmark /> <span>· playing {live.manifest?.source ?? ''}</span></div>
     <div class="right">
@@ -137,8 +137,10 @@
 
 <style>
   /* one column that never grows past the window: a wide card inside scrolls itself, not the page */
-  .app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
-  .maprow { height: 42vh; min-height: 240px; padding: 0 12px 8px; }
+  .app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+  /* with the map, the machines and the map share what the caption and the footer leave */
+  .app.with-map { grid-template-rows: auto auto minmax(0, 3fr) minmax(0, 2fr) auto auto; }
+  .maprow { min-height: 0; padding: 0 12px 8px; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--color-border); }
   .brand > span { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-sm); }
   .right { display: flex; gap: 10px; align-items: center; }
@@ -148,6 +150,6 @@
   footer { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 10px; padding: 0 12px 6px; align-items: start; }
   /* a folded card is one line; the footer makes room only for an open one */
   .fold { min-height: 0; }
-  .fold:has(.open) { height: 240px; }
+  .fold:has(:global(.open)) { height: 240px; } /* .open is on the card inside, another component */
   .harness { color: var(--color-text-muted); font-size: 11px; padding: 2px 16px 6px; }
 </style>
