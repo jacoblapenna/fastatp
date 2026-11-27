@@ -92,7 +92,8 @@ tasks: set[asyncio.Task] = set()  # background work this player keeps a referenc
 async def run_peer() -> None:
     """peer.py as a child; its output goes to docker's log, as before, and /tmp/peer.log.
 
-    PEER names a guide's own program that builds on peer.py (orchestra.py), if any."""
+    PEER names this machine's program, as entrypoint.sh resolved it from the
+    guide: peer.py, or the guide's own that builds on it (orchestra.py)."""
     global peer
     peer = await asyncio.create_subprocess_exec(
         "python",
@@ -279,6 +280,7 @@ async def watch_view() -> None:
     """Its identity, its own public repo (verified, as any reader would), its tunnel peers."""
     last: str | None = None
     repo_view: dict = {}
+    private: list = []  # this machine's private repos, as /mine last listed them
     seen_key = None
     async with httpx.AsyncClient(timeout=3) as http:
         while True:
@@ -311,6 +313,14 @@ async def watch_view() -> None:
                     seen_key = (who["did"], who["seq"], who["channel"])
                 except Exception:
                     continue
+            # A program that keeps private repos lists them, to this machine
+            # only, at /mine: its owner's view of them, shown like its terminal.
+            # A poll that fails keeps the last good answer, so a hiccup never
+            # blanks this machine's repos on the screen.
+            with contextlib.suppress(httpx.HTTPError, ValueError):
+                answer = await http.get("http://127.0.0.1/mine")
+                if answer.status_code == 200 and isinstance(listed := answer.json(), list):
+                    private = listed
             # Three short shell commands, run on a thread so nothing else this
             # player does waits for them.
             key, ip, peers = await asyncio.to_thread(
@@ -320,6 +330,7 @@ async def watch_view() -> None:
                 identity={**who, "wg_public_key": key, "lan_ip": ip},
                 repo=repo_view,
                 wg=peers,
+                private=private,
             )
             snapshot = view.model_dump_json()
             if snapshot != last:

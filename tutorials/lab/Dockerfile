@@ -23,6 +23,8 @@ COPY tutorials/lab/entrypoint.sh tutorials/lab/lexicons.py tutorials/lab/dids.py
 # Backstage, for `./lab.sh conductor` only: this machine's player in the demo engine.
 COPY tutorials/lab/backstage.py tutorials/lab/player.py ./
 COPY tutorials/lab/music.py tutorials/lab/orchestra.py tutorials/lab/trace.py tutorials/lab/replay.py ./
+COPY tutorials/lab/ride.py tutorials/lab/rider.py tutorials/lab/concierge.py tutorials/lab/bank.py \
+     tutorials/lab/company.py tutorials/lab/cab.py tutorials/lab/custody.py tutorials/lab/peek.py ./
 RUN chmod +x entrypoint.sh
 ENTRYPOINT ["./entrypoint.sh"]
 
@@ -38,9 +40,10 @@ RUN npx vite build
 
 # The conductor: a peer of its own, the scores built from the guides, and the page.
 FROM machine AS conductor
-COPY tutorials/conductor/conductor.py tutorials/tools/md_manifest.py tutorials/tools/play.py tutorials/GETTING_STARTED.md tutorials/CONDUCTOR_AND_ORCHESTRA.md ./
+COPY tutorials/conductor/conductor.py tutorials/tools/md_manifest.py tutorials/tools/play.py tutorials/GETTING_STARTED.md tutorials/CONDUCTOR_AND_ORCHESTRA.md tutorials/HOOT.md ./
 COPY tutorials/sketches ./sketches
 RUN python md_manifest.py GETTING_STARTED.md > GETTING_STARTED.json
 RUN python md_manifest.py CONDUCTOR_AND_ORCHESTRA.md > CONDUCTOR_AND_ORCHESTRA.json
+RUN python md_manifest.py HOOT.md > HOOT.json
 COPY --from=page /page/dist ./page/
 ENTRYPOINT ["python", "conductor.py"]

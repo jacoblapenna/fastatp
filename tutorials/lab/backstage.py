@@ -143,6 +143,9 @@ class View(Lexicon):
     identity: dict[str, Any]
     repo: dict[str, Any]
     wg: list[dict[str, Any]]
+    # the machine's own private repos, if its program lists them (/mine): what
+    # its owner sees, shown the way its terminal is
+    private: list[dict[str, Any]] = []
 
 
 class Packets(Lexicon):

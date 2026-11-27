@@ -51,7 +51,7 @@ is the thing the wire replaces.
 ## Tutorials
 
 Runnable guides, one per pull request, each building on the one before it.
-Every guide runs against the fastatp in the tree: three machines on a private
+Every guide runs against the fastatp in the tree: its machines on a private
 LAN inside Docker, each a personal data server of its own, read along and
 typed, watched as a show in the browser, or played headless, so a guide breaks
 in the same change as the code it teaches. You need Docker with the compose
@@ -67,8 +67,8 @@ did.
 | --- | --- | --- | --- |
 | 1 | [`GETTING_STARTED.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/GETTING_STARTED.md) | Three sovereign peers on a private LAN: a PDS on each machine, signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
 | 2 | [`CONDUCTOR_AND_ORCHESTRA.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/CONDUCTOR_AND_ORCHESTRA.md) | The engine that plays guide 1, taken apart, then put to work: a conductor orchestrates three machines with signed records, from one note to a tune, and nobody holds a connection open for a task | runs |
-| 3 | Hoot | Agents with models and tools, a verified chain of custody | next |
-| 4 | The browser app | A person accessing an app from a browser tab with no secret on the wire | after 3 |
+| 3 | [`HOOT.md`](https://github.com/jacoblapenna/fastatp/blob/main/tutorials/HOOT.md) | Tool calling as signed records: an agent drops one request, two ride companies bid sealed from each other, a bank holds and pays, a car drives, and alice checks every step back to alice's own words | runs |
+| 4 | The browser app | A person accessing an app from a browser tab with no secret on the wire | next |
 
 To watch the first one as a show, with every machine's terminal, the network
 diagram and the wire on one screen:

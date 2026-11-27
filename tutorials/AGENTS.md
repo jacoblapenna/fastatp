@@ -8,6 +8,7 @@ on the user's machine, and you can run it yourself and read what happened.
 cd tutorials/lab         # from the repository root
 ./lab.sh test            # GETTING_STARTED.md, on fresh machines; about five minutes
 ./lab.sh test CONDUCTOR_AND_ORCHESTRA   # guide two, the same way
+./lab.sh test HOOT                      # guide three: six machines, tool calling as records
 ```
 
 Then tell the user what you saw, in their terms: which machine ran what,
@@ -16,7 +17,7 @@ ask you about any step, and you can run it again or by hand to answer
 ([README.md](README.md) has the other ways to run a guide).
 
 `./lab.sh test` deletes the lab's state (`lab/state/`, throwaway keys and
-repos), boots three machines and the demo engine in Docker, and plays the
+repos), boots the guide's machines and the demo engine in Docker, and plays the
 guide with nobody watching. It prints every command the guide runs, on
 which machine, with its exit code and last line of output, and the title of
 every key concept as the guide reaches it. It exits 0 when the whole guide
@@ -88,10 +89,11 @@ updates a guide after the lab changes).
 | --- | --- | --- |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | yes | sovereign peers, signed records, verified following, a private channel behind WireGuard |
 | [CONDUCTOR_AND_ORCHESTRA.md](CONDUCTOR_AND_ORCHESTRA.md) | yes | orchestrating work with signed records: a task in the asker's repo, its result in the worker's, sequence and fan-out, a worker that was offline catching up |
+| [HOOT.md](HOOT.md) | yes | tool calling as signed records, against MCP and A2A: one open request and sealed bids, an allowance the bank checks, each agent composing who reads which private repo, and a chain of custody checked step by step back to the start |
 
 The guides are a series, each building on the last, and they arrive one at
-a time: after these two come Hoot (agents with models and tools), then the browser app (a person
-reaching an app with no secret on the wire).
+a time: after these three comes the browser app (a person reaching an app
+with no secret on the wire).
 
 ## Do not
 

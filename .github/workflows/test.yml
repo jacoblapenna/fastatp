@@ -303,7 +303,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        guide: [GETTING_STARTED, CONDUCTOR_AND_ORCHESTRA]
+        guide: [GETTING_STARTED, CONDUCTOR_AND_ORCHESTRA, HOOT]
     env:
       GUIDE: ${{ matrix.guide }}
       # every build in this job, the play's own `up --build` included, goes to

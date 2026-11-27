@@ -60,7 +60,11 @@
   // machines, and once a commit is what last happened, the repos are what
   // to watch: each machine's fills its panel until the next command.
   let commits = $derived(live.manifest?.steps.some((s) => s.kind === 'commit') ?? false);
-  let repos = $derived(commits && script.last === 'commit');
+  // Machines that keep private repos (Hoot's agents) show them, all at once,
+  // whenever the step is not a command: the repos are the screen.
+  let privateRepos = $derived(Object.values(live.machines).some((m) => m.private?.length));
+  let command = $derived(['run', 'restart', 'stop'].includes(script.step?.kind));
+  let repos = $derived((commits && script.last === 'commit') || (privateRepos && !command));
 
   function size(name) {
     if (panels.has(name) || focused(name)) return 'open'; // pointed at, or running: open for this step
@@ -136,6 +140,8 @@
   .chapters { font-weight: 600; }
   .machines { display: flex; gap: 10px; padding: 10px 12px; min-height: 0; }
   footer { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 10px; padding: 0 12px 6px; align-items: start; }
-  .fold { height: 240px; min-height: 0; }
+  /* a folded card is one line; the footer makes room only for an open one */
+  .fold { min-height: 0; }
+  .fold:has(:global(.open)) { height: 240px; } /* .open is on the card inside, another component */
   .harness { color: var(--color-text-muted); font-size: 11px; padding: 2px 16px 6px; }
 </style>

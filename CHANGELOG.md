@@ -47,6 +47,29 @@ To upgrade safely within one minor line, pin with `~=`, for example
   conductor's own repo, every record as it is signed, and once records are
   what is happening, each machine's repo fills its panel, its records
   appearing as they land, while the terminals fold until the next command.
+- The third tutorial, `tutorials/HOOT.md`: tool calling as signed records,
+  set beside MCP and A2A. alice asks an agent for a ride once; the agent
+  writes one request in its own repo, and two ride companies bid on it,
+  each in its own repo, sealed from each other. A bank holds the money on
+  alice's own signed allowance, Hoot checks the hold in the bank's repo
+  before sending a car, the car drives by its own clock and signs a photo
+  of the curb, and the bank pays. Then alice walks the whole chain back,
+  checking every step's signature and hash (`custody.py`). Every agent
+  composes its own privacy: which private repo each record goes in, and
+  who may read it, let in and let go as the work goes. The lab gains six
+  machines running five agent programs (`rider.py`, `concierge.py`,
+  `bank.py`, `company.py` for both ride companies, `cab.py`), all under
+  `tutorials/lab/`, none in the package, each `peer.py` unchanged plus one
+  loop. CI plays it on every pull request.
+- The demo engine gains what the third guide needs. A guide names its cast
+  (`<!-- @demo machines ... -->`) and only those machines boot; a machine
+  can run a program of its own (`<!-- @demo peer bank bank.py -->`); the lab
+  gains concierge, bank, hoot, jitney and cab-17. Each machine can show its
+  own private repos on the conductor's page: who is let into each, records
+  landing as cards, each card naming the records it acts on, and checks
+  marking each one verified or sealed. `<!-- @demo close code -->` puts a
+  command's file away. A late tab replays only each machine's newest view,
+  and a just-landed record no longer blinks out when the next view arrives.
 
 ## [0.3.0] - 2026-11-20
 

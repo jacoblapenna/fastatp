@@ -185,8 +185,19 @@ async def broadcast(message: dict) -> None:
             browsers.discard(ws)
 
 
+latest_view: dict[str, int] = {}  # machine -> where its newest view sits in `events`
+
+
 async def tell(event: dict) -> None:
-    events.append(event)
+    # A view is what a machine sees now, not a history: a tab opened late
+    # needs only the newest, so each replaces the one before. A machine whose
+    # repos change every second would otherwise fill the replay with copies.
+    if event["type"] == "view" and event["machine"] in latest_view:
+        events[latest_view[event["machine"]]] = event
+    else:
+        if event["type"] == "view":
+            latest_view[event["machine"]] = len(events)
+        events.append(event)
     await broadcast({"type": "event", "event": event})
 
 
@@ -209,6 +220,7 @@ def listener(machine: str):
                     "identity": record["identity"],
                     "repo": record["repo"] or None,
                     "wg": record["wg"],
+                    "private": record.get("private") or [],
                 }
             )
             return

@@ -1,4 +1,5 @@
-# Three machines on one LAN. `./lab.sh` drives this; you never need to run docker yourself.
+# Machines on one LAN. `./lab.sh` drives this; you never need to run docker yourself.
+# alice, bob and eve boot by default; a guide that names its cast boots exactly that cast.
 name: fastatp-lab
 
 x-machine: &machine
@@ -30,6 +31,48 @@ services:
     environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
     networks: {lan: {ipv4_address: 192.168.77.13, aliases: [eve.lan]}, stage: {aliases: [eve.stage]}}
     volumes: ["./state/eve.lan:/srv/eve.lan", "./state/backstage/eve.stage:/srv/backstage"]
+
+  # Hoot's cast: specialized machines that boot only when a guide names them.
+  concierge:
+    <<: *machine
+    profiles: [hoot]
+    hostname: concierge.lan
+    command: [concierge.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.17, aliases: [concierge.lan]}, stage: {aliases: [concierge.stage]}}
+    volumes: ["./state/concierge.lan:/srv/concierge.lan", "./state/backstage/concierge.stage:/srv/backstage"]
+  bank:
+    <<: *machine
+    profiles: [hoot]
+    hostname: bank.lan
+    command: [bank.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.14, aliases: [bank.lan]}, stage: {aliases: [bank.stage]}}
+    volumes: ["./state/bank.lan:/srv/bank.lan", "./state/backstage/bank.stage:/srv/backstage"]
+  hoot:
+    <<: *machine
+    profiles: [hoot]
+    hostname: hoot.lan
+    command: [hoot.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.15, aliases: [hoot.lan]}, stage: {aliases: [hoot.stage]}}
+    volumes: ["./state/hoot.lan:/srv/hoot.lan", "./state/backstage/hoot.stage:/srv/backstage"]
+  cab-17:
+    <<: *machine
+    profiles: [hoot]
+    hostname: cab-17.lan
+    command: [cab-17.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.16, aliases: [cab-17.lan]}, stage: {aliases: [cab-17.stage]}}
+    volumes: ["./state/cab-17.lan:/srv/cab-17.lan", "./state/backstage/cab-17.stage:/srv/backstage"]
+  jitney:
+    <<: *machine
+    profiles: [hoot]
+    hostname: jitney.lan
+    command: [jitney.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.18, aliases: [jitney.lan]}, stage: {aliases: [jitney.stage]}}
+    volumes: ["./state/jitney.lan:/srv/jitney.lan", "./state/backstage/jitney.stage:/srv/backstage"]
 
   # Part 4: the conductor. Backstage: not on the LAN; it cues the machines' players over `stage`.
   conductor:

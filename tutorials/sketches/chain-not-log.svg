@@ -1,0 +1,35 @@
+<!-- a chain against a log: a central log its keeper can edit, against steps each signed by the party that took it -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="on the left a central log, one keeper writing every line, which that keeper can edit; on the right a chain: alice's note, the concierge's request, the bank's hold, the bank's settlement, each signed by its own party and each pointing at the step before by strong ref">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-danger: #b3243f; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-danger: #ff7a85; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <defs>
+    <marker id="head-verified" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-verified, var(--fb-verified, #256f1c))" /></marker>
+  </defs>
+  <text x="70" y="18" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" font-weight="600" fill="var(--color-text, var(--fb-text, #15181b))">a central log</text>
+  <rect x="14" y="30" width="112" height="110" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="2" />
+  <text x="70.0" y="88.0" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))"></text>
+  <text x="26" y="52" text-anchor="start" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">12:01 request</text>
+  <text x="26" y="72" text-anchor="start" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">12:01 quote</text>
+  <text x="26" y="92" text-anchor="start" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">12:02 hold</text>
+  <text x="26" y="112" text-anchor="start" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">12:19 paid</text>
+  <text x="70" y="160" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">one keeper writes it,</text>
+  <text x="70" y="171" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-danger, var(--fb-danger, #b3243f))">and can edit it</text>
+  <text x="236" y="18" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" font-weight="600" fill="var(--color-text, var(--fb-text, #15181b))">a chain</text>
+  <rect x="176" y="28" width="120" height="20" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="236.0" y="41.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">alice: note ✓</text>
+  <rect x="176" y="64" width="120" height="20" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="236.0" y="77.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">concierge: request ✓</text>
+  <path d="M236 64 L236 50" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <rect x="176" y="100" width="120" height="20" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="236.0" y="113.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bank: hold ✓</text>
+  <path d="M236 100 L236 86" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <rect x="176" y="136" width="120" height="20" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="236.0" y="149.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bank: paid ✓</text>
+  <path d="M236 136 L236 122" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <text x="236" y="186" text-anchor="middle" font-size="7" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">each signed by its own; any edit breaks a link</text>
+</svg>

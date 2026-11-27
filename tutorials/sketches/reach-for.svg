@@ -1,0 +1,31 @@
+<!-- what to reach for: calls for a model's quick hands, records for work between owners that runs long or matters later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="reach for MCP when one owner's model needs a tool now: local tools, milliseconds, nothing to audit; reach for signed records when the work crosses owners, runs long, fans out, or someone will ask later who did what">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-border: #cdd2d8; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-border: #333a42; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <defs>
+  </defs>
+  <text x="80" y="20" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" font-weight="600" fill="var(--color-text, var(--fb-text, #15181b))">reach for MCP</text>
+  <text x="240" y="20" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" font-weight="600" fill="var(--color-text, var(--fb-text, #15181b))">reach for records</text>
+  <rect x="14" y="32" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="2" />
+  <text x="80.0" y="46.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">one owner, its own tools</text>
+  <rect x="14" y="66" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="2" />
+  <text x="80.0" y="80.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">a model waiting, in ms</text>
+  <rect x="14" y="100" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="2" />
+  <text x="80.0" y="114.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">files, a shell, an IDE</text>
+  <rect x="14" y="134" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-border, var(--fb-border, #cdd2d8))" stroke-width="2" />
+  <text x="80.0" y="148.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">nobody asks later</text>
+  <rect x="174" y="32" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="240.0" y="46.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">many owners</text>
+  <rect x="174" y="66" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="240.0" y="80.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">runs for minutes or days</text>
+  <rect x="174" y="100" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="240.0" y="114.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">open bids, in parallel</text>
+  <rect x="174" y="134" width="132" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="240.0" y="148.0" text-anchor="middle" font-size="7" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">money: who did what</text>
+  <text x="160" y="186" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">not either-or: an agent can do both</text>
+</svg>

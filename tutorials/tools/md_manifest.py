@@ -16,9 +16,11 @@ next command, heading or stop so no paragraph is lost. Bulleted and numbered
 lists keep their lines. Everything else is a cue in an HTML comment, which
 GitHub and fastatp.com do not render:
 
-  <!-- @demo machines alice bob eve -->   who is in the cast
+  <!-- @demo machines alice bob eve -->   who is in the cast: the machines that boot, and
+                                          no others (`./lab.sh conductor` reads it)
   <!-- @demo peer orchestra.py -->        the program the machines run in place of peer.py
-                                          (`./lab.sh conductor` reads it from the guide)
+  <!-- @demo peer bank bank.py -->        the program one machine runs; it wins over the
+                                          one for all (`./lab.sh conductor` reads both)
   <!-- @demo start -->  <!-- @demo end --> what the screen plays (any number of ranges)
   <!-- @demo chapter 3 "The private side" -->
   <!-- @demo blurb Eve reads the public repo like anyone... -->
@@ -68,7 +70,8 @@ GitHub and fastatp.com do not render:
   <!-- @demo expand eve -->  collapse  focus
                                           frame sizes; focus expands these, collapses the rest
   <!-- @demo open wire -->  close         keep a folded section (alice.repo, bob.tunnel, wire)
-                                          open from here on, or fold it again
+                                          open from here on, or fold it again; `close code`
+                                          puts away the file a command showed
   <!-- @demo point alice.tunnel diagram --> right after a key concept or a paragraph: what it
                                           points at, outlined and opened while it is on
   ![what it shows](sketches/private-repo.svg)
@@ -112,6 +115,7 @@ CONCEPT = re.compile(
     r"^(🔑|⚠️|💡) \*\*(?:Key concept|Important|Did you know): (.+?)\*\*\s*(.*)$", re.S
 )
 STYLES = {"🔑": "key", "⚠️": "important", "💡": "tip"}
+PROGRAM = re.compile(r"^[a-z0-9_]+\.py$")  # a lab program's file name
 DIRECTIVE = re.compile(
     r"^<!-- @demo (/?\w+)(?:\s+([^<>]*?))? -->$"
 )  # one comment, nothing else on the line
@@ -175,6 +179,8 @@ LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until 
 def parse(text: str) -> dict:
     machines: list[str] = []
     peer = "peer.py"  # the program the machines run
+    peers: dict[str, str] = {}  # a machine's own program, where the guide gives one
+    peer_lines: dict[str, int] = {}  # where each was given, for the error that names it
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
@@ -249,7 +255,17 @@ def parse(text: str) -> dict:
             if verb == "machines":
                 machines = arg.split()
             elif verb == "peer":
-                peer = arg
+                words = arg.split()
+                if len(words) not in (1, 2) or not PROGRAM.match(words[-1]):
+                    raise SystemExit(
+                        f"line {i}: @demo peer names a program (orchestra.py), or a machine"
+                        " and its program (bank bank.py)"
+                    )
+                if len(words) == 1:
+                    peer = words[0]
+                else:
+                    peers[words[0]] = words[1]
+                    peer_lines[words[0]] = i
             elif verb == "start":
                 active = True
             elif verb == "end":
@@ -329,6 +345,7 @@ def parse(text: str) -> dict:
             elif verb in ("expand", "collapse", "focus"):
                 emit({"kind": "layout", "action": verb, "machines": arg.split()})
             elif verb in ("open", "close"):
+                emit_say()  # where the cue sits is when it acts: after the paragraph above it
                 emit({"kind": "layout", "action": verb, "targets": arg.split()})
             elif verb == "chapter":
                 number, _, title = arg.partition(" ")
@@ -553,6 +570,11 @@ def parse(text: str) -> dict:
 
     if commit_cue:
         raise SystemExit(f"line {commit_cue[0]}: @demo commit needs a ```json record under it")
+    if strangers := sorted(set(peers) - set(machines)):
+        raise SystemExit(
+            f"line {peer_lines[strangers[0]]}: @demo peer gives a program to {strangers[0]},"
+            " who is not in the cast"
+        )
     menu = chapters(steps)  # puts the steps in playing order and numbers them
     for step in steps:
         for listing in step.get("listings", []):  # now that every step has its number
@@ -560,6 +582,7 @@ def parse(text: str) -> dict:
     return {
         "machines": machines,
         "peer": peer,
+        "peers": {name: peers.get(name, peer) for name in machines},  # what each machine runs
         "chapters": menu,
         "files": files,
         "images": images,
