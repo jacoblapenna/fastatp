@@ -21,6 +21,8 @@ services:
   bank: *reads
   hoot: *reads
   cab-17: *reads
+  concierge: *reads
+  jitney: *reads
   conductor:
     build:
       cache_from: ["type=local,src=${LAB_CACHE}"]

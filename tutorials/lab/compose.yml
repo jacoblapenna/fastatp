@@ -33,6 +33,14 @@ services:
     volumes: ["./state/eve.lan:/srv/eve.lan", "./state/backstage/eve.stage:/srv/backstage"]
 
   # Hoot's cast: specialized machines that boot only when a guide names them.
+  concierge:
+    <<: *machine
+    profiles: [hoot]
+    hostname: concierge.lan
+    command: [concierge.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.17, aliases: [concierge.lan]}, stage: {aliases: [concierge.stage]}}
+    volumes: ["./state/concierge.lan:/srv/concierge.lan", "./state/backstage/concierge.stage:/srv/backstage"]
   bank:
     <<: *machine
     profiles: [hoot]
@@ -57,6 +65,14 @@ services:
     environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
     networks: {lan: {ipv4_address: 192.168.77.16, aliases: [cab-17.lan]}, stage: {aliases: [cab-17.stage]}}
     volumes: ["./state/cab-17.lan:/srv/cab-17.lan", "./state/backstage/cab-17.stage:/srv/backstage"]
+  jitney:
+    <<: *machine
+    profiles: [hoot]
+    hostname: jitney.lan
+    command: [jitney.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.18, aliases: [jitney.lan]}, stage: {aliases: [jitney.stage]}}
+    volumes: ["./state/jitney.lan:/srv/jitney.lan", "./state/backstage/jitney.stage:/srv/backstage"]
 
   # Part 4: the conductor. Backstage: not on the LAN; it cues the machines' players over `stage`.
   conductor:
