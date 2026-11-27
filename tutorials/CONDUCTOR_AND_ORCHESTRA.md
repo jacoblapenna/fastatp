@@ -900,10 +900,11 @@ Here each one is a signed record in its owner's repo.
 
 ## Where this leads
 
-Next is Hoot: the same shape, with work that matters. A person asks an AI
-concierge for something, the concierge asks other agents, and every
-request and every answer is a signed record in its owner's repo, with a
-chain of custody you can check end to end.
+Next is [Hoot](HOOT.md): the same shape, with work that matters. alice asks
+an agent for a ride, once. The agent writes one request, two ride companies
+bid on it sealed from each other, a bank holds the money and pays, and a car
+drives, every step a signed record in its owner's own repo. At the end,
+alice checks the whole chain, back to alice's own words.
 
 For code to build on now, `examples/workorder.py` in this repository is
 request and answer as a framework, with `PeerApp` dispatching your own

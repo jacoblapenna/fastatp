@@ -29,7 +29,7 @@ def _tool(name: str):
 
 # Every guide, and how many lab files it quotes in full. CI plays each one
 # (the tutorial job in .github/workflows/test.yml has the same list).
-GUIDES = {"GETTING_STARTED.md": 8, "CONDUCTOR_AND_ORCHESTRA.md": 4}
+GUIDES = {"GETTING_STARTED.md": 8, "CONDUCTOR_AND_ORCHESTRA.md": 4, "HOOT.md": 8}
 
 # The steps the headless play holds to an outcome: a command that must end as
 # the guide says, a reboot that must come back, a committed record whose
@@ -58,7 +58,11 @@ def test_a_guide_is_a_playable_score(guide):
     score = md_manifest.parse((TUTORIALS / guide).read_text())
     steps = score["steps"]
     kinds = [s["kind"] for s in steps]
-    assert score["machines"] == ["alice", "bob", "eve"]
+    # a cast the lab has, each machine running a program the lab has
+    lab = TUTORIALS / "lab"
+    known = re.search(r'^MACHINES="([^"]+)"', (lab / "lab.sh").read_text(), re.M).group(1).split()
+    assert score["machines"] and set(score["machines"]) <= set(known)
+    assert all((lab / program).is_file() for program in score["peers"].values())
     assert steps[0]["kind"] == "chapter" and steps[0]["number"] == 1
     # prose for the person at a terminal is not a caption on the screen
     captions = [s["text"] for s in steps if s["kind"] == "say"]
@@ -119,6 +123,7 @@ def test_getting_started_is_a_playable_score():
     assert "CH" in captures and "AT" in captures  # the channel DID and alice's tunnel address
     captions = " ".join(s["text"] for s in score["steps"] if s["kind"] == "say")
     assert "Your rkey will differ" not in captions
+    assert score["machines"] == ["alice", "bob", "eve"]
     assert score["peer"] == "peer.py"  # guide one's machines run the plain peer
     assert score["peers"] == {"alice": "peer.py", "bob": "peer.py", "eve": "peer.py"}
     # four chapters
@@ -213,6 +218,9 @@ def test_a_cue_carries_its_whole_step(guide):
             assert cue.targets == step["point"]
     if guide == "CONDUCTOR_AND_ORCHESTRA.md":
         assert {"say", "concept", "heading", "run", "restart", "commit", "chapter", "ask"} <= seen
+        return
+    if guide == "HOOT.md":
+        assert {"say", "concept", "heading", "run", "wait", "chapter", "ask"} <= seen
         return
     assert {
         "say",
@@ -511,6 +519,7 @@ def test_the_conductor_and_the_orchestra_is_a_playable_score(monkeypatch):
     md_manifest = _tool("md_manifest")
     score = md_manifest.parse((TUTORIALS / "CONDUCTOR_AND_ORCHESTRA.md").read_text())
     steps = score["steps"]
+    assert score["machines"] == ["alice", "bob", "eve"]
     assert score["peer"] == "orchestra.py"
     assert set(score["peers"].values()) == {"orchestra.py"}
     assert [c["title"] for c in score["chapters"]] == [
@@ -571,3 +580,50 @@ def test_a_guide_names_its_cast_and_what_each_machine_runs():
     compose = (lab / "compose.yml").read_text()
     services = re.findall(r"^    hostname: ([a-z0-9-]+)\.lan$", compose, re.M)
     assert listed and set(listed.group(1).split()) == set(services)
+
+
+def test_hoot_is_a_playable_score():
+    """Guide three's cast is its own: six machines, each running its own
+    program. alice gives the say-so before asking; the two commands meant to
+    fail are Jitney reading what it may not (Hoot's bid, then, having lost,
+    the concierge's requests); and the last chapter ends on alice checking
+    the whole chain."""
+    md_manifest = _tool("md_manifest")
+    score = md_manifest.parse((TUTORIALS / "HOOT.md").read_text())
+    steps = score["steps"]
+    assert score["machines"] == ["alice", "concierge", "bank", "hoot", "jitney", "cab-17"]
+    assert score["peers"] == {
+        "alice": "rider.py",
+        "concierge": "concierge.py",
+        "bank": "bank.py",
+        "hoot": "company.py",
+        "jitney": "company.py",
+        "cab-17": "cab.py",
+    }
+    assert [c["title"] for c in score["chapters"]] == [
+        "The cast",
+        "The ask and the bids",
+        "The ride",
+        "The chain",
+    ]
+    assert set(score["files"]) == {
+        "peek.py",
+        "rider.py",
+        "ride.py",
+        "concierge.py",
+        "company.py",
+        "bank.py",
+        "cab.py",
+        "custody.py",
+    }
+    runs = [s for s in steps if s["kind"] == "run"]
+    allow = next(i for i, s in enumerate(runs) if "/allow" in s["cmd"])
+    ask = next(i for i, s in enumerate(runs) if "/commit" in s["cmd"])
+    assert allow < ask  # the say-so first, then the ride
+    refused = [s for s in runs if s.get("fails")]
+    assert [(s["machine"], s["cmd"].split()[-1]) for s in refused] == [
+        ("jitney", "hoot"),
+        ("jitney", "concierge"),
+    ]
+    last = score["chapters"][-1]["start"]
+    assert runs[-1]["cmd"] == "python custody.py" and steps.index(runs[-1]) > last

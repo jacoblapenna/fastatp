@@ -12,8 +12,8 @@ what happened on the machines.
 | --- | --- | --- | --- |
 | 1 | [GETTING_STARTED.md](GETTING_STARTED.md) | Three sovereign peers on a private LAN: signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
 | 2 | [CONDUCTOR_AND_ORCHESTRA.md](CONDUCTOR_AND_ORCHESTRA.md) | The engine that plays guide 1, taken apart, then put to work: a conductor orchestrates three machines with signed records, from one note to a tune | runs |
-| 3 | Hoot | Agents with models and tools, a verified chain of custody | next |
-| 4 | The browser app | A person reaching an app from a browser tab with no secret on the wire | after 3 |
+| 3 | [HOOT.md](HOOT.md) | Tool calling as signed records: an agent drops one request, two ride companies bid sealed from each other, a bank holds and pays, a car drives, and alice checks every step back to alice's own words | runs |
+| 4 | The browser app | A person reaching an app from a browser tab with no secret on the wire | next |
 
 Everything they run is shared: `lab/` is the machines on a LAN inside
 Docker and the scripts baked into their image (each guide names its cast,
@@ -50,7 +50,9 @@ cd tutorials/lab             # from the repository root
 
 That plays Getting Started; `./lab.sh conductor CONDUCTOR_AND_ORCHESTRA`
 plays guide two, whose machines run its own program (the guide names it,
-`<!-- @demo peer orchestra.py -->`, and `lab.sh` reads it).
+`<!-- @demo peer orchestra.py -->`, and `lab.sh` reads it), and
+`./lab.sh conductor HOOT` plays guide three, on a cast of six machines of
+its own, each running its own program (`<!-- @demo peer bank bank.py -->`).
 
 Then open <http://localhost:8080> and press **Start**. Each press of **Next**
 is one step: a caption from the guide, or one command on one machine, with
