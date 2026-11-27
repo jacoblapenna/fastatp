@@ -74,6 +74,16 @@ services:
     networks: {lan: {ipv4_address: 192.168.77.18, aliases: [jitney.lan]}, stage: {aliases: [jitney.stage]}}
     volumes: ["./state/jitney.lan:/srv/jitney.lan", "./state/backstage/jitney.stage:/srv/backstage"]
 
+  # Geese's one machine: the app's host, booted only when a guide names it.
+  geese:
+    <<: *machine
+    profiles: [geese]
+    hostname: geese.lan
+    command: [geese.lan]
+    environment: {CONDUCTOR: "${CONDUCTOR:-}", PEER: "${PEER:-peer.py}"}
+    networks: {lan: {ipv4_address: 192.168.77.20, aliases: [geese.lan]}, stage: {aliases: [geese.stage]}}
+    volumes: ["./state/geese.lan:/srv/geese.lan", "./state/backstage/geese.stage:/srv/backstage"]
+
   # Part 4: the conductor. Backstage: not on the LAN; it cues the machines' players over `stage`.
   conductor:
     build: {context: ../.., dockerfile: tutorials/lab/Dockerfile, target: conductor}

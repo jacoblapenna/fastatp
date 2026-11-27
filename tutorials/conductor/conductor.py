@@ -29,7 +29,7 @@ import uvicorn
 from backstage import Control, Cue, File, Image, Show, follow, mentions
 from dids import resolver
 from starlette.applications import Starlette
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -611,11 +611,40 @@ async def lifespan(app):
         task.cancel()
 
 
+async def relay(request) -> Response:
+    """/<machine>.lan/<path>: a cast machine's own web pages, passed through.
+
+    The browser can't reach the lab's LAN (Docker keeps it inside its own
+    network), so the conductor carries the bytes over the stage wire, the way
+    a relay at the edge of a private network would. It signs nothing and
+    changes nothing: what a machine serves is what the browser gets, and
+    anything a browser signs is checked by the machine it reaches. A real app
+    is served directly; this is the show's plumbing, not the app's."""
+    name = request.path_params["machine"]
+    if name not in score["machines"]:
+        return Response("not in this show's cast", status_code=404)
+    forward = {k: v for k, v in request.headers.items() if k.lower() in ("content-type", "accept")}
+    async with httpx.AsyncClient(timeout=30) as http:
+        answer = await http.request(
+            request.method,
+            f"http://{name}.stage/{request.path_params['path']}",
+            params=request.query_params,
+            content=await request.body(),
+            headers=forward,
+        )
+    return Response(
+        answer.content,
+        status_code=answer.status_code,
+        media_type=answer.headers.get("content-type"),
+    )
+
+
 async def main() -> None:
     await own_peer()
     app = Starlette(
         routes=[
             WebSocketRoute("/ws", browser),
+            Route("/{machine}.lan/{path:path}", relay, methods=["GET", "POST"]),
             Route("/manifest.json", lambda r: JSONResponse(score)),
             *server.app.routes,  # the conductor's repo, on the standard sync routes, for the players to follow
             *DIDServer(

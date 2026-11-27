@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Geese</title>
+  <style>
+    :root { --bg: #fbfaf7; --ink: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --accent: #c2410c; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #171716; --ink: #ecebe6; --muted: #a09e97; --line: #34332f; --accent: #fb923c; } }
+    body { margin: 0; padding: 14px 16px; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p { margin: 0 0 10px; color: var(--muted); }
+    .who { font: 11.5px ui-monospace, monospace; color: var(--muted); word-break: break-all; }
+    button { padding: 7px 14px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Geese</h1>
+  <p>Sign up with nothing but this browser: no email, no password.</p>
+  <button id="signup" disabled>Sign up</button>
+  <div class="who" id="who"></div>
+  <script type="module">
+    // The app: everything it signs, it signs in this tab, with a pen made in this tab.
+    import init, * as fastatp from '../fastatp/fastatp_wasm.js';
+    import { signUp } from './geese.js';
+
+    const base = new URL('..', location.href); // the app's host: this page's parent
+    const $ = (id) => document.getElementById(id);
+    await init();
+    $('signup').disabled = false;
+    $('signup').onclick = async () => {
+      $('signup').disabled = true;
+      const me = await signUp(fastatp, base);
+      $('who').textContent = `you are ${me.did} · your pen ${me.pen}`;
+      window.geese = { did: me.did, pen: me.pen }; // public facts, for whoever drives the page
+    };
+  </script>
+</body>
+</html>

@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 self="$PWD/$(basename "$0")"   # this script by its whole path, so it can call itself from here
 # a guide's name, checked before anything is built or cleaned: a typo stops here, not in the conductor
 guide() { [ -f "../$1.md" ] || { echo "no guide called $1: give its name without .md, like CONDUCTOR_AND_ORCHESTRA" >&2; exit 1; }; }
-MACHINES="alice bob eve concierge bank hoot jitney cab-17"   # every machine compose.yml knows
+MACHINES="alice bob eve concierge bank hoot jitney cab-17 geese"   # every machine compose.yml knows
 # a cue's words from the guide, one line per cue, read with sed so the host needs no Python
 cue() { sed -n "s/^<!-- @demo $1 \(.*\) -->$/\1/p" "../$SCORE.md"; }
 machines() { for m in "$@"; do case " $MACHINES " in *" $m "*) ;; *) echo "no machine called $m: the lab has $MACHINES" >&2; exit 1 ;; esac; done; }
@@ -40,6 +40,6 @@ case "${1:-}" in
   logs)    docker compose logs -f --no-log-prefix "${2:?machine}" ;;
   restart) docker compose restart "${2:?machine}" ;;
   tap)     docker compose run --rm tap "${@:2}" ;;
-  alice|bob|eve|concierge|bank|hoot|jitney|cab-17) if [ -t 0 ]; then docker compose exec "$@"; else docker compose exec -T "$@"; fi ;;
+  alice|bob|eve|concierge|bank|hoot|jitney|cab-17|geese) if [ -t 0 ]; then docker compose exec "$@"; else docker compose exec -T "$@"; fi ;;
   *) sed -n '2,11p' "$self"; exit 1 ;;
 esac
