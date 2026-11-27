@@ -1806,7 +1806,11 @@ concierge.lan read 1 of 1
 > a late bid is a no-bid, by the concierge's clock, not the company's. It
 > takes the cheapest within alice's $40, and on a tie, the nicer car. Those
 > rules are the builder's, and they compose on lexicons: a rating, a pickup
-> time, a company alice blocked. Each is a few lines over records.
+> time, a company alice blocked. Each is a few lines over records. With no
+> bid in time, it could extend the window. It could even pay the winner the
+> runner-up's price, a second-price rule that rewards an honest bid: auction
+> theory as a pluggable policy. A new price is just a new commit the agent
+> may take or ignore, and rounds of haggling are just more commits.
 
 <!-- @demo close code -->
 
@@ -1881,7 +1885,12 @@ followed the car; the concierge followed Hoot.
 > a push to a webhook the caller must expose. Here every party wrote signed
 > records in its own repo, in its own time, and the others followed. The
 > car could have driven for a day. And afterwards, anyone let in can check
-> every step, not just the two ends of a call.
+> every step, not just the two ends of a call. Here the bids closed three
+> seconds after alice's note, and twenty-one minutes of ride ran in about
+> twenty-five seconds. The deal lives in the records, not in anyone's
+> session: the concierge could sleep, or restart, and see where things stand
+> by reading the repos again. A real one keeps its own repos on disk; this
+> lab keeps them in memory, so a restart here would start it afresh.
 
 ![MCP: an agent calls each server, held open, with a token; A2A: a task, then a push to a webhook; records: each party signs its own, the other follows; who can check it later: the two ends, the two ends, anyone let in](sketches/three-ways.svg)
 
@@ -1905,7 +1914,9 @@ jitney.lan read 0 of 3
 
 No. The tunnel is still there, but no record lets Jitney through. A
 deleted record is the door closed; the next request lets every company back
-in. Hoot is let go too, once the bank has paid it.
+in. Hoot is let go too, once the bank has paid it. Taking away access is not
+cancelling a deal, though: what was agreed changes only by a new signed
+record.
 
 <!-- @demo point jitney.terminal -->
 
@@ -1999,13 +2010,35 @@ The last thing alice checked was a photo of the curb, signed by the car.
 
 ![the curb photo, signed by cab-17, its hash matching; who took it the signature says, what it shows only alice can say](sketches/curb-photo.svg)
 
+> 💡 **Did you know: privacy and security compose as deep as the builder
+> needs.** This lab does the simplest private thing. Each of these is one
+> more record, repo or rule over records:
+>
+> - The car keeps a channel per ride that only alice reads: the positions
+>   and the curb photo for alice alone, and no ride linkable to the next.
+> - The request names only an area; the exact pickup goes to the winner
+>   alone.
+> - The award carries a fresh nonce, for the winner only. The car's arrival
+>   must repeat it, and alice's peer doesn't even show a photo whose nonce is
+>   wrong.
+> - For a robotaxi, alice photographs the car as the car photographs the
+>   curb, each signing its own and checking the other's, and the door stays
+>   locked until alice signs as walking up. A door is a follower like the
+>   bank: it acts only on verified records.
+> - The bank pays only once alice's own signed "I arrived" lands, not on the
+>   company's word.
+> - Reputation is the signed history: so many rides, on time, in this city,
+>   confirmed by both sides. The car's positions can be forgotten; those
+>   facts stay checkable. No reviews needed.
+
 > ⚠️ **Important: what this costs.** Every step is a commit, stored by the
 > party that wrote it. Answers arrive as fast as follows carry them, not in
 > a stream of tokens. Every party has to speak atproto, and keep its DID's
 > host up. A party let into a repo reads all of it: here the repo, not the
 > record, is the unit of privacy. And none of it works unless the bank, the
 > ride companies and the agent are built this way, which they are not
-> today. This guide shows what could be.
+> today. And a stolen device signs as its owner: keys belong in a hardware
+> enclave, as phones and cars already have. This guide shows what could be.
 
 The bank trusted alice's signed allowance because alice once told it to.
 A bank could set that up with an OAuth login, if its builders chose. The
