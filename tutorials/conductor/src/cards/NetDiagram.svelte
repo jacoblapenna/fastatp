@@ -12,7 +12,11 @@
   // a tunnel address is derived from the machine's key: a long IPv6 address,
   // of which the last two groups are enough to tell the machines apart
   const short = (ip) => (ip ? '…' + ip.split(':').slice(-2).join(':') : '?');
-  let x = $derived(Object.fromEntries(names.map((n, i) => [n, 110 + i * (420 / Math.max(1, names.length - 1))])));
+  // three machines sit as they always have; a bigger cast spreads wider, in narrower boxes
+  let wide = $derived(names.length > 3);
+  let step = $derived((wide ? 540 : 420) / Math.max(1, names.length - 1));
+  let x = $derived(Object.fromEntries(names.map((n, i) => [n, (wide ? 50 : 110) + i * step])));
+  let boxW = $derived(Math.min(144, step - 8));
 
   // tunnels: a peer entry on either side; open once a handshake is fresh
   let tunnels = $derived.by(() => {
@@ -91,9 +95,12 @@
   {#each tunnels as t}
     {@const lift = 40 + Math.abs(x[t.a] - x[t.b]) * 0.18}
     <path d={arc(t.a, t.b, lift)} class="tunnel" class:up={t.up} />
-    <text x={(x[t.a] + x[t.b]) / 2} y={118 - lift / 2 - 6} class="label" class:sealed={t.up} text-anchor="middle">
+    <!-- with more than three machines the arcs crowd: the header counts them instead -->
+    {#if !wide || !t.up}
+      <text x={(x[t.a] + x[t.b]) / 2} y={118 - lift / 2 - 6} class="label" class:sealed={t.up} text-anchor="middle">
       {t.up ? '🔒 tunnel open' : `${[...t.sides].join(', ')} knocking, unanswered`}
     </text>
+    {/if}
   {/each}
 
   {#each follows as f, i}
@@ -108,8 +115,8 @@
     {@const m = live.machines[n]}
     <line x1={x[n]} y1="176" x2={x[n]} y2="258" class="drop" />
     <g data-anchor="diagram.{n}">
-      <rect x={x[n] - 72} y="118" width="144" height="58" rx="10" class="box" class:off={m?.stage !== 'up'} />
-      <text x={x[n]} y="137" text-anchor="middle" class="name">{n}.lan</text>
+      <rect x={x[n] - boxW / 2} y="118" width={boxW} height="58" rx="10" class="box" class:off={m?.stage !== 'up'} />
+      <text x={x[n]} y="137" text-anchor="middle" class="name">{wide ? n : `${n}.lan`}</text>
       <text x={x[n]} y="153" text-anchor="middle" class="sub">
         {m?.repo?.records.length ?? 0} record{m?.repo?.records.length === 1 ? '' : 's'}
       </text>

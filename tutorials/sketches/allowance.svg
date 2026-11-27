@@ -1,0 +1,31 @@
+<!-- the allowance: alice signs it, the concierge names it, the bank checks it before holding a cent -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" role="img" aria-label="alice signs an allowance in a repo the bank and the concierge may read; the concierge asks the bank to hold forty dollars for hoot, naming that allowance; the bank checks that alice signed it, that it names this agent, and that forty dollars is within it, then holds the money">
+  <!-- theme:start (written by brand/make.py from tokens.css; do not edit) -->
+  <style>
+    :root { --fb-primary: #ff9a3d; --fb-surface-raised: #eceef0; --fb-terminal-bg: #f0f1f3; --fb-text: #15181b; --fb-text-muted: #58616b; --fb-verified: #256f1c; }
+    @media (prefers-color-scheme: dark) { :root { --fb-primary: #ff9a3d; --fb-surface-raised: #20242a; --fb-terminal-bg: #0a0c0e; --fb-text: #eceef0; --fb-text-muted: #939ba5; --fb-verified: #8fd16a; } }
+  </style>
+  <rect x="0" y="0" width="320" height="200" rx="8" fill="var(--color-terminal-bg, var(--fb-terminal-bg, #f0f1f3))" />
+  <!-- theme:end -->
+  <defs>
+    <marker id="head-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-primary, var(--fb-primary, #ff9a3d))" /></marker>
+    <marker id="head-verified" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--color-verified, var(--fb-verified, #256f1c))" /></marker>
+  </defs>
+  <rect x="14" y="26" width="96" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="62.0" y="40.0" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">alice: allowance</text>
+  <text x="62" y="62" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">concierge may have</text>
+  <text x="62" y="73" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">$40 held, on checking</text>
+  <rect x="14" y="118" width="96" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="2" />
+  <text x="62.0" y="132.0" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">concierge: ask</text>
+  <text x="62" y="154" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">hold $40 for hoot,</text>
+  <text x="62" y="165" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">under that allowance</text>
+  <path d="M110 37 L196 82" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <path d="M110 129 L196 100" fill="none" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="1.5" marker-end="url(#head-primary)" />
+  <rect x="198" y="80" width="76" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-primary, var(--fb-primary, #ff9a3d))" stroke-width="2" />
+  <text x="236.0" y="94.0" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">bank</text>
+  <text x="236" y="120" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">signed by alice? names</text>
+  <text x="236" y="131" text-anchor="middle" font-size="8" font-family="system-ui, sans-serif" fill="var(--color-text-muted, var(--fb-text-muted, #58616b))">this agent? within $40?</text>
+  <path d="M236 136 L236 152" fill="none" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="1.5" marker-end="url(#head-verified)" />
+  <rect x="198" y="154" width="76" height="22" rx="8" fill="var(--color-surface-raised, var(--fb-surface-raised, #eceef0))" stroke="var(--color-verified, var(--fb-verified, #256f1c))" stroke-width="2" />
+  <text x="236.0" y="168.0" text-anchor="middle" font-size="8" font-family="ui-monospace, Menlo, Consolas, monospace" fill="var(--color-text, var(--fb-text, #15181b))">hold $40</text>
+</svg>
