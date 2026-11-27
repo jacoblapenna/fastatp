@@ -8,7 +8,7 @@
   let { record } = $props();
   let el;
   let named = $derived(
-    refs(record.value).map((uri) => ({ uri, kind: uri.split('/')[3]?.split('.').at(-1), owner: ownerOf(uri) })),
+    [...new Set(refs(record.value))].map((uri) => ({ uri, kind: uri.split('/')[3]?.split('.').at(-1), owner: ownerOf(uri) })),
   );
   let mark = $derived(record.uri ? live.verified[record.uri] : undefined);
   $effect(() => {
@@ -68,7 +68,8 @@
 
   // an amount as whole numbers with its scale ({amount: 3400, exponent: -2}) reads as $34.00
   const isMoney = (x) => x && typeof x === 'object' && Number.isInteger(x.amount) && Number.isInteger(x.exponent);
-  const money = (x) => `${x.currency === 'USD' || !x.currency ? '$' : `${x.currency} `}${(x.amount * 10 ** x.exponent).toFixed(-x.exponent)}`;
+  const money = (x) =>
+    `${x.currency === 'USD' || !x.currency ? '$' : `${x.currency} `}${(x.amount * 10 ** x.exponent).toFixed(Math.max(0, Math.min(100, -x.exponent)))}`;
 
   // who first, then its words, then its numbers by name: alice mi (octave 4, ticks 4)
   function item(o) {
@@ -86,7 +87,7 @@
   <button class="row" onclick={() => (open = !open)} aria-expanded={open}>
     <span class="type">{type}{#if action}<span class="action"> · {action}</span>{/if}</span>
     <span class="text">{summary}</span>
-    <span class="cid">{#if mark === 'ok'}✓ {:else if mark === 'wrong'}✗ {/if}{record.cid.slice(0, 12)}…</span>
+    <span class="cid">{#if mark === 'ok'}✓ {:else if mark === 'wrong'}✗ {:else if mark === 'sealed'}sealed {/if}{record.cid.slice(0, 12)}…</span>
   </button>
   {#if named.length}
     <!-- what this record acts on: named by its hash, not sent anywhere -->

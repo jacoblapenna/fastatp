@@ -11,8 +11,8 @@ its own repo, each step that is missing:
    asks the bank to hold the money for that company (an Authorize).
 3. The bank held it: it books the ride with the winner (a Booking).
 
-It calls no one. A company it has never heard of could bid, if it follows
-ride requests; a bid it never sees in time is a no-bid.
+It calls no one. Any company let in to read its requests may bid; a bid it
+never sees in time is a no-bid.
 
 Its privacy is its own to compose: one private repo for what it understood
 (alice only), one for the bank, one for the ride companies, who may read it
@@ -40,6 +40,7 @@ from ride import (
     Plan,
     Quote,
     Ref,
+    Refusal,
     Request,
     Seen,
     Settlement,
@@ -85,7 +86,8 @@ def bids(seen: Seen, request_ref: Ref, request: Request) -> list[tuple[Ref, Quot
         (ref, quote)
         for company in COMPANIES
         for ref, quote in seen.all(Quote, by=company)
-        if quote.request == request_ref and seen.first[ref.uri] <= deadline
+        # this version of the bid, seen in time: a bid changed later is a new, late one
+        if quote.request == request_ref and seen.since(ref) <= deadline
     ]
 
 
@@ -124,7 +126,7 @@ def decide(seen: Seen, now: datetime) -> Plan:
         if key not in requests:
             plan.let("rides", *COMPANIES)  # anyone who bids: let in before the request lands
         bids_by = when(note.created_at) + timedelta(seconds=BID_SECONDS)
-        bids_by = max(bids_by, seen.first[intent_ref.uri] + timedelta(seconds=BID_SECONDS))
+        bids_by = max(bids_by, seen.since(intent_ref) + timedelta(seconds=BID_SECONDS))
         request = Request(
             intent=intent_ref,
             pickup=intent.pickup,
@@ -140,14 +142,18 @@ def decide(seen: Seen, now: datetime) -> Plan:
         if now < when(request.bids_by):
             plan.let("rides", *COMPANIES)  # still open: every company may see it and bid
             continue
-        if key in authorized or key not in mine or not allowances:
+        if key in authorized or key not in mine:
             continue
         intent = mine[key][1]
+        # alice's newest say-so for the account alice named, or no money is asked for
+        fitting = [(r, a) for r, a in allowances if a.account == intent.account]
+        if not fitting:
+            continue
         best = choose(bids(seen, request_ref, request), intent.most)
         if best is None:
             continue  # no bid in time, or none within alice's limit: no ride
         plan.let("rides", seen.who(best[0]))  # the winner stays; the others go
-        allowance_ref, _ = allowances[-1]  # the newest say-so alice gave
+        allowance_ref, _ = fitting[-1]
         authorize = Authorize(
             allowance=allowance_ref,
             quote=best[0],
@@ -161,11 +167,14 @@ def decide(seen: Seen, now: datetime) -> Plan:
     # 3. the money is held: the ride is booked with the winner, who alone stays
     #    in "rides" until the bank has paid it
     settled = {s.hold.uri for _, s in seen.all(Settlement, by=BANK)}
+    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
         held = [ref for ref, h in seen.all(Hold, by=BANK) if h.authorize == authorize_ref]
         if key not in requests:
             continue
+        if authorize_ref.uri in refused:
+            continue  # no money, no ride: the payee is let go with everyone else
         if not held or held[0].uri not in settled:
             plan.let("rides", authorize.payee)
         if not held:

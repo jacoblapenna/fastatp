@@ -180,6 +180,7 @@ def parse(text: str) -> dict:
     machines: list[str] = []
     peer = "peer.py"  # the program the machines run
     peers: dict[str, str] = {}  # a machine's own program, where the guide gives one
+    peer_lines: dict[str, int] = {}  # where each was given, for the error that names it
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
@@ -264,6 +265,7 @@ def parse(text: str) -> dict:
                     peer = words[0]
                 else:
                     peers[words[0]] = words[1]
+                    peer_lines[words[0]] = i
             elif verb == "start":
                 active = True
             elif verb == "end":
@@ -569,7 +571,10 @@ def parse(text: str) -> dict:
     if commit_cue:
         raise SystemExit(f"line {commit_cue[0]}: @demo commit needs a ```json record under it")
     if strangers := sorted(set(peers) - set(machines)):
-        raise SystemExit(f"@demo peer gives a program to {strangers}, who are not in the cast")
+        raise SystemExit(
+            f"line {peer_lines[strangers[0]]}: @demo peer gives a program to {strangers[0]},"
+            " who is not in the cast"
+        )
     menu = chapters(steps)  # puts the steps in playing order and numbers them
     for step in steps:
         for listing in step.get("listings", []):  # now that every step has its number

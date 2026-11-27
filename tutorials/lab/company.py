@@ -65,7 +65,6 @@ def company(domain: str):
     def decide(seen: Seen, now: datetime) -> Plan:
         plan = Plan()
         plan.let("main", *offer["readers"])
-        my_quotes = {ref.uri: (ref, q) for ref, q in seen.all(Quote, by=me)}
 
         # 1. open requests: a bid on each
         for request_ref, request in seen.all(Request, by=CONCIERGE):
@@ -81,12 +80,14 @@ def company(domain: str):
 
         # 2. a booking for one of its bids: the hold checked in the bank's repo, then a car
         for booking_ref, booking in seen.all(Booking, by=CONCIERGE):
-            if booking.quote.uri not in my_quotes or not offer["cars"]:
+            # exactly the bid it signed, for exactly the request the booking names
+            quote = seen.get(booking.quote, Quote)
+            if seen.who(booking.quote) != me or quote is None or not offer["cars"]:
                 continue
-            if seen.who(booking.hold) != BANK:
+            if quote.request != booking.request or seen.who(booking.hold) != BANK:
                 continue  # a hold is only a hold in the bank's own repo
             hold = seen.get(booking.hold, Hold)
-            price = my_quotes[booking.quote.uri][1].price
+            price = quote.price
             if hold is None or hold.payee != me or hold.amount.value() < price.value():
                 continue  # no such hold, not for this company, or too small: no car
             dispatch = Dispatch(
@@ -95,10 +96,10 @@ def company(domain: str):
             plan.write("main", rkey(booking_ref), dispatch)
 
         # 3. its car's dropoff: the fare, the price it bid
-        bookings = {ref.uri: b for ref, b in seen.all(Booking, by=CONCIERGE)}
         for dispatch_ref, dispatch in seen.all(Dispatch, by=me):
-            booking = bookings.get(dispatch.booking.uri)
-            if booking is None:
+            booking = seen.get(dispatch.booking, Booking)  # the booking exactly as dispatched
+            quote = booking and seen.get(booking.quote, Quote)
+            if booking is None or quote is None:
                 continue
             for dropoff_ref, dropoff in seen.all(Dropoff, by=dispatch.car):
                 if dropoff.dispatch == dispatch_ref:
@@ -106,7 +107,7 @@ def company(domain: str):
                         booking=dispatch.booking,
                         dropoff=dropoff_ref,
                         hold=dispatch.hold,
-                        amount=my_quotes[booking.quote.uri][1].price,
+                        amount=quote.price,
                         created_at=peer.now(),
                     )
                     plan.write("main", rkey(dispatch_ref), fare)

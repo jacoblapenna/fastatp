@@ -48,13 +48,15 @@ def walk(start: dict, look) -> Iterator[tuple[int, dict, str, dict | None]]:
     """Depth first from one ref: (depth, ref, verdict, record) for each step.
 
     look(ref) -> (verdict, record): "verified", "sealed", or "changed"."""
-    checked: set[str] = set()
+    checked: set[tuple[str, str]] = set()
 
     def visit(ref: dict, depth: int) -> Iterator[tuple[int, dict, str, dict | None]]:
-        if ref["uri"] in checked:
+        # a step is a record AND its hash: the same address named with another
+        # hash is another claim, and is checked on its own
+        if (ref["uri"], ref["cid"]) in checked:
             yield depth, ref, "again", None
             return
-        checked.add(ref["uri"])
+        checked.add((ref["uri"], ref["cid"]))
         verdict, record = look(ref)
         yield depth, ref, verdict, record
         if verdict == "verified":
@@ -90,18 +92,20 @@ async def main() -> int:
                 answer = await http.get(
                     f"http://[{tunnel}]/xrpc/com.atproto.sync.getRepo", params={"did": repo}
                 )
-                answer.raise_for_status()
-            except httpx.HTTPError:
-                sealed.add(repo)  # no tunnel, or no record letting alice in
+            except httpx.TransportError:
+                sealed.add(repo)  # no tunnel to it: alice was never meant to reach it
                 continue
+            if answer.status_code == 404:
+                sealed.add(repo)  # the doorman's no: no record lets alice in
+                continue
+            answer.raise_for_status()  # anything else is a fault, not a seal: the walk stops
             mirror = RepoMirror(repo, resolver=resolver())
             await mirror.load_checkpoint(answer.content)
             for path, cid in mirror.entries.items():  # each hash, from the verified tree
                 records[f"at://{repo}/{path}"] = (cid.encode(), mirror.get_record(*path.split("/")))
-        own = (
-            await http.get("http://127.0.0.1/mine")
-        ).json()  # alice's own repos, from alice's peer
-        for repo in own:
+        own = await http.get("http://127.0.0.1/mine")  # alice's own repos, from alice's peer
+        own.raise_for_status()
+        for repo in own.json():
             for r in repo["records"]:
                 records[f"at://{repo['did']}/{r['path']}"] = (r["cid"], r["value"])
 
@@ -112,11 +116,17 @@ async def main() -> int:
                 return ("verified", value) if cid == ref["cid"] else ("changed", None)
             return ("sealed", None) if repo in sealed else ("missing", None)
 
-        settlements = sorted(u for u in records if "/com.example.bank.settlement/" in u)
+        # the newest settlement, by the time the bank signed into it
+        settlements = sorted(
+            (records[u][1].get("created_at", ""), u)
+            for u in records
+            if "/com.example.bank.settlement/" in u
+        )
         if not settlements:
             print("no settlement yet: the ride isn't paid for")
             return 1
-        start = {"uri": settlements[-1], "cid": records[settlements[-1]][0]}
+        newest = settlements[-1][1]
+        start = {"uri": newest, "cid": records[newest][0]}
         print("the ride, walked back from the bank's settlement, as alice:")
         counts = {"verified": 0, "sealed": 0, "changed": 0, "missing": 0}
         photo = None
@@ -136,18 +146,21 @@ async def main() -> int:
         if photo is not None:  # the curb, fetched and checked against the hash its record names
             repo, party, blob = photo
             tunnel = parse_wireguard_service(await resolver()(party)).tunnel_ip
-            data = (
-                await http.get(
-                    f"http://[{tunnel}]/xrpc/com.atproto.sync.getBlob",
-                    params={"did": repo, "cid": blob["ref"]["$link"]},
-                )
-            ).content
-            same = CID.for_raw(data).encode() == blob["ref"]["$link"]
-            Path("curb.svg").write_bytes(data)
-            print(
-                f"the curb photo: {len(data)} bytes, {'hash matches' if same else 'HASH DIFFERS'},"
-                " saved as curb.svg: is it your curb?"
+            answer = await http.get(
+                f"http://[{tunnel}]/xrpc/com.atproto.sync.getBlob",
+                params={"did": repo, "cid": blob["ref"]["$link"]},
             )
+            answer.raise_for_status()
+            data = answer.content
+            if CID.for_raw(data).encode() == blob["ref"]["$link"]:
+                Path("curb.svg").write_bytes(data)  # only a photo that checks out is shown
+                print(
+                    f"the curb photo: {len(data)} bytes, hash matches,"
+                    " saved as curb.svg: is it your curb?"
+                )
+            else:
+                counts["changed"] += 1
+                print("the curb photo: ✗ HASH DIFFERS: not the photo the car signed, not shown")
         print(
             f"{counts['verified']} steps verified, {counts['sealed']} sealed from alice,"
             f" {counts['changed'] + counts['missing']} wrong"

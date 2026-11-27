@@ -56,18 +56,20 @@ To upgrade safely within one minor line, pin with `~=`, for example
   of the curb, and the bank pays. Then alice walks the whole chain back,
   checking every step's signature and hash (`custody.py`). Every agent
   composes its own privacy: which private repo each record goes in, and
-  who may read it, let in and let go as the work goes. The lab's six new
-  agents are all under `tutorials/lab/`, none in the package, and each is
-  `peer.py` unchanged plus one loop. CI plays it on every pull request.
+  who may read it, let in and let go as the work goes. The lab gains six
+  machines running five agent programs (`rider.py`, `concierge.py`,
+  `bank.py`, `company.py` for both ride companies, `cab.py`), all under
+  `tutorials/lab/`, none in the package, each `peer.py` unchanged plus one
+  loop. CI plays it on every pull request.
 - The demo engine gains what the third guide needs. A guide names its cast
   (`<!-- @demo machines ... -->`) and only those machines boot; a machine
   can run a program of its own (`<!-- @demo peer bank bank.py -->`); the lab
   gains concierge, bank, hoot, jitney and cab-17. Each machine can show its
-  own private repos on the conductor's page, and a map of the work draws
-  every record as an arrow from the record it acted on, lit as a check
-  names each one verified or sealed. A late tab replays only each machine's
-  newest view, and a just-landed record no longer blinks out when the next
-  view arrives.
+  own private repos on the conductor's page: who is let into each, records
+  landing as cards, each card naming the records it acts on, and checks
+  marking each one verified or sealed. `<!-- @demo close code -->` puts a
+  command's file away. A late tab replays only each machine's newest view,
+  and a just-landed record no longer blinks out when the next view arrives.
 
 ## [0.3.0] - 2026-11-20
 

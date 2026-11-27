@@ -44,30 +44,56 @@ BALANCES = {(ALICE, "checking"): dollars(25000)}
 LIMITS = {payee: dollars(10000) for payee in COMPANIES}
 
 
-def check(seen: Seen, authorize_ref, authorize: Authorize) -> str | None:
-    """Why the bank will not hold this money, or None if it will."""
+WAIT = "wait"  # not a refusal: something it needs has not reached this bank yet
+
+
+def account_of(seen: Seen, hold: Hold) -> tuple[str, str] | None:
+    """Whose account, and which, a hold was taken from: from the request it answered."""
+    authorize = seen.get(hold.authorize, Authorize)
+    return None if authorize is None else (seen.who(authorize.allowance), authorize.account)
+
+
+def spoken_for(seen: Seen, account: tuple[str, str]) -> int:
+    """Cents of this account already gone or set aside: what each settled hold
+    paid out, and each open hold in full."""
+    settled = {(s.hold.uri, s.hold.cid): s for _, s in seen.all(Settlement, by=BANK)}
+    cents = 0
+    for ref, hold in seen.all(Hold, by=BANK):
+        if account_of(seen, hold) == account:
+            done = settled.get((ref.uri, ref.cid))
+            cents += done.paid.amount if done else hold.amount.amount
+    return cents
+
+
+def check(seen: Seen, authorize_ref, authorize: Authorize, pending: dict) -> str | None:
+    """Why the bank will not hold this money (a reason), WAIT, or None if it will.
+
+    pending: cents this same pass has already agreed to hold, by account."""
+    if authorize.allowance.uri not in seen.records:
+        return WAIT  # alice's allowance may simply not have arrived yet
     allowance = seen.get(authorize.allowance, Allowance)
     if allowance is None:
-        return "no such allowance, or it changed since it was named"
+        return "that allowance changed since it was named"
     owner = seen.who(authorize.allowance)
-    if allowance.bank != BANK or allowance.agent != seen.who(authorize_ref):
-        return "the allowance does not let this agent spend at this bank"
+    if (
+        allowance.bank != BANK
+        or allowance.agent != seen.who(authorize_ref)
+        or allowance.account != authorize.account
+    ):
+        return "the allowance does not let this agent spend from this account at this bank"
     if authorize.amount.value() > allowance.per_ride.value():
         return f"{authorize.amount} is over the {allowance.per_ride} the allowance gives a ride"
     limit = LIMITS.get(authorize.payee)
     if limit is None or authorize.amount.value() > limit.value():
         return f"{host(authorize.payee)} is not a payee this bank pays that much"
-    balance = BALANCES.get((owner, authorize.account))
-    held = sum(
-        (h.amount.value() for ref, h in seen.all(Hold, by=BANK) if not paid(seen, ref)), start=0
-    )
-    if balance is None or balance.value() - held < authorize.amount.value():
+    account = (owner, authorize.account)
+    balance = BALANCES.get(account)
+    if balance is None:
+        return "no such account"
+    free = balance.amount - spoken_for(seen, account) - pending.get(account, 0)
+    if free < authorize.amount.amount:
         return "not enough money in that account"
     return None
-
-
-def paid(seen: Seen, hold_ref) -> bool:
-    return any(s.hold == hold_ref for _, s in seen.all(Settlement, by=BANK))
 
 
 def decide(seen: Seen, now: datetime) -> Plan:
@@ -86,16 +112,22 @@ def decide(seen: Seen, now: datetime) -> Plan:
         )
 
     # 2. each request to hold money, answered once, either way
-    holds = {h.authorize.uri: (ref, h) for ref, h in seen.all(Hold, by=BANK)}
-    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
+    # matched by the full ref: a request changed since is a new request
+    holds = {(h.authorize.uri, h.authorize.cid): h for _, h in seen.all(Hold, by=BANK)}
+    refused = {(r.authorize.uri, r.authorize.cid) for _, r in seen.all(Refusal, by=BANK)}
+    pending: dict = {}  # cents agreed in this pass, by account, so two can't both spend the same
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
-        if authorize_ref.uri in holds:
-            plan.let(f"ride-{key}", ALICE, CONCIERGE, holds[authorize_ref.uri][1].payee)
+        answer = (authorize_ref.uri, authorize_ref.cid)
+        if answer in holds:
+            plan.let(f"ride-{key}", ALICE, CONCIERGE, holds[answer].payee)
             continue
-        if authorize_ref.uri in refused:
+        if answer in refused:
             continue
-        if (why := check(seen, authorize_ref, authorize)) is not None:
+        why = check(seen, authorize_ref, authorize, pending)
+        if why == WAIT:
+            continue
+        if why is not None:
             plan.write(
                 "main", key, Refusal(authorize=authorize_ref, reason=why, created_at=peer.now())
             )
@@ -106,6 +138,8 @@ def decide(seen: Seen, now: datetime) -> Plan:
             amount=authorize.amount,
             created_at=peer.now(),
         )
+        account = (seen.who(authorize.allowance), authorize.account)
+        pending[account] = pending.get(account, 0) + authorize.amount.amount
         plan.let(f"ride-{key}", ALICE, CONCIERGE, authorize.payee)
         plan.write(f"ride-{key}", key, hold)
 

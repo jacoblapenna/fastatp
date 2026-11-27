@@ -29,16 +29,24 @@ from fastatp.tid import generate_tid
 async def allow(request: Request) -> JSONResponse:
     if (denied := peer.local_only(request)) is not None:
         return denied
-    body = await request.json()
     try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("send one JSON object")
+        # cents, exactly: a float or a true/false is not an amount of money
+        if type(body.get("per_ride")) is not int:
+            raise ValueError("per_ride must be a whole number of cents")
+        # the repo it goes in is read by this lab's bank and concierge, so it names them
+        if (body.get("bank"), body.get("agent")) != (BANK, CONCIERGE):
+            raise ValueError(f"this lab's bank is {BANK} and alice's agent is {CONCIERGE}")
         allowance = Allowance(
             bank=body["bank"],
             agent=body["agent"],
             account=body["account"],
-            per_ride=dollars(int(body["per_ride"])),
+            per_ride=dollars(body["per_ride"]),
             created_at=peer.now(),
         )
-    except (KeyError, ValueError, ValidationError) as e:
+    except (KeyError, TypeError, ValueError, ValidationError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     rkey = generate_tid()
     if ride.DESK is None:

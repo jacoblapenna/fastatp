@@ -14,8 +14,8 @@
   const short = (ip) => (ip ? '…' + ip.split(':').slice(-2).join(':') : '?');
   // three machines sit as they always have; a bigger cast spreads wider, in narrower boxes
   let wide = $derived(names.length > 3);
-  let step = $derived((wide ? 540 : 420) / Math.max(1, names.length - 1));
-  let x = $derived(Object.fromEntries(names.map((n, i) => [n, (wide ? 50 : 110) + i * step])));
+  let step = $derived((wide ? 496 : 420) / Math.max(1, names.length - 1));
+  let x = $derived(Object.fromEntries(names.map((n, i) => [n, (wide ? 72 : 110) + i * step])));
   let boxW = $derived(Math.min(144, step - 8));
 
   // tunnels: a peer entry on either side; open once a handshake is fresh

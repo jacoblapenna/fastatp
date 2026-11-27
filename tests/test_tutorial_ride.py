@@ -35,7 +35,9 @@ def lab(monkeypatch):
     for name in ("ride", "concierge", "company", "bank", "cab", "lexicons"):
         monkeypatch.delitem(sys.modules, name, raising=False)
     modules = {name: __import__(name) for name in ("ride", "concierge", "company", "bank", "cab")}
-    return SimpleNamespace(clock=clock, last={}, Note=__import__("lexicons").Note, **modules)
+    return SimpleNamespace(
+        clock=clock, last={}, repo_of={}, Note=__import__("lexicons").Note, **modules
+    )
 
 
 def put(seen, did, key, record, at):
@@ -56,6 +58,7 @@ def act(seen, did, decide, at, lab):
         if f"at://{did}/{record.nsid}/{key}" not in seen.records:
             put(seen, did, key, record, at)
             wrote.append((record.nsid.rsplit(".", 1)[1], key))
+            lab.repo_of[(did, record.nsid.rsplit(".", 1)[1], key)] = repo
     return wrote
 
 
@@ -171,6 +174,16 @@ def test_one_ride_from_alice_note_to_the_bank_settlement(lab):
     assert (str(settlement.paid), str(settlement.released)) == ("$34.00", "$6.00")
     act(seen, concierge, lab.concierge.decide, t, lab)
     assert lab.last[concierge].readers["rides"] == {alice}  # paid: the winner is let go too
+
+    # each record went in the repo the agent meant, the one with the right readers
+    where = lab.repo_of
+    assert where[(concierge, "intent", "3kride")] == "main"  # alice's eyes only
+    assert where[(concierge, "request", "3kride")] == "rides"
+    assert where[(concierge, "authorize", "3kride")] == "desk"  # the bank's, not the companies'
+    assert where[(concierge, "booking", "3kride")] == "rides"
+    assert where[(bank, "hold", "3kride")] == where[(bank, "settlement", "3kride")] == "ride-3kride"
+    assert where[(bank, "payee", "hoot.lan")] == "main"
+    assert where[(cab, "arrival", "3kride")] == "ride"
 
     # every agent, run again over everything, writes nothing more
     for did, decide in [
@@ -329,3 +342,102 @@ def test_custody_walks_every_strong_ref_once_and_names_what_it_cannot_read(monke
         (2, "hold", "again"),
         (2, "bogus", "changed"),
     ]
+
+
+def test_custody_checks_a_second_hash_for_the_same_address(monkeypatch):
+    """A step is a record and its hash. The same address named again with
+    another hash is a different claim: it is checked, and found changed."""
+    monkeypatch.syspath_prepend(str(LAB))
+    monkeypatch.setitem(sys.modules, "peer", SimpleNamespace())
+    for name in ("ride", "custody"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    custody = __import__("custody")
+    hold = {"uri": "at://did:key:zbank/com.example.bank.hold/3k", "cid": "bafyreal"}
+    forged = {**hold, "cid": "bafyforged"}
+    records = {"bafyreal": {}}
+
+    def look(r):
+        if r["uri"] == hold["uri"]:
+            return ("verified", records[r["cid"]]) if r["cid"] in records else ("changed", None)
+        return "verified", {"a": hold, "b": forged}
+
+    start = {"uri": "at://did:key:zbank/com.example.bank.settlement/3k", "cid": "bafyset"}
+    verdicts = [(r["cid"], v) for _, r, v, _ in custody.walk(start, look)]
+    assert verdicts == [
+        ("bafyset", "verified"),
+        ("bafyreal", "verified"),
+        ("bafyforged", "changed"),
+    ]
+
+
+def test_the_bank_waits_for_what_it_has_not_seen_and_never_overspends(lab):
+    """An allowance not seen yet is a wait, not a refusal. The account named
+    must be the account alice allowed. Two holds in one pass can't both
+    spend the same money, and money paid out is gone."""
+    ride = lab.ride
+    seen = ride.Seen()
+    allowance = ride.Allowance(
+        bank=ride.BANK,
+        agent=ride.CONCIERGE,
+        account="checking",
+        per_ride=ride.dollars(9000),
+        created_at=stamp(T0),
+    )
+    put(seen, ride.ALICE, "3kallow", allowance, T0)
+    allowance_ref = seen.all(ride.Allowance)[0][0]
+    quote_ref = ride.Ref(uri="at://did:web:hoot.lan/com.example.ride.quote/3kq", cid=_cid())
+    unseen = allowance_ref.model_copy(update={"uri": allowance_ref.uri.replace("3kallow", "3knew")})
+
+    def ask(key, **change):
+        fields = dict(
+            allowance=allowance_ref,
+            quote=quote_ref,
+            payee="did:web:hoot.lan",
+            amount=ride.dollars(9000),
+            account="checking",
+            created_at=stamp(T0),
+        )
+        put(seen, ride.CONCIERGE, key, ride.Authorize(**{**fields, **change}), T0)
+
+    ask("3ka")  # $90 of the $250
+    ask("3kb")  # another $90: fits
+    ask("3kc")  # a third $90 in the same pass: $270 is more than $250
+    ask("3kd", allowance=unseen)  # alice's allowance hasn't reached the bank yet
+    ask("3ke", account="savings")  # alice allowed checking
+    act(seen, ride.BANK, lab.bank.decide, T0, lab)
+    held = [ride.rkey(h.authorize) for _, h in seen.all(ride.Hold, by=ride.BANK)]
+    reasons = {ride.rkey(r.authorize): r.reason for _, r in seen.all(ride.Refusal, by=ride.BANK)}
+    assert held == ["3ka", "3kb"]
+    assert "not enough money" in reasons["3kc"]
+    assert "3kd" not in reasons  # waits: not refused, not held
+    assert "this account" in reasons["3ke"]
+
+
+def test_a_refused_payee_is_let_go(lab):
+    """No money, no ride: when the bank refuses, the concierge stops letting
+    the would-be winner read its rides repo."""
+    ride = lab.ride
+    seen = ride.Seen()
+    note = lab.Note(text="a ride to the airport, under $40, on checking", created_at=stamp(T0))
+    put(seen, ride.ALICE, "3kride", note, T0)
+    act(seen, ride.CONCIERGE, lab.concierge.decide, T0, lab)  # the intent
+    act(seen, ride.CONCIERGE, lab.concierge.decide, T0, lab)  # the request
+    request_ref = seen.all(ride.Request, by=ride.CONCIERGE)[0][0]
+    authorize = ride.Authorize(
+        allowance=ride.Ref(uri="at://did:web:alice.lan/com.example.bank.allowance/3k", cid=_cid()),
+        quote=ride.Ref(uri="at://did:web:hoot.lan/com.example.ride.quote/3kride", cid=_cid()),
+        payee="did:web:hoot.lan",
+        amount=ride.dollars(4000),
+        account="checking",
+        created_at=stamp(T0),
+    )
+    put(seen, ride.CONCIERGE, "3kride", authorize, T0)
+    late = T0 + timedelta(minutes=1)
+    act(seen, ride.CONCIERGE, lab.concierge.decide, late, lab)
+    assert "did:web:hoot.lan" in lab.last[ride.CONCIERGE].readers["rides"]  # waiting on the bank
+    authorize_ref = seen.all(ride.Authorize, by=ride.CONCIERGE)[0][0]
+    refusal = ride.Refusal(authorize=authorize_ref, reason="no", created_at=stamp(late))
+    put(seen, ride.BANK, "3kride", refusal, late)
+    act(seen, ride.CONCIERGE, lab.concierge.decide, late, lab)
+    assert lab.last[ride.CONCIERGE].readers["rides"] == {ride.ALICE}
+    assert request_ref  # the request itself stays: the record of what was asked

@@ -28,6 +28,7 @@ async def main() -> int:
         answer = await http.get(
             f"http://{host(party)}/xrpc/com.atproto.sync.getRepo", params={"did": party}
         )
+        answer.raise_for_status()
         await public.load_checkpoint(answer.content)
         repos = [
             public.get_record(*path.split("/"))["did"]
@@ -45,8 +46,11 @@ async def main() -> int:
             except httpx.HTTPError:
                 print(f"  {repo}: no answer: no tunnel between {me} and {host(party)}")
                 continue
-            if answer.status_code != 200:
+            if answer.status_code == 404:  # how the doorman says no: as if there were nothing
                 print(f"  {repo}: refused ({answer.status_code}): no record lets {me} in")
+                continue
+            if answer.status_code != 200:
+                print(f"  {repo}: unavailable ({answer.status_code})")
                 continue
             mirror = RepoMirror(repo, resolver=resolver())
             await mirror.load_checkpoint(answer.content)  # its signature and every hash, checked

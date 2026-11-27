@@ -28,6 +28,9 @@ case "${1:-}" in
            # the program each machine runs: one for all (<!-- @demo peer orchestra.py -->), one for
            # a machine (<!-- @demo peer bank bank.py -->, passed on as bank=bank.py), or peer.py
            export PEER="${PEER:-$(cue peer | sed 's/^\([a-z0-9-]*\) /\1=/' | tr '\n' ' ')}"
+           # machines left over from another guide's cast stop, so the cast is exactly this one
+           others=(); for m in $MACHINES; do case " ${cast[*]} " in *" $m "*) ;; *) others+=("$m") ;; esac; done
+           docker compose --profile '*' rm -sf "${others[@]}" >/dev/null 2>&1 || true
            CONDUCTOR=did:web:conductor.stage docker compose --profile conductor up --build -d --wait conductor "${cast[@]}"
            echo "the conductor is up: open http://localhost:8080" ;;
   test)    guide "${2:-GETTING_STARTED}"; "$self" clean >/dev/null 2>&1; SCORE="${2:-GETTING_STARTED}" "$self" conductor >/dev/null

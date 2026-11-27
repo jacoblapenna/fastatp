@@ -21,6 +21,8 @@ import ride
 from ride import ALICE, Arrival, Dispatch, Dropoff, Plan, Position, Seen, rkey, serve
 
 MINUTE = timedelta(seconds=float(os.environ.get("MINUTE_SECONDS", "1")))
+if MINUTE.total_seconds() <= 0:
+    raise ValueError("MINUTE_SECONDS must be positive: the car's clock has to move forward")
 TO_PICKUP, RIDE = 4, 17  # minutes
 # A pretend map, in millionths of a degree: where the car starts, the
 # pickup, and the airport.
@@ -58,7 +60,7 @@ def car(me: str, add_blob):
             if dispatch.car != me:
                 continue
             key = rkey(dispatch_ref)
-            started = seen.first[dispatch_ref.uri]  # the car's own clock starts when it hears
+            started = seen.since(dispatch_ref)  # the car's own clock starts when it hears
             minutes = int((now - started) / MINUTE)
             for m in range(min(minutes, TO_PICKUP) + 1):  # on the way to the pickup
                 where = along(START, PICKUP, m / TO_PICKUP)
@@ -67,7 +69,10 @@ def car(me: str, add_blob):
             if minutes < TO_PICKUP:
                 continue
             if key not in photos:  # at the curb: one photo, taken once
-                photos[key] = add_blob(curb(peer.now()), "image/svg+xml")
+                taken = add_blob(curb(peer.now()), "image/svg+xml")
+                if taken is None:
+                    continue  # nowhere to keep it yet: the next pass takes it
+                photos[key] = taken
             arrival = Arrival(dispatch=dispatch_ref, photo=photos[key], created_at=peer.now())
             plan.write("ride", key, arrival)
             for m in range(min(minutes - TO_PICKUP, RIDE) + 1):  # the ride
@@ -103,7 +108,8 @@ if __name__ == "__main__":
         def add_blob(data: bytes, mime: str):
             # the photo's bytes go beside the ride's repo, which the car made
             # with a place for them; the arrival record names them by hash
-            return ride.DESK.repos["ride"].repo.add_blob(data, mime)
+            kept = ride.DESK.repos.get("ride") if ride.DESK else None
+            return None if kept is None else kept.repo.add_blob(data, mime)
 
         decide = car(f"did:web:{peer.domain}", add_blob)
         await serve(peer, decide, f"driving for {COMPANY}")

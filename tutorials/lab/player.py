@@ -280,6 +280,7 @@ async def watch_view() -> None:
     """Its identity, its own public repo (verified, as any reader would), its tunnel peers."""
     last: str | None = None
     repo_view: dict = {}
+    private: list = []  # this machine's private repos, as /mine last listed them
     seen_key = None
     async with httpx.AsyncClient(timeout=3) as http:
         while True:
@@ -314,11 +315,12 @@ async def watch_view() -> None:
                     continue
             # A program that keeps private repos lists them, to this machine
             # only, at /mine: its owner's view of them, shown like its terminal.
-            private: list = []
+            # A poll that fails keeps the last good answer, so a hiccup never
+            # blanks this machine's repos on the screen.
             with contextlib.suppress(httpx.HTTPError, ValueError):
                 answer = await http.get("http://127.0.0.1/mine")
-                if answer.status_code == 200:
-                    private = answer.json()
+                if answer.status_code == 200 and isinstance(listed := answer.json(), list):
+                    private = listed
             # Three short shell commands, run on a thread so nothing else this
             # player does waits for them.
             key, ip, peers = await asyncio.to_thread(

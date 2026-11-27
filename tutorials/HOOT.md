@@ -181,6 +181,7 @@ async def main() -> int:
         answer = await http.get(
             f"http://{host(party)}/xrpc/com.atproto.sync.getRepo", params={"did": party}
         )
+        answer.raise_for_status()
         await public.load_checkpoint(answer.content)
         repos = [
             public.get_record(*path.split("/"))["did"]
@@ -198,8 +199,11 @@ async def main() -> int:
             except httpx.HTTPError:
                 print(f"  {repo}: no answer: no tunnel between {me} and {host(party)}")
                 continue
-            if answer.status_code != 200:
+            if answer.status_code == 404:  # how the doorman says no: as if there were nothing
                 print(f"  {repo}: refused ({answer.status_code}): no record lets {me} in")
+                continue
+            if answer.status_code != 200:
+                print(f"  {repo}: unavailable ({answer.status_code})")
                 continue
             mirror = RepoMirror(repo, resolver=resolver())
             await mirror.load_checkpoint(answer.content)  # its signature and every hash, checked
@@ -252,16 +256,24 @@ from fastatp.tid import generate_tid
 async def allow(request: Request) -> JSONResponse:
     if (denied := peer.local_only(request)) is not None:
         return denied
-    body = await request.json()
     try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("send one JSON object")
+        # cents, exactly: a float or a true/false is not an amount of money
+        if type(body.get("per_ride")) is not int:
+            raise ValueError("per_ride must be a whole number of cents")
+        # the repo it goes in is read by this lab's bank and concierge, so it names them
+        if (body.get("bank"), body.get("agent")) != (BANK, CONCIERGE):
+            raise ValueError(f"this lab's bank is {BANK} and alice's agent is {CONCIERGE}")
         allowance = Allowance(
             bank=body["bank"],
             agent=body["agent"],
             account=body["account"],
-            per_ride=dollars(int(body["per_ride"])),
+            per_ride=dollars(body["per_ride"]),
             created_at=peer.now(),
         )
-    except (KeyError, ValueError, ValidationError) as e:
+    except (KeyError, TypeError, ValueError, ValidationError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     rkey = generate_tid()
     if ride.DESK is None:
@@ -312,8 +324,9 @@ import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from fractions import Fraction
-from typing import Annotated, TypeVar
+from typing import Annotated, Literal, TypeVar
 
 import uvicorn
 from backstage import follow
@@ -390,17 +403,21 @@ class Ref(BaseModel):
 
 class Money(BaseModel):
     """An amount as whole numbers, the way the orchestra keeps a pitch:
-    3400 with exponent -2 is $34.00. Records have no floats."""
+    3400 with exponent -2 is $34.00. Records have no floats.
+
+    This lab's money is US cents and nothing else, and the schema says so: a
+    record in another currency or scale doesn't validate, so no rule here
+    ever compares dollars with euros or cents with mills."""
 
     amount: Annotated[int, Field(ge=0)]
-    exponent: Annotated[int, Field(ge=-6, le=0)] = -2
-    currency: Annotated[str, MaxLength(3)] = "USD"
+    exponent: Literal[-2] = -2
+    currency: Literal["USD"] = "USD"
 
     def value(self) -> Fraction:
         return self.amount * Fraction(10) ** self.exponent
 
     def __str__(self) -> str:
-        return f"${self.value():.2f}"
+        return f"${Decimal(self.amount).scaleb(self.exponent):.2f}"  # exact, on every Python
 
 
 def dollars(cents: int) -> Money:
@@ -603,7 +620,9 @@ class Seen:
     """Every verified record an agent has read, from every repo it follows."""
 
     records: dict[str, tuple[str, dict]] = field(default_factory=dict)  # uri -> (cid, value)
-    first: dict[str, datetime] = field(default_factory=dict)  # uri -> when this agent first saw it
+    # when this agent first saw each version of a record, by uri and cid: a
+    # record changed later is a new version, first seen later
+    first: dict[tuple[str, str], datetime] = field(default_factory=dict)
     owners: dict[str, str] = field(
         default_factory=dict
     )  # a channel's did:key -> its party's did:web
@@ -616,7 +635,11 @@ class Seen:
     def add(self, did: str, path: str, value: dict, at: datetime | None = None) -> None:
         uri = f"at://{did}/{path}"
         self.records[uri] = (cid_of(value), value)
-        self.first.setdefault(uri, at or datetime.now(UTC))
+        self.first.setdefault((uri, self.records[uri][0]), at or datetime.now(UTC))
+
+    def since(self, ref: Ref) -> datetime:
+        """When this agent first saw exactly this version of a record."""
+        return self.first[(ref.uri, ref.cid)]
 
     def all(self, model: type[T], by: str | None = None) -> list[tuple[Ref, T]]:
         """Every record of one type (from one author, if given), checked by this
@@ -691,6 +714,7 @@ class Desk:
         self.peer, self.seen = peer, seen
         self.me = peer.identity.did
         self.repos = {"main": peer.channel}
+        self.opening = asyncio.Lock()
 
     async def announce(self, did: str) -> None:
         await self.peer.server.put_record(
@@ -699,6 +723,10 @@ class Desk:
         self.seen.owners[did] = self.me
 
     async def repo(self, name: str):
+        async with self.opening:  # one repo per name, even when two callers ask at once
+            return await self._repo(name)
+
+    async def _repo(self, name: str):
         if name not in self.repos:
             key = generate_keypair("k256")
             made = await Repo.create(encode_did_key(key.public_key()), key, blobs=MemoryBlobStore())
@@ -753,7 +781,10 @@ async def run(peer, decide: Decide, tick: float = 0.5) -> None:
         async def on_record(path: str, value: dict) -> None:
             if not path.startswith(f"{Channel.nsid}/"):
                 return
-            private = value["did"]
+            try:
+                private = Channel.model_validate(value).did
+            except ValidationError:
+                return  # not an announcement this agent understands: skipped, not obeyed
             seen.owners[private] = owner  # signed by the owner, so this repo is the owner's
             if private not in following:
                 following.add(private)
@@ -884,8 +915,8 @@ its own repo, each step that is missing:
    asks the bank to hold the money for that company (an Authorize).
 3. The bank held it: it books the ride with the winner (a Booking).
 
-It calls no one. A company it has never heard of could bid, if it follows
-ride requests; a bid it never sees in time is a no-bid.
+It calls no one. Any company let in to read its requests may bid; a bid it
+never sees in time is a no-bid.
 
 Its privacy is its own to compose: one private repo for what it understood
 (alice only), one for the bank, one for the ride companies, who may read it
@@ -913,6 +944,7 @@ from ride import (
     Plan,
     Quote,
     Ref,
+    Refusal,
     Request,
     Seen,
     Settlement,
@@ -958,7 +990,8 @@ def bids(seen: Seen, request_ref: Ref, request: Request) -> list[tuple[Ref, Quot
         (ref, quote)
         for company in COMPANIES
         for ref, quote in seen.all(Quote, by=company)
-        if quote.request == request_ref and seen.first[ref.uri] <= deadline
+        # this version of the bid, seen in time: a bid changed later is a new, late one
+        if quote.request == request_ref and seen.since(ref) <= deadline
     ]
 
 
@@ -997,7 +1030,7 @@ def decide(seen: Seen, now: datetime) -> Plan:
         if key not in requests:
             plan.let("rides", *COMPANIES)  # anyone who bids: let in before the request lands
         bids_by = when(note.created_at) + timedelta(seconds=BID_SECONDS)
-        bids_by = max(bids_by, seen.first[intent_ref.uri] + timedelta(seconds=BID_SECONDS))
+        bids_by = max(bids_by, seen.since(intent_ref) + timedelta(seconds=BID_SECONDS))
         request = Request(
             intent=intent_ref,
             pickup=intent.pickup,
@@ -1013,14 +1046,18 @@ def decide(seen: Seen, now: datetime) -> Plan:
         if now < when(request.bids_by):
             plan.let("rides", *COMPANIES)  # still open: every company may see it and bid
             continue
-        if key in authorized or key not in mine or not allowances:
+        if key in authorized or key not in mine:
             continue
         intent = mine[key][1]
+        # alice's newest say-so for the account alice named, or no money is asked for
+        fitting = [(r, a) for r, a in allowances if a.account == intent.account]
+        if not fitting:
+            continue
         best = choose(bids(seen, request_ref, request), intent.most)
         if best is None:
             continue  # no bid in time, or none within alice's limit: no ride
         plan.let("rides", seen.who(best[0]))  # the winner stays; the others go
-        allowance_ref, _ = allowances[-1]  # the newest say-so alice gave
+        allowance_ref, _ = fitting[-1]
         authorize = Authorize(
             allowance=allowance_ref,
             quote=best[0],
@@ -1034,11 +1071,14 @@ def decide(seen: Seen, now: datetime) -> Plan:
     # 3. the money is held: the ride is booked with the winner, who alone stays
     #    in "rides" until the bank has paid it
     settled = {s.hold.uri for _, s in seen.all(Settlement, by=BANK)}
+    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
         held = [ref for ref, h in seen.all(Hold, by=BANK) if h.authorize == authorize_ref]
         if key not in requests:
             continue
+        if authorize_ref.uri in refused:
+            continue  # no money, no ride: the payee is let go with everyone else
         if not held or held[0].uri not in settled:
             plan.let("rides", authorize.payee)
         if not held:
@@ -1133,7 +1173,6 @@ def company(domain: str):
     def decide(seen: Seen, now: datetime) -> Plan:
         plan = Plan()
         plan.let("main", *offer["readers"])
-        my_quotes = {ref.uri: (ref, q) for ref, q in seen.all(Quote, by=me)}
 
         # 1. open requests: a bid on each
         for request_ref, request in seen.all(Request, by=CONCIERGE):
@@ -1149,12 +1188,14 @@ def company(domain: str):
 
         # 2. a booking for one of its bids: the hold checked in the bank's repo, then a car
         for booking_ref, booking in seen.all(Booking, by=CONCIERGE):
-            if booking.quote.uri not in my_quotes or not offer["cars"]:
+            # exactly the bid it signed, for exactly the request the booking names
+            quote = seen.get(booking.quote, Quote)
+            if seen.who(booking.quote) != me or quote is None or not offer["cars"]:
                 continue
-            if seen.who(booking.hold) != BANK:
+            if quote.request != booking.request or seen.who(booking.hold) != BANK:
                 continue  # a hold is only a hold in the bank's own repo
             hold = seen.get(booking.hold, Hold)
-            price = my_quotes[booking.quote.uri][1].price
+            price = quote.price
             if hold is None or hold.payee != me or hold.amount.value() < price.value():
                 continue  # no such hold, not for this company, or too small: no car
             dispatch = Dispatch(
@@ -1163,10 +1204,10 @@ def company(domain: str):
             plan.write("main", rkey(booking_ref), dispatch)
 
         # 3. its car's dropoff: the fare, the price it bid
-        bookings = {ref.uri: b for ref, b in seen.all(Booking, by=CONCIERGE)}
         for dispatch_ref, dispatch in seen.all(Dispatch, by=me):
-            booking = bookings.get(dispatch.booking.uri)
-            if booking is None:
+            booking = seen.get(dispatch.booking, Booking)  # the booking exactly as dispatched
+            quote = booking and seen.get(booking.quote, Quote)
+            if booking is None or quote is None:
                 continue
             for dropoff_ref, dropoff in seen.all(Dropoff, by=dispatch.car):
                 if dropoff.dispatch == dispatch_ref:
@@ -1174,7 +1215,7 @@ def company(domain: str):
                         booking=dispatch.booking,
                         dropoff=dropoff_ref,
                         hold=dispatch.hold,
-                        amount=my_quotes[booking.quote.uri][1].price,
+                        amount=quote.price,
                         created_at=peer.now(),
                     )
                     plan.write("main", rkey(dispatch_ref), fare)
@@ -1240,30 +1281,56 @@ BALANCES = {(ALICE, "checking"): dollars(25000)}
 LIMITS = {payee: dollars(10000) for payee in COMPANIES}
 
 
-def check(seen: Seen, authorize_ref, authorize: Authorize) -> str | None:
-    """Why the bank will not hold this money, or None if it will."""
+WAIT = "wait"  # not a refusal: something it needs has not reached this bank yet
+
+
+def account_of(seen: Seen, hold: Hold) -> tuple[str, str] | None:
+    """Whose account, and which, a hold was taken from: from the request it answered."""
+    authorize = seen.get(hold.authorize, Authorize)
+    return None if authorize is None else (seen.who(authorize.allowance), authorize.account)
+
+
+def spoken_for(seen: Seen, account: tuple[str, str]) -> int:
+    """Cents of this account already gone or set aside: what each settled hold
+    paid out, and each open hold in full."""
+    settled = {(s.hold.uri, s.hold.cid): s for _, s in seen.all(Settlement, by=BANK)}
+    cents = 0
+    for ref, hold in seen.all(Hold, by=BANK):
+        if account_of(seen, hold) == account:
+            done = settled.get((ref.uri, ref.cid))
+            cents += done.paid.amount if done else hold.amount.amount
+    return cents
+
+
+def check(seen: Seen, authorize_ref, authorize: Authorize, pending: dict) -> str | None:
+    """Why the bank will not hold this money (a reason), WAIT, or None if it will.
+
+    pending: cents this same pass has already agreed to hold, by account."""
+    if authorize.allowance.uri not in seen.records:
+        return WAIT  # alice's allowance may simply not have arrived yet
     allowance = seen.get(authorize.allowance, Allowance)
     if allowance is None:
-        return "no such allowance, or it changed since it was named"
+        return "that allowance changed since it was named"
     owner = seen.who(authorize.allowance)
-    if allowance.bank != BANK or allowance.agent != seen.who(authorize_ref):
-        return "the allowance does not let this agent spend at this bank"
+    if (
+        allowance.bank != BANK
+        or allowance.agent != seen.who(authorize_ref)
+        or allowance.account != authorize.account
+    ):
+        return "the allowance does not let this agent spend from this account at this bank"
     if authorize.amount.value() > allowance.per_ride.value():
         return f"{authorize.amount} is over the {allowance.per_ride} the allowance gives a ride"
     limit = LIMITS.get(authorize.payee)
     if limit is None or authorize.amount.value() > limit.value():
         return f"{host(authorize.payee)} is not a payee this bank pays that much"
-    balance = BALANCES.get((owner, authorize.account))
-    held = sum(
-        (h.amount.value() for ref, h in seen.all(Hold, by=BANK) if not paid(seen, ref)), start=0
-    )
-    if balance is None or balance.value() - held < authorize.amount.value():
+    account = (owner, authorize.account)
+    balance = BALANCES.get(account)
+    if balance is None:
+        return "no such account"
+    free = balance.amount - spoken_for(seen, account) - pending.get(account, 0)
+    if free < authorize.amount.amount:
         return "not enough money in that account"
     return None
-
-
-def paid(seen: Seen, hold_ref) -> bool:
-    return any(s.hold == hold_ref for _, s in seen.all(Settlement, by=BANK))
 
 
 def decide(seen: Seen, now: datetime) -> Plan:
@@ -1282,16 +1349,22 @@ def decide(seen: Seen, now: datetime) -> Plan:
         )
 
     # 2. each request to hold money, answered once, either way
-    holds = {h.authorize.uri: (ref, h) for ref, h in seen.all(Hold, by=BANK)}
-    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
+    # matched by the full ref: a request changed since is a new request
+    holds = {(h.authorize.uri, h.authorize.cid): h for _, h in seen.all(Hold, by=BANK)}
+    refused = {(r.authorize.uri, r.authorize.cid) for _, r in seen.all(Refusal, by=BANK)}
+    pending: dict = {}  # cents agreed in this pass, by account, so two can't both spend the same
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
-        if authorize_ref.uri in holds:
-            plan.let(f"ride-{key}", ALICE, CONCIERGE, holds[authorize_ref.uri][1].payee)
+        answer = (authorize_ref.uri, authorize_ref.cid)
+        if answer in holds:
+            plan.let(f"ride-{key}", ALICE, CONCIERGE, holds[answer].payee)
             continue
-        if authorize_ref.uri in refused:
+        if answer in refused:
             continue
-        if (why := check(seen, authorize_ref, authorize)) is not None:
+        why = check(seen, authorize_ref, authorize, pending)
+        if why == WAIT:
+            continue
+        if why is not None:
             plan.write(
                 "main", key, Refusal(authorize=authorize_ref, reason=why, created_at=peer.now())
             )
@@ -1302,6 +1375,8 @@ def decide(seen: Seen, now: datetime) -> Plan:
             amount=authorize.amount,
             created_at=peer.now(),
         )
+        account = (seen.who(authorize.allowance), authorize.account)
+        pending[account] = pending.get(account, 0) + authorize.amount.amount
         plan.let(f"ride-{key}", ALICE, CONCIERGE, authorize.payee)
         plan.write(f"ride-{key}", key, hold)
 
@@ -1360,6 +1435,8 @@ import ride
 from ride import ALICE, Arrival, Dispatch, Dropoff, Plan, Position, Seen, rkey, serve
 
 MINUTE = timedelta(seconds=float(os.environ.get("MINUTE_SECONDS", "1")))
+if MINUTE.total_seconds() <= 0:
+    raise ValueError("MINUTE_SECONDS must be positive: the car's clock has to move forward")
 TO_PICKUP, RIDE = 4, 17  # minutes
 # A pretend map, in millionths of a degree: where the car starts, the
 # pickup, and the airport.
@@ -1397,7 +1474,7 @@ def car(me: str, add_blob):
             if dispatch.car != me:
                 continue
             key = rkey(dispatch_ref)
-            started = seen.first[dispatch_ref.uri]  # the car's own clock starts when it hears
+            started = seen.since(dispatch_ref)  # the car's own clock starts when it hears
             minutes = int((now - started) / MINUTE)
             for m in range(min(minutes, TO_PICKUP) + 1):  # on the way to the pickup
                 where = along(START, PICKUP, m / TO_PICKUP)
@@ -1406,7 +1483,10 @@ def car(me: str, add_blob):
             if minutes < TO_PICKUP:
                 continue
             if key not in photos:  # at the curb: one photo, taken once
-                photos[key] = add_blob(curb(peer.now()), "image/svg+xml")
+                taken = add_blob(curb(peer.now()), "image/svg+xml")
+                if taken is None:
+                    continue  # nowhere to keep it yet: the next pass takes it
+                photos[key] = taken
             arrival = Arrival(dispatch=dispatch_ref, photo=photos[key], created_at=peer.now())
             plan.write("ride", key, arrival)
             for m in range(min(minutes - TO_PICKUP, RIDE) + 1):  # the ride
@@ -1442,7 +1522,8 @@ if __name__ == "__main__":
         def add_blob(data: bytes, mime: str):
             # the photo's bytes go beside the ride's repo, which the car made
             # with a place for them; the arrival record names them by hash
-            return ride.DESK.repos["ride"].repo.add_blob(data, mime)
+            kept = ride.DESK.repos.get("ride") if ride.DESK else None
+            return None if kept is None else kept.repo.add_blob(data, mime)
 
         decide = car(f"did:web:{peer.domain}", add_blob)
         await serve(peer, decide, f"driving for {COMPANY}")
@@ -1506,13 +1587,15 @@ def walk(start: dict, look) -> Iterator[tuple[int, dict, str, dict | None]]:
     """Depth first from one ref: (depth, ref, verdict, record) for each step.
 
     look(ref) -> (verdict, record): "verified", "sealed", or "changed"."""
-    checked: set[str] = set()
+    checked: set[tuple[str, str]] = set()
 
     def visit(ref: dict, depth: int) -> Iterator[tuple[int, dict, str, dict | None]]:
-        if ref["uri"] in checked:
+        # a step is a record AND its hash: the same address named with another
+        # hash is another claim, and is checked on its own
+        if (ref["uri"], ref["cid"]) in checked:
             yield depth, ref, "again", None
             return
-        checked.add(ref["uri"])
+        checked.add((ref["uri"], ref["cid"]))
         verdict, record = look(ref)
         yield depth, ref, verdict, record
         if verdict == "verified":
@@ -1548,18 +1631,20 @@ async def main() -> int:
                 answer = await http.get(
                     f"http://[{tunnel}]/xrpc/com.atproto.sync.getRepo", params={"did": repo}
                 )
-                answer.raise_for_status()
-            except httpx.HTTPError:
-                sealed.add(repo)  # no tunnel, or no record letting alice in
+            except httpx.TransportError:
+                sealed.add(repo)  # no tunnel to it: alice was never meant to reach it
                 continue
+            if answer.status_code == 404:
+                sealed.add(repo)  # the doorman's no: no record lets alice in
+                continue
+            answer.raise_for_status()  # anything else is a fault, not a seal: the walk stops
             mirror = RepoMirror(repo, resolver=resolver())
             await mirror.load_checkpoint(answer.content)
             for path, cid in mirror.entries.items():  # each hash, from the verified tree
                 records[f"at://{repo}/{path}"] = (cid.encode(), mirror.get_record(*path.split("/")))
-        own = (
-            await http.get("http://127.0.0.1/mine")
-        ).json()  # alice's own repos, from alice's peer
-        for repo in own:
+        own = await http.get("http://127.0.0.1/mine")  # alice's own repos, from alice's peer
+        own.raise_for_status()
+        for repo in own.json():
             for r in repo["records"]:
                 records[f"at://{repo['did']}/{r['path']}"] = (r["cid"], r["value"])
 
@@ -1570,11 +1655,17 @@ async def main() -> int:
                 return ("verified", value) if cid == ref["cid"] else ("changed", None)
             return ("sealed", None) if repo in sealed else ("missing", None)
 
-        settlements = sorted(u for u in records if "/com.example.bank.settlement/" in u)
+        # the newest settlement, by the time the bank signed into it
+        settlements = sorted(
+            (records[u][1].get("created_at", ""), u)
+            for u in records
+            if "/com.example.bank.settlement/" in u
+        )
         if not settlements:
             print("no settlement yet: the ride isn't paid for")
             return 1
-        start = {"uri": settlements[-1], "cid": records[settlements[-1]][0]}
+        newest = settlements[-1][1]
+        start = {"uri": newest, "cid": records[newest][0]}
         print("the ride, walked back from the bank's settlement, as alice:")
         counts = {"verified": 0, "sealed": 0, "changed": 0, "missing": 0}
         photo = None
@@ -1594,18 +1685,21 @@ async def main() -> int:
         if photo is not None:  # the curb, fetched and checked against the hash its record names
             repo, party, blob = photo
             tunnel = parse_wireguard_service(await resolver()(party)).tunnel_ip
-            data = (
-                await http.get(
-                    f"http://[{tunnel}]/xrpc/com.atproto.sync.getBlob",
-                    params={"did": repo, "cid": blob["ref"]["$link"]},
-                )
-            ).content
-            same = CID.for_raw(data).encode() == blob["ref"]["$link"]
-            Path("curb.svg").write_bytes(data)
-            print(
-                f"the curb photo: {len(data)} bytes, {'hash matches' if same else 'HASH DIFFERS'},"
-                " saved as curb.svg: is it your curb?"
+            answer = await http.get(
+                f"http://[{tunnel}]/xrpc/com.atproto.sync.getBlob",
+                params={"did": repo, "cid": blob["ref"]["$link"]},
             )
+            answer.raise_for_status()
+            data = answer.content
+            if CID.for_raw(data).encode() == blob["ref"]["$link"]:
+                Path("curb.svg").write_bytes(data)  # only a photo that checks out is shown
+                print(
+                    f"the curb photo: {len(data)} bytes, hash matches,"
+                    " saved as curb.svg: is it your curb?"
+                )
+            else:
+                counts["changed"] += 1
+                print("the curb photo: ✗ HASH DIFFERS: not the photo the car signed, not shown")
         print(
             f"{counts['verified']} steps verified, {counts['sealed']} sealed from alice,"
             f" {counts['changed'] + counts['missing']} wrong"
@@ -1751,8 +1845,9 @@ read it and wrote a quote, in its own repo, in its own time.
 > 🔑 **Key concept: one record, any number of answers.** With calls, an
 > agent must know every company, connect to each one's server, and call its
 > quote tool, holding each call open for the answer. Here the concierge
-> wrote one record and called no one. Whoever follows ride requests may bid,
-> even a company the concierge has never heard of. The work moves to the
+> wrote one record and called no one. Any company let in to read its
+> requests may bid; adding one is one more tunnel and one more reader, not
+> one more integration. The work moves to the
 > companies that want the ride. The cost, plainly: this works only if the
 > companies speak atproto, not necessarily FastATP. It is a picture of what
 > could be, not of today.
@@ -2018,6 +2113,8 @@ The last thing alice checked was a photo of the curb, signed by the car.
 >   and the curb photo for alice alone, and no ride linkable to the next.
 > - The request names only an area; the exact pickup goes to the winner
 >   alone.
+> - Each request gets a repo of its own, so a company let back in for the
+>   next ride never reads the last one.
 > - The award carries a fresh nonce, for the winner only. The car's arrival
 >   must repeat it, and alice's peer doesn't even show a photo whose nonce is
 >   wrong.

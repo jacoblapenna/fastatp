@@ -13,8 +13,9 @@ import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from fractions import Fraction
-from typing import Annotated, TypeVar
+from typing import Annotated, Literal, TypeVar
 
 import uvicorn
 from backstage import follow
@@ -91,17 +92,21 @@ class Ref(BaseModel):
 
 class Money(BaseModel):
     """An amount as whole numbers, the way the orchestra keeps a pitch:
-    3400 with exponent -2 is $34.00. Records have no floats."""
+    3400 with exponent -2 is $34.00. Records have no floats.
+
+    This lab's money is US cents and nothing else, and the schema says so: a
+    record in another currency or scale doesn't validate, so no rule here
+    ever compares dollars with euros or cents with mills."""
 
     amount: Annotated[int, Field(ge=0)]
-    exponent: Annotated[int, Field(ge=-6, le=0)] = -2
-    currency: Annotated[str, MaxLength(3)] = "USD"
+    exponent: Literal[-2] = -2
+    currency: Literal["USD"] = "USD"
 
     def value(self) -> Fraction:
         return self.amount * Fraction(10) ** self.exponent
 
     def __str__(self) -> str:
-        return f"${self.value():.2f}"
+        return f"${Decimal(self.amount).scaleb(self.exponent):.2f}"  # exact, on every Python
 
 
 def dollars(cents: int) -> Money:
@@ -304,7 +309,9 @@ class Seen:
     """Every verified record an agent has read, from every repo it follows."""
 
     records: dict[str, tuple[str, dict]] = field(default_factory=dict)  # uri -> (cid, value)
-    first: dict[str, datetime] = field(default_factory=dict)  # uri -> when this agent first saw it
+    # when this agent first saw each version of a record, by uri and cid: a
+    # record changed later is a new version, first seen later
+    first: dict[tuple[str, str], datetime] = field(default_factory=dict)
     owners: dict[str, str] = field(
         default_factory=dict
     )  # a channel's did:key -> its party's did:web
@@ -317,7 +324,11 @@ class Seen:
     def add(self, did: str, path: str, value: dict, at: datetime | None = None) -> None:
         uri = f"at://{did}/{path}"
         self.records[uri] = (cid_of(value), value)
-        self.first.setdefault(uri, at or datetime.now(UTC))
+        self.first.setdefault((uri, self.records[uri][0]), at or datetime.now(UTC))
+
+    def since(self, ref: Ref) -> datetime:
+        """When this agent first saw exactly this version of a record."""
+        return self.first[(ref.uri, ref.cid)]
 
     def all(self, model: type[T], by: str | None = None) -> list[tuple[Ref, T]]:
         """Every record of one type (from one author, if given), checked by this
@@ -392,6 +403,7 @@ class Desk:
         self.peer, self.seen = peer, seen
         self.me = peer.identity.did
         self.repos = {"main": peer.channel}
+        self.opening = asyncio.Lock()
 
     async def announce(self, did: str) -> None:
         await self.peer.server.put_record(
@@ -400,6 +412,10 @@ class Desk:
         self.seen.owners[did] = self.me
 
     async def repo(self, name: str):
+        async with self.opening:  # one repo per name, even when two callers ask at once
+            return await self._repo(name)
+
+    async def _repo(self, name: str):
         if name not in self.repos:
             key = generate_keypair("k256")
             made = await Repo.create(encode_did_key(key.public_key()), key, blobs=MemoryBlobStore())
@@ -454,7 +470,10 @@ async def run(peer, decide: Decide, tick: float = 0.5) -> None:
         async def on_record(path: str, value: dict) -> None:
             if not path.startswith(f"{Channel.nsid}/"):
                 return
-            private = value["did"]
+            try:
+                private = Channel.model_validate(value).did
+            except ValidationError:
+                return  # not an announcement this agent understands: skipped, not obeyed
             seen.owners[private] = owner  # signed by the owner, so this repo is the owner's
             if private not in following:
                 following.add(private)
