@@ -23,15 +23,14 @@ from ride import (
     CONCIERGE,
     Allowance,
     Authorize,
-    Booking,
     Fare,
     Hold,
     Money,
     PayeeLimit,
+    Plan,
     Refusal,
     Seen,
     Settlement,
-    author,
     dollars,
     host,
     rkey,
@@ -40,8 +39,8 @@ from ride import (
 
 # The bank's own books. In a real bank these live in its database, not here.
 BALANCES = {(ALICE, "checking"): dollars(25000)}
-# The most each payee is paid at once, whoever asks. The bank publishes these
-# as records, so payees and customers can see them; it checks its books.
+# The most each payee is paid at once, whoever asks. The bank checks its
+# books; it also writes them as records, for the customer and the agent.
 LIMITS = {payee: dollars(10000) for payee in COMPANIES}
 
 
@@ -50,8 +49,8 @@ def check(seen: Seen, authorize_ref, authorize: Authorize) -> str | None:
     allowance = seen.get(authorize.allowance, Allowance)
     if allowance is None:
         return "no such allowance, or it changed since it was named"
-    owner = author(authorize.allowance)
-    if allowance.bank != BANK or allowance.agent != author(authorize_ref):
+    owner = seen.who(authorize.allowance)
+    if allowance.bank != BANK or allowance.agent != seen.who(authorize_ref):
         return "the allowance does not let this agent spend at this bank"
     if authorize.amount.value() > allowance.per_ride.value():
         return f"{authorize.amount} is over the {allowance.per_ride} the allowance gives a ride"
@@ -71,55 +70,66 @@ def paid(seen: Seen, hold_ref) -> bool:
     return any(s.hold == hold_ref for _, s in seen.all(Settlement, by=BANK))
 
 
-def decide(seen: Seen, now: datetime) -> list[tuple[str, object]]:
-    out = []
-    # 1. its own limits, published once
+def decide(seen: Seen, now: datetime) -> Plan:
+    plan = Plan()
+    # Everything private. "main", for the customer and the customer's agent:
+    # its limits and its refusals. One repo per hold, made when it holds: the
+    # customer, the agent, and the payee the agent named, let in at that
+    # moment, so the payee can check the money is there. No other payee, and
+    # no other customer, sees it.
+    plan.let("main", ALICE, CONCIERGE)
+
+    # 1. its own limits, written once
     for payee, limit in LIMITS.items():
-        out.append((host(payee), PayeeLimit(payee=payee, per_payment=limit, created_at=peer.now())))
+        plan.write(
+            "main", host(payee), PayeeLimit(payee=payee, per_payment=limit, created_at=peer.now())
+        )
 
     # 2. each request to hold money, answered once, either way
-    answered = {h.authorize.uri for _, h in seen.all(Hold, by=BANK)}
-    answered |= {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
+    holds = {h.authorize.uri: (ref, h) for ref, h in seen.all(Hold, by=BANK)}
+    refused = {r.authorize.uri for _, r in seen.all(Refusal, by=BANK)}
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
-        if authorize_ref.uri in answered:
+        if authorize_ref.uri in holds:
+            plan.let(f"ride-{key}", ALICE, CONCIERGE, holds[authorize_ref.uri][1].payee)
+            continue
+        if authorize_ref.uri in refused:
             continue
         if (why := check(seen, authorize_ref, authorize)) is not None:
-            out.append((key, Refusal(authorize=authorize_ref, reason=why, created_at=peer.now())))
-        else:
-            hold = Hold(
-                authorize=authorize_ref,
-                payee=authorize.payee,
-                amount=authorize.amount,
-                created_at=peer.now(),
+            plan.write(
+                "main", key, Refusal(authorize=authorize_ref, reason=why, created_at=peer.now())
             )
-            out.append((key, hold))
+            continue
+        hold = Hold(
+            authorize=authorize_ref,
+            payee=authorize.payee,
+            amount=authorize.amount,
+            created_at=peer.now(),
+        )
+        plan.let(f"ride-{key}", ALICE, CONCIERGE, authorize.payee)
+        plan.write(f"ride-{key}", key, hold)
 
     # 3. a fare from the payee of a hold: paid from it, the rest let go
-    bookings = {ref.uri: b for ref, b in seen.all(Booking, by=CONCIERGE)}
     for company in COMPANIES:
         for fare_ref, fare in seen.all(Fare, by=company):
-            booking = bookings.get(fare.booking.uri)
-            if booking is None or author(booking.hold) != BANK:
+            if seen.who(fare.hold) != BANK:
                 continue  # only a hold in this bank's own repo
-            hold = seen.get(booking.hold, Hold)
+            hold = seen.get(fare.hold, Hold)
             if not hold or hold.payee != company or fare.amount.value() > hold.amount.value():
-                continue  # not a ride this bank held money for, for this company, at this size
+                continue  # not a hold for this company, or less than the fare
             rest = Money(amount=hold.amount.amount - fare.amount.amount)  # both in cents
-            out.append(
-                (
-                    rkey(booking.hold),
-                    Settlement(
-                        hold=booking.hold,
-                        fare=fare_ref,
-                        paid=fare.amount,
-                        released=rest,
-                        created_at=peer.now(),
-                    ),
-                )
+            settlement = Settlement(
+                hold=fare.hold,
+                fare=fare_ref,
+                paid=fare.amount,
+                released=rest,
+                created_at=peer.now(),
             )
-    return out
+            key = rkey(fare.hold)
+            plan.let(f"ride-{key}", ALICE, CONCIERGE, company)
+            plan.write(f"ride-{key}", key, settlement)
+    return plan
 
 
 if __name__ == "__main__":
-    asyncio.run(serve(peer, [ALICE, CONCIERGE, *COMPANIES], decide, "holding and paying"))
+    asyncio.run(serve(peer, decide, "holding and paying"))

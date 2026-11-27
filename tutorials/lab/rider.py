@@ -2,10 +2,12 @@
 
 python rider.py alice.lan
 
-alice asks for a ride the way guide one wrote notes: a note, committed with
-/commit. The one thing a note can't say is the money: which agent may have
-which bank hold how much. That is a record of its own, an Allowance, signed
-here with the same key as every note. Like /commit, only this machine may call it.
+alice asks for a ride the way guide one wrote private notes: a note,
+committed with /commit into alice's channel, which only alice's agent may
+read. The one thing a note can't say is the money: which agent may have which
+bank hold how much. That is a record of its own, an Allowance, signed into a
+second private repo, one the bank and the agent may read and nobody else.
+Like /commit, only this machine may call /allow.
 
     {"agent": "did:web:concierge.lan", "bank": "did:web:bank.lan",
      "account": "checking", "per_ride": 4000}         $40.00, in cents
@@ -14,8 +16,9 @@ here with the same key as every note. Like /commit, only this machine may call i
 import asyncio
 
 import peer  # this machine's peer, exactly as guide one left it
+import ride
 from pydantic import ValidationError
-from ride import Allowance, dollars, serve
+from ride import BANK, CONCIERGE, Allowance, Plan, dollars, serve
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -38,8 +41,19 @@ async def allow(request: Request) -> JSONResponse:
     except (KeyError, ValueError, ValidationError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     rkey = generate_tid()
-    await peer.server.put_record(Allowance.nsid, rkey, allowance)
-    return JSONResponse({"uri": f"at://{peer.identity.did}/{Allowance.nsid}/{rkey}"})
+    if ride.DESK is None:
+        return JSONResponse({"error": "not ready yet"}, status_code=503)
+    for_bank = await ride.DESK.repo("bank")
+    await for_bank.put_record(Allowance.nsid, rkey, allowance)
+    return JSONResponse({"uri": f"at://{for_bank.did}/{Allowance.nsid}/{rkey}"})
+
+
+def decide(seen, now) -> Plan:
+    """alice writes by hand; these are only who may read what alice writes."""
+    plan = Plan()
+    plan.let("main", CONCIERGE)  # alice's notes: for alice's agent
+    plan.let("bank", BANK, CONCIERGE)  # alice's allowance: for the bank, and the agent it names
+    return plan
 
 
 if __name__ == "__main__":
@@ -47,8 +61,7 @@ if __name__ == "__main__":
     asyncio.run(
         serve(
             peer,
-            [],
-            lambda seen, now: [],
+            decide,
             "alice's machine: /commit for notes, /allow for money",
             routes=[Route("/allow", allow, methods=["POST"])],
         )

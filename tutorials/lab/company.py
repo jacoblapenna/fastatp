@@ -16,17 +16,19 @@ from datetime import datetime
 
 import peer  # this machine's peer, exactly as guide one left it
 from ride import (
+    ALICE,
     BANK,
+    CAB,
     CONCIERGE,
     Booking,
     Dispatch,
     Dropoff,
     Fare,
     Hold,
+    Plan,
     Quote,
     Request,
     Seen,
-    author,
     dollars,
     rkey,
     serve,
@@ -35,9 +37,24 @@ from ride import (
 
 # Each company's own business: what it charges, how soon, in what, with which cars.
 # The bid is all the concierge learns of it.
+# readers: who may read the company's private repo. Hoot lets in the
+# concierge it bids to, the bank that pays it, its car, and the rider; Jitney,
+# which this story has lose, keeps its bids to the concierge and the bank.
 OFFERS = {
-    "hoot.lan": {"price": dollars(3400), "eta": 4, "car": "sedan", "cars": ["did:web:cab-17.lan"]},
-    "jitney.lan": {"price": dollars(3700), "eta": 3, "car": "hatchback", "cars": []},
+    "hoot.lan": {
+        "price": dollars(3400),
+        "eta": 4,
+        "car": "sedan",
+        "cars": [CAB],
+        "readers": [CONCIERGE, BANK, CAB, ALICE],
+    },
+    "jitney.lan": {
+        "price": dollars(3700),
+        "eta": 3,
+        "car": "hatchback",
+        "cars": [],
+        "readers": [CONCIERGE, BANK],
+    },
 }
 
 
@@ -45,8 +62,9 @@ def company(domain: str):
     me = f"did:web:{domain}"
     offer = OFFERS[domain]
 
-    def decide(seen: Seen, now: datetime) -> list[tuple[str, object]]:
-        out = []
+    def decide(seen: Seen, now: datetime) -> Plan:
+        plan = Plan()
+        plan.let("main", *offer["readers"])
         my_quotes = {ref.uri: (ref, q) for ref, q in seen.all(Quote, by=me)}
 
         # 1. open requests: a bid on each
@@ -59,13 +77,13 @@ def company(domain: str):
                     car=offer["car"],
                     created_at=peer.now(),
                 )
-                out.append((rkey(request_ref), quote))
+                plan.write("main", rkey(request_ref), quote)
 
         # 2. a booking for one of its bids: the hold checked in the bank's repo, then a car
         for booking_ref, booking in seen.all(Booking, by=CONCIERGE):
             if booking.quote.uri not in my_quotes or not offer["cars"]:
                 continue
-            if author(booking.hold) != BANK:
+            if seen.who(booking.hold) != BANK:
                 continue  # a hold is only a hold in the bank's own repo
             hold = seen.get(booking.hold, Hold)
             price = my_quotes[booking.quote.uri][1].price
@@ -74,7 +92,7 @@ def company(domain: str):
             dispatch = Dispatch(
                 booking=booking_ref, hold=booking.hold, car=offer["cars"][0], created_at=peer.now()
             )
-            out.append((rkey(booking_ref), dispatch))
+            plan.write("main", rkey(booking_ref), dispatch)
 
         # 3. its car's dropoff: the fare, the price it bid
         bookings = {ref.uri: b for ref, b in seen.all(Booking, by=CONCIERGE)}
@@ -87,15 +105,16 @@ def company(domain: str):
                     fare = Fare(
                         booking=dispatch.booking,
                         dropoff=dropoff_ref,
+                        hold=dispatch.hold,
                         amount=my_quotes[booking.quote.uri][1].price,
                         created_at=peer.now(),
                     )
-                    out.append((rkey(dispatch_ref), fare))
-        return out
+                    plan.write("main", rkey(dispatch_ref), fare)
+        return plan
 
     return me, offer, decide
 
 
 if __name__ == "__main__":
     me, offer, decide = company(peer.domain)
-    asyncio.run(serve(peer, [CONCIERGE, BANK, *offer["cars"]], decide, "bidding on ride requests"))
+    asyncio.run(serve(peer, decide, "bidding on ride requests"))

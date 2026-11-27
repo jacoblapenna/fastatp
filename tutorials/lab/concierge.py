@@ -13,6 +13,11 @@ its own repo, each step that is missing:
 
 It calls no one. A company it has never heard of could bid, if it follows
 ride requests; a bid it never sees in time is a no-bid.
+
+Its privacy is its own to compose: one private repo for what it understood
+(alice only), one for the bank, one for the ride companies, who may read it
+only while a request is open, then are let go, except the winner, until the
+ride is paid for. Each is one line of its plan.
 """
 
 import asyncio
@@ -32,11 +37,12 @@ from ride import (
     Booking,
     Hold,
     Intent,
+    Plan,
     Quote,
     Ref,
     Request,
     Seen,
-    author,
+    Settlement,
     dollars,
     rkey,
     serve,
@@ -90,10 +96,18 @@ def choose(offers: list[tuple[Ref, Quote]], most) -> tuple[Ref, Quote] | None:
     return min(within, key=lambda o: (o[1].price.value(), -nicer.get(o[1].car, -1)), default=None)
 
 
-def decide(seen: Seen, now: datetime) -> list[tuple[str, object]]:
-    out = []
+def decide(seen: Seen, now: datetime) -> Plan:
+    plan = Plan()
+    # Its repos, and who reads each. alice reads them all: they are alice's
+    # errands. "main" holds what it understood; "desk" what it asks the bank;
+    # "rides" what it asks the ride companies, who are let in while a request
+    # is open, then let go, except a winner, until its ride is paid for.
+    plan.let("main", ALICE)
+    plan.let("desk", ALICE, BANK)
+    plan.let("rides", ALICE)
     allowances = [(r, a) for r, a in seen.all(Allowance, by=ALICE) if a.agent == CONCIERGE]
     mine = {rkey(ref): (ref, x) for ref, x in seen.all(Intent, by=CONCIERGE)}
+    requests = {rkey(ref): (ref, r) for ref, r in seen.all(Request, by=CONCIERGE)}
 
     # 1. alice's words, understood, then put out for bids
     for said, note in seen.all(Note, by=ALICE):
@@ -102,73 +116,72 @@ def decide(seen: Seen, now: datetime) -> list[tuple[str, object]]:
         if wanted is None:
             continue
         if key not in mine:
-            out.append((key, Intent(said=said, reader=READER, created_at=peer.now(), **wanted)))
+            plan.write(
+                "main", key, Intent(said=said, reader=READER, created_at=peer.now(), **wanted)
+            )
             continue
         intent_ref, intent = mine[key]
+        if key not in requests:
+            plan.let("rides", *COMPANIES)  # anyone who bids: let in before the request lands
         bids_by = when(note.created_at) + timedelta(seconds=BID_SECONDS)
         bids_by = max(bids_by, seen.first[intent_ref.uri] + timedelta(seconds=BID_SECONDS))
-        out.append(
-            (
-                key,
-                Request(
-                    intent=intent_ref,
-                    pickup=intent.pickup,
-                    destination=intent.destination,
-                    bids_by=bids_by.isoformat().replace("+00:00", "Z"),
-                    created_at=peer.now(),
-                ),
-            )
+        request = Request(
+            intent=intent_ref,
+            pickup=intent.pickup,
+            destination=intent.destination,
+            bids_by=bids_by.isoformat().replace("+00:00", "Z"),
+            created_at=peer.now(),
         )
+        plan.write("rides", key, request)
 
-    # 2. bidding closed: the best bid, and the bank asked to hold the money
-    for request_ref, request in seen.all(Request, by=CONCIERGE):
-        key = rkey(request_ref)
-        if now < when(request.bids_by) or key not in mine or not allowances:
+    # 2. bidding closed: the best bid, and the bank asked to hold the money, once
+    authorized = {rkey(ref) for ref, _ in seen.all(Authorize, by=CONCIERGE)}
+    for key, (request_ref, request) in requests.items():
+        if now < when(request.bids_by):
+            plan.let("rides", *COMPANIES)  # still open: every company may see it and bid
+            continue
+        if key in authorized or key not in mine or not allowances:
             continue
         intent = mine[key][1]
         best = choose(bids(seen, request_ref, request), intent.most)
         if best is None:
             continue  # no bid in time, or none within alice's limit: no ride
+        plan.let("rides", seen.who(best[0]))  # the winner stays; the others go
         allowance_ref, _ = allowances[-1]  # the newest say-so alice gave
-        out.append(
-            (
-                key,
-                Authorize(
-                    allowance=allowance_ref,
-                    quote=best[0],
-                    payee=author(best[0]),
-                    amount=intent.most,
-                    account=intent.account,
-                    created_at=peer.now(),
-                ),
-            )
+        authorize = Authorize(
+            allowance=allowance_ref,
+            quote=best[0],
+            payee=seen.who(best[0]),
+            amount=intent.most,
+            account=intent.account,
+            created_at=peer.now(),
         )
+        plan.write("desk", key, authorize)
 
-    # 3. the money is held: the ride is booked with the winner
-    requests = {rkey(ref): (ref, r) for ref, r in seen.all(Request, by=CONCIERGE)}
+    # 3. the money is held: the ride is booked with the winner, who alone stays
+    #    in "rides" until the bank has paid it
+    settled = {s.hold.uri for _, s in seen.all(Settlement, by=BANK)}
     for authorize_ref, authorize in seen.all(Authorize, by=CONCIERGE):
         key = rkey(authorize_ref)
         held = [ref for ref, h in seen.all(Hold, by=BANK) if h.authorize == authorize_ref]
-        if not held or key not in requests:
+        if key not in requests:
+            continue
+        if not held or held[0].uri not in settled:
+            plan.let("rides", authorize.payee)
+        if not held:
             continue
         request_ref, request = requests[key]
         passed = [ref for ref, _ in bids(seen, request_ref, request) if ref != authorize.quote]
-        out.append(
-            (
-                key,
-                Booking(
-                    request=request_ref,
-                    quote=authorize.quote,
-                    passed=passed,
-                    hold=held[0],
-                    created_at=peer.now(),
-                ),
-            )
+        booking = Booking(
+            request=request_ref,
+            quote=authorize.quote,
+            passed=passed,
+            hold=held[0],
+            created_at=peer.now(),
         )
-    return out
+        plan.write("rides", key, booking)
+    return plan
 
 
 if __name__ == "__main__":
-    asyncio.run(
-        serve(peer, [ALICE, BANK, *COMPANIES], decide, "taking alice's notes as ride requests")
-    )
+    asyncio.run(serve(peer, decide, "taking alice's notes as ride requests"))

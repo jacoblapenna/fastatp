@@ -35,7 +35,7 @@ def lab(monkeypatch):
     for name in ("ride", "concierge", "company", "bank", "cab", "lexicons"):
         monkeypatch.delitem(sys.modules, name, raising=False)
     modules = {name: __import__(name) for name in ("ride", "concierge", "company", "bank", "cab")}
-    return SimpleNamespace(clock=clock, Note=__import__("lexicons").Note, **modules)
+    return SimpleNamespace(clock=clock, last={}, Note=__import__("lexicons").Note, **modules)
 
 
 def put(seen, did, key, record, at):
@@ -45,10 +45,14 @@ def put(seen, did, key, record, at):
 
 
 def act(seen, did, decide, at, lab):
-    """One pass of an agent's loop: write what it decides, if not already written."""
+    """One pass of an agent's loop: write what it decides, if not already
+    written. (Which of its repos each record goes in is checked on its own;
+    here every record is simply the agent's.)"""
     lab.clock["now"] = at
     wrote = []
-    for key, record in decide(seen, at):
+    plan = lab.last[did] = decide(seen, at)
+    for repo, key, record in plan.writes:
+        assert repo in plan.readers  # nothing goes in a repo whose readers are undecided
         if f"at://{did}/{record.nsid}/{key}" not in seen.records:
             put(seen, did, key, record, at)
             wrote.append((record.nsid.rsplit(".", 1)[1], key))
@@ -113,6 +117,11 @@ def test_one_ride_from_alice_note_to_the_bank_settlement(lab):
     intent = seen.get(seen.all(ride.Request, by=concierge)[0][1].intent, ride.Intent)
     assert intent.reader.startswith("stand-in")  # the record says what read the sentence
 
+    # while a request is open, every company may read the concierge's rides repo
+    readers = lab.last[concierge].readers
+    assert readers["rides"] == {alice, hoot, jitney} and readers["desk"] == {alice, bank}
+    assert readers["main"] == {alice}  # what it understood alice to say: alice's eyes only
+
     # both companies bid while it is open; the bank writes its own limits
     t += timedelta(seconds=1)
     assert act(seen, hoot, hoot_decide, t, lab) == [("quote", "3kride")]
@@ -125,16 +134,20 @@ def test_one_ride_from_alice_note_to_the_bank_settlement(lab):
     assert act(seen, concierge, lab.concierge.decide, t, lab) == [("authorize", "3kride")]
     authorize = seen.all(ride.Authorize, by=concierge)[0][1]
     assert authorize.payee == hoot and authorize.amount.amount == 4000
+    assert lab.last[concierge].readers["rides"] == {alice, hoot}  # jitney lost: let go
     assert act(seen, jitney, jitney_decide, t, lab) == []  # closed: no late bid
 
     # the bank checks alice's own allowance, its limit and the balance, then holds
     assert act(seen, bank, lab.bank.decide, t, lab) == [("hold", "3kride")]
+    # a repo of its own for this hold: alice, the agent, and the payee the agent named
+    assert lab.last[bank].readers["ride-3kride"] == {alice, concierge, hoot}
+    assert jitney not in set().union(*lab.last[bank].readers.values())
     assert act(seen, bank, lab.bank.decide, t, lab) == []  # answered once, either way
 
     # booked with the winner, the losing bid on the record
     assert act(seen, concierge, lab.concierge.decide, t, lab) == [("booking", "3kride")]
     booking = seen.all(ride.Booking, by=concierge)[0][1]
-    assert [ride.author(r) for r in booking.passed] == [jitney]
+    assert [seen.who(r) for r in booking.passed] == [jitney]
 
     # hoot checks the hold in the bank's repo, then sends its car; jitney does nothing
     assert act(seen, jitney, jitney_decide, t, lab) == []
@@ -153,6 +166,8 @@ def test_one_ride_from_alice_note_to_the_bank_settlement(lab):
     assert act(seen, bank, lab.bank.decide, t, lab) == [("settlement", "3kride")]
     settlement = seen.all(ride.Settlement, by=bank)[0][1]
     assert (str(settlement.paid), str(settlement.released)) == ("$34.00", "$6.00")
+    act(seen, concierge, lab.concierge.decide, t, lab)
+    assert lab.last[concierge].readers["rides"] == {alice}  # paid: the winner is let go too
 
     # every agent, run again over everything, writes nothing more
     for did, decide in [
@@ -234,3 +249,38 @@ def test_a_company_sends_no_car_on_a_hold_that_is_not_the_bank_s(lab):
 
 def _cid(data: bytes = b"x") -> str:
     return CID.for_raw(data).encode()
+
+
+def test_a_record_in_a_party_s_channel_counts_as_that_party_s(lab):
+    """A channel is a did:key that names nobody; the party's signed Channel
+    announcement is what ties it to the party. Until it is tied, a record
+    there is nobody's, and no rule acts on it."""
+    ride = lab.ride
+    seen = ride.Seen()
+    channel = "did:key:zQ3shchannelofhoot"
+    quote = ride.Quote(
+        request=ride.Ref(uri=f"at://{ride.CONCIERGE}/com.example.ride.request/3k", cid=_cid()),
+        price=ride.dollars(3400),
+        eta_minutes=4,
+        car="sedan",
+        created_at=stamp(T0),
+    )
+    put(seen, channel, "3k", quote, T0)
+    assert seen.all(ride.Quote, by=ride.HOOT) == []  # whose is it? nobody has said
+    seen.owners[channel] = ride.HOOT  # what hoot's signed Channel record says
+    [(ref, _)] = seen.all(ride.Quote, by=ride.HOOT)
+    assert seen.who(ref) == ride.HOOT and ref.uri.startswith(f"at://{channel}/")
+
+
+def test_the_cast_file_seals_the_bids():
+    """Hoot and Jitney have no tunnel between them, and Jitney none to alice."""
+    sys.path.insert(0, str(LAB))
+    try:
+        sys.modules["peer"] = SimpleNamespace()
+        ride = __import__("ride")
+    finally:
+        sys.path.pop(0)
+        sys.modules.pop("peer", None)
+    assert ride.JITNEY not in ride.partners(ride.HOOT)  # no tunnel: neither can even knock
+    assert ride.JITNEY not in ride.partners(ride.ALICE)
+    assert set(ride.partners(ride.ALICE)) == {ride.CONCIERGE, ride.BANK, ride.HOOT, ride.CAB}
