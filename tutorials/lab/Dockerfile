@@ -40,9 +40,10 @@ RUN npx vite build
 
 # The conductor: a peer of its own, the scores built from the guides, and the page.
 FROM machine AS conductor
-COPY tutorials/conductor/conductor.py tutorials/tools/md_manifest.py tutorials/tools/play.py tutorials/GETTING_STARTED.md tutorials/CONDUCTOR_AND_ORCHESTRA.md ./
+COPY tutorials/conductor/conductor.py tutorials/tools/md_manifest.py tutorials/tools/play.py tutorials/GETTING_STARTED.md tutorials/CONDUCTOR_AND_ORCHESTRA.md tutorials/HOOT.md ./
 COPY tutorials/sketches ./sketches
 RUN python md_manifest.py GETTING_STARTED.md > GETTING_STARTED.json
 RUN python md_manifest.py CONDUCTOR_AND_ORCHESTRA.md > CONDUCTOR_AND_ORCHESTRA.json
+RUN python md_manifest.py HOOT.md > HOOT.json
 COPY --from=page /page/dist ./page/
 ENTRYPOINT ["python", "conductor.py"]

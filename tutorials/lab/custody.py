@@ -18,7 +18,7 @@ from pathlib import Path
 
 import httpx
 from dids import resolver
-from ride import ALICE, BANK, CAB, COMPANIES, CONCIERGE, Channel, cid_of, host
+from ride import ALICE, BANK, CAB, COMPANIES, CONCIERGE, Channel, host
 
 from fastatp import RepoMirror
 from fastatp.authz.wireguard import parse_wireguard_service
@@ -98,10 +98,12 @@ async def main() -> int:
             await mirror.load_checkpoint(answer.content)
             for path, cid in mirror.entries.items():  # each hash, from the verified tree
                 records[f"at://{repo}/{path}"] = (cid.encode(), mirror.get_record(*path.split("/")))
-        mine = (
-            await http.get("http://127.0.0.1/own")
-        ).json()  # alice's own repos, from alice's own peer
-        records |= {uri: (cid_of(value), value) for uri, value in mine.items()}
+        own = (
+            await http.get("http://127.0.0.1/mine")
+        ).json()  # alice's own repos, from alice's peer
+        for repo in own:
+            for r in repo["records"]:
+                records[f"at://{repo['did']}/{r['path']}"] = (r["cid"], r["value"])
 
         def look(ref: dict) -> tuple[str, dict | None]:
             repo = ref["uri"].removeprefix("at://").split("/")[0]

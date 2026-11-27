@@ -20,8 +20,11 @@ import uvicorn
 from backstage import follow
 from dids import resolver
 from pydantic import BaseModel, Field, ValidationError
+from starlette.requests import Request as HttpRequest  # not the ride's Request record
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
-from fastatp import Lexicon, Repo, dagcbor, datamodel
+from fastatp import Lexicon, Repo, RepoMirror, dagcbor, datamodel
 from fastatp.authz.capability import Capability, live_capabilities
 from fastatp.authz.wireguard import parse_wireguard_service
 from fastatp.cid import CID
@@ -389,7 +392,6 @@ class Desk:
         self.peer, self.seen = peer, seen
         self.me = peer.identity.did
         self.repos = {"main": peer.channel}
-        peer.channel.repo.blobs = peer.channel.repo.blobs or MemoryBlobStore()  # room for a photo
 
     async def announce(self, did: str) -> None:
         await self.peer.server.put_record(
@@ -510,11 +512,42 @@ async def open_tunnels(peer) -> None:
         await asyncio.sleep(1)
 
 
+async def own_repos(peer) -> list[dict]:
+    """This machine's private repos, each read back the way any reader would:
+    exported, then checked, commit signature and every hash."""
+    repos = {"main": peer.channel} | (DESK.repos if DESK is not None else {})
+    found = []
+    for name, handle in repos.items():
+        mirror = RepoMirror(handle.did, resolver=resolver())
+        await mirror.load_checkpoint(handle.repo.export_car())
+        records = [
+            {"path": path, "cid": cid.encode(), "value": mirror.get_record(*path.split("/"))}
+            for path, cid in sorted(mirror.entries.items())
+            if not path.startswith(f"{Capability.nsid}/")  # who may read it, not what it says
+        ]
+        found.append({"name": name, "did": handle.did, "records": records})
+    return found
+
+
+def mine_route(peer) -> Route:
+    """/mine: this machine's own private repos, for this machine only (like
+    /whoami, a lab convenience, not an atproto route). Alice's custody check
+    reads alice's own records here; the demo's player shows them on screen,
+    the way it shows this machine's terminal."""
+
+    async def mine(request: HttpRequest) -> JSONResponse:
+        if (denied := peer.local_only(request)) is not None:
+            return denied
+        return JSONResponse(await own_repos(peer))
+
+    return Route("/mine", mine)
+
+
 async def serve(peer, decide: Decide, what: str, routes=()) -> None:
     """Boot this machine's peer.py, open its tunnels, run the agent's loop
     beside it, and serve (with any routes of the agent's own ahead of peer.py's)."""
     app = await peer.boot()
-    app.router.routes[0:0] = list(routes)
+    app.router.routes[0:0] = [*routes, mine_route(peer)]
     tasks = [
         asyncio.create_task(open_tunnels(peer)),
         asyncio.create_task(run(peer, decide)),

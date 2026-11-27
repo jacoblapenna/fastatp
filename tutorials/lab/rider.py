@@ -17,7 +17,6 @@ import asyncio
 
 import peer  # this machine's peer, exactly as guide one left it
 import ride
-from lexicons import Note
 from pydantic import ValidationError
 from ride import BANK, CONCIERGE, Allowance, Plan, dollars, serve
 from starlette.requests import Request
@@ -49,23 +48,6 @@ async def allow(request: Request) -> JSONResponse:
     return JSONResponse({"uri": f"at://{for_bank.did}/{Allowance.nsid}/{rkey}"})
 
 
-async def own(request: Request) -> JSONResponse:
-    """alice's own records, from alice's own repos: what alice knows alice wrote.
-
-    custody.py checks the start of the chain against these. Only this machine
-    may ask; like /whoami, a lab convenience, not an atproto route."""
-    if (denied := peer.local_only(request)) is not None:
-        return denied
-    repos = [peer.channel, *([] if ride.DESK is None else ride.DESK.repos.values())]
-    records = {}
-    for handle in {h.did: h for h in repos}.values():
-        for collection in (Note.nsid, Allowance.nsid):  # what alice writes: notes, allowances
-            for rkey, _ in handle.repo.list_records(collection):
-                value = handle.repo.get_record(collection, rkey)
-                records[f"at://{handle.did}/{collection}/{rkey}"] = value
-    return JSONResponse(records)
-
-
 def decide(seen, now) -> Plan:
     """alice writes by hand; these are only who may read what alice writes."""
     plan = Plan()
@@ -81,6 +63,6 @@ if __name__ == "__main__":
             peer,
             decide,
             "alice's machine: /commit for notes, /allow for money",
-            routes=[Route("/allow", allow, methods=["POST"]), Route("/own", own)],
+            routes=[Route("/allow", allow, methods=["POST"])],
         )
     )

@@ -55,8 +55,17 @@
           <span class="meta">{m.repo?.records.length ?? 0} record{m.repo?.records.length === 1 ? '' : 's'}{#if m.repo?.rev} · rev {m.repo.rev}{/if}</span>
         </button>
         {#if shown('repo')}
-          <RepoList records={m.repo?.records ?? []} grow={repos} />
-          {#if id?.channel}
+          <RepoList records={m.repo?.records ?? []} grow={repos && !m.private.length} />
+          {#if m.private.length}
+            <!-- the machine's own private repos, as it reports them: what its owner sees -->
+            {#each m.private as repo (repo.did)}
+              <div class="h4 private" title={repo.did}>
+                private · {repo.name} <span class="meta">{repo.records.length} record{repo.records.length === 1 ? '' : 's'}</span>
+              </div>
+              <RepoList records={repo.records} grow={repos} />
+            {/each}
+            <div class="muted">private repos, as this machine sees its own; others read them only through the tunnel, if let in</div>
+          {:else if id?.channel}
             <div class="channel" title={id.channel}>
               gated channel <code>{id.channel.slice(0, 22)}…</code>
               <span class="muted">(behind the doorman; not readable from here)</span>
@@ -108,7 +117,8 @@
   button.h4:hover { color: var(--color-text); }
   .tri { width: 10px; display: inline-block; }
   .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .section.repo { flex: 1 1 0; display: flex; flex-direction: column; min-height: 90px; }
+  .section.repo { flex: 1 1 0; display: flex; flex-direction: column; min-height: 90px; overflow: auto; }
+  .h4.private { margin-top: 6px; color: var(--color-primary); }
   .channel { font-size: 11.5px; margin-top: 3px; }
   .muted { color: var(--color-text-muted); font-size: 11.5px; }
 </style>

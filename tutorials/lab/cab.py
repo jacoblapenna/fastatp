@@ -17,6 +17,7 @@ import os
 from datetime import datetime, timedelta
 
 import peer  # this machine's peer, exactly as guide one left it
+import ride
 from ride import ALICE, Arrival, Dispatch, Dropoff, Plan, Position, Seen, rkey, serve
 
 MINUTE = timedelta(seconds=float(os.environ.get("MINUTE_SECONDS", "1")))
@@ -50,7 +51,9 @@ def car(me: str, add_blob):
 
     def decide(seen: Seen, now: datetime) -> Plan:
         plan = Plan()
-        plan.let("main", COMPANY, ALICE)  # the company it drives for, and the rider
+        plan.let(
+            "ride", COMPANY, ALICE
+        )  # a repo of its own, for the company it drives for and the rider
         for dispatch_ref, dispatch in seen.all(Dispatch, by=COMPANY):
             if dispatch.car != me:
                 continue
@@ -60,24 +63,24 @@ def car(me: str, add_blob):
             for m in range(min(minutes, TO_PICKUP) + 1):  # on the way to the pickup
                 where = along(START, PICKUP, m / TO_PICKUP)
                 leg = position(dispatch_ref, "to pickup", TO_PICKUP - m, where)
-                plan.write("main", f"{key}-a{m:02d}", leg)
+                plan.write("ride", f"{key}-a{m:02d}", leg)
             if minutes < TO_PICKUP:
                 continue
             if key not in photos:  # at the curb: one photo, taken once
                 photos[key] = add_blob(curb(peer.now()), "image/svg+xml")
             arrival = Arrival(dispatch=dispatch_ref, photo=photos[key], created_at=peer.now())
-            plan.write("main", key, arrival)
+            plan.write("ride", key, arrival)
             for m in range(min(minutes - TO_PICKUP, RIDE) + 1):  # the ride
                 where = along(PICKUP, AIRPORT, m / RIDE)
                 plan.write(
-                    "main", f"{key}-r{m:02d}", position(dispatch_ref, "riding", RIDE - m, where)
+                    "ride", f"{key}-r{m:02d}", position(dispatch_ref, "riding", RIDE - m, where)
                 )
             arrived = [ref for ref, a in seen.all(Arrival, by=me) if a.dispatch == dispatch_ref]
             if minutes >= TO_PICKUP + RIDE and arrived:  # at the airport
                 dropoff = Dropoff(
                     dispatch=dispatch_ref, arrival=arrived[0], minutes=RIDE, created_at=peer.now()
                 )
-                plan.write("main", key, dropoff)
+                plan.write("ride", key, dropoff)
         return plan
 
     return decide
@@ -98,7 +101,9 @@ if __name__ == "__main__":
 
     async def main() -> None:
         def add_blob(data: bytes, mime: str):
-            return peer.channel.repo.add_blob(data, mime)
+            # the photo's bytes go beside the ride's repo, which the car made
+            # with a place for them; the arrival record names them by hash
+            return ride.DESK.repos["ride"].repo.add_blob(data, mime)
 
         decide = car(f"did:web:{peer.domain}", add_blob)
         await serve(peer, decide, f"driving for {COMPANY}")

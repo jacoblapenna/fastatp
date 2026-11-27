@@ -19,6 +19,7 @@ export const live = $state({
   wire: [], // packets the machines put on the LAN, newest last
   commits: {}, // step -> a record the conductor signed for members, and their answers so far
   conductor: emptyRepo(), // the conductor's own repo: every record it signs, as it signs it
+  verified: {}, // at:// URI -> 'ok' | 'sealed' | 'wrong', as a terminal reported checking it
 });
 
 function emptyRepo() {
@@ -71,6 +72,7 @@ export function connect() {
       live.wire = [];
       live.commits = {};
       live.conductor = emptyRepo();
+      live.verified = {};
       for (const name of msg.manifest.machines) machine(name);
       status(msg);
       for (const ev of msg.events) apply(ev, false);
@@ -100,6 +102,8 @@ function machine(name) {
   if (!live.manifest?.machines?.includes(name)) return null;
   return (live.machines[name] ??= {
     name, identity: null, repo: null, wg: [], stage: 'down', log: [], procs: {}, order: [], landed: [],
+    private: [], // its own private repos, as it reports them: [{name, did, records}]
+    known: {}, // URI -> when the page first saw that record in a private repo
   });
 }
 
@@ -180,8 +184,17 @@ function apply(ev, fresh) {
   if (ev.type === 'stage') m.stage = ev.state;
   else if (ev.type === 'view') {
     m.identity = ev.identity;
-    if (ev.repo) m.repo = ev.repo;
+    // merged with what the conductor saw land since: a view is a second behind
+    if (ev.repo) m.repo = { rev: ev.repo.rev, records: merged(ev.repo.records, m).records };
     m.wg = ev.wg;
+    m.private = (ev.private ?? []).map((repo) => ({
+      ...repo,
+      records: repo.records.map((r) => {
+        const uri = `at://${repo.did}/${r.path}`;
+        m.known[uri] ??= fresh ? Date.now() : 0; // a record new to the page flashes as it lands
+        return { ...r, uri, landed: m.known[uri] };
+      }),
+    }));
   } else if (ev.type === 'log') m.log.push(ev.line);
   else if (ev.type === 'proc' && ev.state === 'start') {
     m.procs[step] = { step, display: ev.display, bg: ev.bg, lines: [], running: true, code: null, ended: 0 };
@@ -191,7 +204,22 @@ function apply(ev, fresh) {
     m.order.push(step);
   } else if (ev.type === 'proc' && m.procs[step]) {
     Object.assign(m.procs[step], { running: false, code: ev.code, ended: fresh ? Date.now() : 1 });
-  } else if (ev.type === 'out') m.procs[step]?.lines.push(ev.line);
+  } else if (ev.type === 'out') {
+    m.procs[step]?.lines.push(ev.line);
+    checked(ev.line);
+  }
+}
+
+// A terminal line that names a record by its at:// address and says how
+// checking it went: a tick for verified, "sealed" for one the checker may not
+// read, a cross for one that was not what it was named as. custody.py prints
+// these; any program that does is drawn the same way.
+function checked(line) {
+  const uri = line.match(/at:\/\/\S+/)?.[0];
+  if (!uri) return;
+  if (line.includes('✓')) live.verified[uri] = 'ok';
+  else if (/\bsealed\b/.test(line)) live.verified[uri] = 'sealed';
+  else if (line.includes('✗')) live.verified[uri] = 'wrong';
 }
 
 // --- the pictures, from the conductor's own repo ------------------------------

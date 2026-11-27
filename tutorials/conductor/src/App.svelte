@@ -8,6 +8,7 @@
   import Caption from './cards/Caption.svelte';
   import MachinePanel from './cards/MachinePanel.svelte';
   import ConductorPanel from './cards/ConductorPanel.svelte';
+  import ToolMap from './cards/ToolMap.svelte';
   import NetDiagram from './cards/NetDiagram.svelte';
   import WireLane from './cards/WireLane.svelte';
   import KeyConcept from './cards/KeyConcept.svelte';
@@ -60,7 +61,11 @@
   // machines, and once a commit is what last happened, the repos are what
   // to watch: each machine's fills its panel until the next command.
   let commits = $derived(live.manifest?.steps.some((s) => s.kind === 'commit') ?? false);
-  let repos = $derived(commits && script.last === 'commit');
+  // Machines that keep private repos (Hoot's agents) show them, and the map of
+  // the work between them, whenever the step is not a command.
+  let privateRepos = $derived(Object.values(live.machines).some((m) => m.private?.length));
+  let command = $derived(['run', 'restart', 'stop'].includes(script.step?.kind));
+  let repos = $derived((commits && script.last === 'commit') || (privateRepos && !command));
 
   function size(name) {
     if (panels.has(name) || focused(name)) return 'open'; // pointed at, or running: open for this step
@@ -108,6 +113,10 @@
     {#if commits}<ConductorPanel {pointed} wide={repos} />{/if}
   </main>
 
+  {#if privateRepos}
+    <div class="maprow"><ToolMap pointed={pointed.has('map')} /></div>
+  {/if}
+
   <footer>
     <div class="fold"><NetDiagram {now} pointed={pointed.has('diagram')} kept={kept.has('diagram')} /></div>
     <div class="fold"><WireLane pointed={pointed.has('wire')} kept={kept.has('wire')} /></div>
@@ -128,7 +137,8 @@
 
 <style>
   /* one column that never grows past the window: a wide card inside scrolls itself, not the page */
-  .app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+  .app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
+  .maprow { height: 42vh; min-height: 240px; padding: 0 12px 8px; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--color-border); }
   .brand > span { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-sm); }
   .right { display: flex; gap: 10px; align-items: center; }
@@ -136,6 +146,8 @@
   .chapters { font-weight: 600; }
   .machines { display: flex; gap: 10px; padding: 10px 12px; min-height: 0; }
   footer { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 10px; padding: 0 12px 6px; align-items: start; }
-  .fold { height: 240px; min-height: 0; }
+  /* a folded card is one line; the footer makes room only for an open one */
+  .fold { min-height: 0; }
+  .fold:has(.open) { height: 240px; }
   .harness { color: var(--color-text-muted); font-size: 11px; padding: 2px 16px 6px; }
 </style>

@@ -312,6 +312,13 @@ async def watch_view() -> None:
                     seen_key = (who["did"], who["seq"], who["channel"])
                 except Exception:
                     continue
+            # A program that keeps private repos lists them, to this machine
+            # only, at /mine: its owner's view of them, shown like its terminal.
+            private: list = []
+            with contextlib.suppress(httpx.HTTPError, ValueError):
+                answer = await http.get("http://127.0.0.1/mine")
+                if answer.status_code == 200:
+                    private = answer.json()
             # Three short shell commands, run on a thread so nothing else this
             # player does waits for them.
             key, ip, peers = await asyncio.to_thread(
@@ -321,6 +328,7 @@ async def watch_view() -> None:
                 identity={**who, "wg_public_key": key, "lan_ip": ip},
                 repo=repo_view,
                 wg=peers,
+                private=private,
             )
             snapshot = view.model_dump_json()
             if snapshot != last:
