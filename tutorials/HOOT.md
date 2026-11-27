@@ -35,7 +35,8 @@ It reuses their words and their lab.
 
 Six machines, six parties: alice; alice's agent, the concierge; a bank; two
 ride companies, Hoot and Jitney; and Hoot's car, cab-17. alice will ask for
-a ride in one sentence and never speak to any of them again.
+a ride in one sentence, to the concierge, and never speak to any of the
+others.
 
 <!-- @demo end -->
 
@@ -84,7 +85,8 @@ dotted word shows its line when you hover it.
 - **Hash**: a short fingerprint of some bytes. Change one byte and the hash
   changes.
 - **Lexicon**: a record type: its name, and the rules its fields keep.
-- **Concierge**: alice's agent. It reads what alice asks for and gets it done.
+- **Concierge**: alice's agent. It acts for alice: it reads what alice asks for
+  and gets it done.
 - **Allowance**: alice's signed say-so: this agent may have this bank hold
   up to this much for a ride.
 - **Request**: the concierge's record asking for a ride, for whoever will bid.
@@ -1638,7 +1640,11 @@ Each party keeps its records in private repos. Its public repo holds only
 announcements: signed lines saying "this private repo exists, and it is
 mine". What is inside, and who may read it, stays private.
 
-<!-- @demo ask alice is let in to the concierge's private repos. What is in them before alice has asked for anything? -->
+The concierge is alice's agent: it acts for alice, the way a coding agent
+acts for the person who runs it. Whatever it does is alice's errand, so
+everything it writes, alice can read.
+
+<!-- @demo ask alice hasn't asked for anything yet. What has alice's agent written so far? -->
 
 ```bash
 ./lab.sh alice python peek.py concierge
@@ -1652,21 +1658,23 @@ concierge.lan announces 3 private repo(s); alice.lan asks each:
 alice.lan read 3 of 3
 ```
 
-Nothing yet. alice is let into all three, and reads them the way anyone
-would: through the tunnel, checking the signature on each.
+Nothing yet: three private repos, all empty. alice reads the agent's work
+the way anyone reads a repo, through the tunnel, checking the signature on
+each, so alice never has to take even the agent's word for it.
 
 <!-- @demo close code -->
 
-The concierge keeps three because privacy is its to compose: one repo for
-what it understood alice to say, one for what it asks the bank, one for what
-it asks the ride companies. Each has its own readers, and alice reads them
-all, because they are alice's errands.
+Three, because the concierge keeps alice's business apart for alice: one
+repo for what it understood alice to say, which only alice reads; one for
+what it asks the bank; one for what it asks the ride companies. Who else
+reads each one is the agent's to decide, on alice's behalf.
 
 <!-- @demo point concierge.repo -->
 
-Now alice gives the concierge a say-so: it may have alice's bank hold up to
-$40 for a ride, from checking. alice signs it into a private repo of
-alice's own that only the bank and the concierge may read.
+Acting for alice is one thing; spending alice's money is another, and the
+bank won't take the agent's word for it. So alice signs a say-so: alice's
+agent may have alice's bank hold up to $40 for a ride, from checking. It goes
+in a private repo of alice's own that only the bank and the concierge read.
 
 <!-- @demo code rider.py "async def allow(" -->
 
@@ -1714,9 +1722,10 @@ commits a record by plain means.
 {"uri":"at://did:key:zQ3shReKLwygEnFKs3tAza6fPa4sS55UMUu7xnhBvyuMrePi9/com.example.tutorial.note/3n3ctic7cuqtu", ...}
 ```
 
-The concierge follows alice's private repo, and its reader has read the
-note: a few rules that turn alice's sentence into where, how much and from
-which account.
+The concierge follows alice's private repo. The note is signed with alice's
+key, so the agent knows it came from alice, and from here on it acts for
+alice. Its reader has read the note: a few rules that turn alice's sentence
+into where, how much and from which account.
 
 > ⚠️ **Important: the reader is a stand-in.** In production a model would
 > read alice's sentence. Here a few rules play its part, and every intent
