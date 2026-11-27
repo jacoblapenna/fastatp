@@ -72,8 +72,11 @@ def car(me: str, add_blob):
                 plan.write(
                     "main", f"{key}-r{m:02d}", position(dispatch_ref, "riding", RIDE - m, where)
                 )
-            if minutes >= TO_PICKUP + RIDE:  # at the airport
-                dropoff = Dropoff(dispatch=dispatch_ref, minutes=RIDE, created_at=peer.now())
+            arrived = [ref for ref, a in seen.all(Arrival, by=me) if a.dispatch == dispatch_ref]
+            if minutes >= TO_PICKUP + RIDE and arrived:  # at the airport
+                dropoff = Dropoff(
+                    dispatch=dispatch_ref, arrival=arrived[0], minutes=RIDE, created_at=peer.now()
+                )
                 plan.write("main", key, dropoff)
         return plan
 

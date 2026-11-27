@@ -24,7 +24,7 @@ COPY tutorials/lab/entrypoint.sh tutorials/lab/lexicons.py tutorials/lab/dids.py
 COPY tutorials/lab/backstage.py tutorials/lab/player.py ./
 COPY tutorials/lab/music.py tutorials/lab/orchestra.py tutorials/lab/trace.py tutorials/lab/replay.py ./
 COPY tutorials/lab/ride.py tutorials/lab/rider.py tutorials/lab/concierge.py tutorials/lab/bank.py \
-     tutorials/lab/company.py tutorials/lab/cab.py ./
+     tutorials/lab/company.py tutorials/lab/cab.py tutorials/lab/custody.py ./
 RUN chmod +x entrypoint.sh
 ENTRYPOINT ["./entrypoint.sh"]
 

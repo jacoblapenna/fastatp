@@ -249,6 +249,7 @@ class Dropoff(Lexicon):
 
     nsid = "com.example.ride.dropoff"
     dispatch: Ref
+    arrival: Ref  # the pickup it ends: the curb, the photo
     minutes: Annotated[int, Field(ge=0)]
     created_at: Datetime
 

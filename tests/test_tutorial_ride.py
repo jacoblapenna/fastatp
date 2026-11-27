@@ -158,7 +158,10 @@ def test_one_ride_from_alice_note_to_the_bank_settlement(lab):
     assert wrote == [("position", "3kride-a00")]
     t += lab.cab.MINUTE * (lab.cab.TO_PICKUP + lab.cab.RIDE)
     wrote = act(seen, cab, cab_decide, t, lab)
+    wrote += act(seen, cab, cab_decide, t, lab)  # the dropoff names the arrival, once it is written
     assert ("arrival", "3kride") in wrote and ("dropoff", "3kride") in wrote
+    dropoff = seen.all(ride.Dropoff, by=cab)[0][1]
+    assert seen.get(dropoff.arrival, ride.Arrival).photo == photo  # the chain reaches the curb
     assert len([w for w in wrote if w[0] == "position"]) == lab.cab.TO_PICKUP + lab.cab.RIDE + 1
 
     # the fare, then the bank pays it from the hold and lets the rest go
@@ -284,3 +287,45 @@ def test_the_cast_file_seals_the_bids():
     assert ride.JITNEY not in ride.partners(ride.HOOT)  # no tunnel: neither can even knock
     assert ride.JITNEY not in ride.partners(ride.ALICE)
     assert set(ride.partners(ride.ALICE)) == {ride.CONCIERGE, ride.BANK, ride.HOOT, ride.CAB}
+
+
+def test_custody_walks_every_strong_ref_once_and_names_what_it_cannot_read(monkeypatch):
+    """custody.py knows no record types: a strong ref looks the same in any
+    record. It checks each step once, follows only what verified, and tells
+    a step alice may not read (sealed) from one that is wrong (changed)."""
+    monkeypatch.syspath_prepend(str(LAB))
+    monkeypatch.setitem(sys.modules, "peer", SimpleNamespace())
+    for name in ("ride", "custody"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    custody = __import__("custody")
+
+    def ref(name):
+        return {"uri": f"at://did:key:z{name}/com.example.x.step/{name}", "cid": f"bafy{name}"}
+
+    records = {
+        "settle": {"hold": ref("hold"), "fare": ref("fare")},
+        "hold": {"authorize": ref("ask")},
+        "ask": {"quote": ref("quote"), "passed": [ref("lost")]},
+        "fare": {"hold": ref("hold"), "booking": ref("bogus")},  # meets the chain again
+        "quote": {},
+    }
+
+    def look(r):
+        name = r["uri"].rsplit("/", 1)[1]
+        if name == "lost":
+            return "sealed", None
+        if name == "bogus":
+            return "changed", None
+        return "verified", records[name]
+
+    steps = [(d, r["uri"].rsplit("/", 1)[1], v) for d, r, v, _ in custody.walk(ref("settle"), look)]
+    assert steps == [
+        (0, "settle", "verified"),
+        (1, "hold", "verified"),
+        (2, "ask", "verified"),
+        (3, "quote", "verified"),
+        (3, "lost", "sealed"),
+        (1, "fare", "verified"),
+        (2, "hold", "again"),
+        (2, "bogus", "changed"),
+    ]
