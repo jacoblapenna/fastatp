@@ -1798,20 +1798,225 @@ anywhere. That is the point: no central thing made a single call.
 <!-- @demo point map -->
 
 <!-- @demo chapter 3 "The ride" -->
-<!-- @demo blurb The bank holds the money, Hoot sends a car, the car drives, and the bank pays. alice walks it all back. -->
+<!-- @demo blurb The bank holds the money for the winner, Hoot sends a car, and the car drives for seventeen minutes with nothing held open. MCP and A2A, side by side. -->
 
 ## Part 3: the ride
 
-*To be written. Until then, the ride runs on, and alice checks it.*
+When bidding closed, the concierge took Hoot's $34 over Jitney's $37, and
+wrote, for the bank, a request to hold alice's $40 for Hoot, naming alice's
+allowance and Hoot's quote.
 
-The bank, Hoot and the car do the rest.
+<!-- @demo point map -->
 
-<!-- @demo wait 30 -->
+The bank checked the allowance, its own limits and alice's balance, then
+held the money in a private repo made for this one ride. It let in alice,
+the concierge, and Hoot: the payee the concierge named. Nobody else.
 
-alice walks the ride back and checks every step.
+<!-- @demo ask Hoot won. Can Hoot see the bank's hold, and anything else the bank keeps? -->
+
+```bash
+./lab.sh hoot python peek.py bank
+```
+
+```text
+bank.lan announces 2 private repo(s); hoot.lan asks each:
+  did:key:...: refused (404): no record lets hoot.lan in
+  did:key:...: let in, verified: hold
+hoot.lan read 1 of 2
+```
+
+<!-- @demo point hoot.terminal bank.repo -->
+
+> 🔑 **Key concept: the bank lets the payee see one hold, and nothing
+> else.** The concierge named the payee; the bank opened a repo for this
+> ride and let Hoot in. Hoot checks the money is really held, in the bank's
+> own repo, signed by the bank, before it sends a car, never on the
+> concierge's word. The bank's other records stay out of Hoot's sight.
+> This could go further: the concierge could forward the bank's own signed
+> proof of the hold, so that Hoot checks it without being let into the bank
+> at all. A builder can also serve one kind of record to one reader, as
+> signed proofs. Privacy composes, one repo and one record at a time.
+
+![the bank's main repo is read by alice and the concierge; this ride's repo, with the hold, is read by alice, the concierge and hoot; jitney reads neither](sketches/hold-repo.svg)
+
+Hoot booked cab-17. The car drove by its own clock, a minute a second here:
+four minutes to alice's curb, a photo of it, seventeen minutes to the
+airport, a signed position every minute, all in the car's own repo. Hoot
+followed the car; the concierge followed Hoot.
+
+<!-- @demo point cab-17.repo map -->
+
+<!-- @demo ask The ride took twenty-one minutes. What was held open, waiting, all that time? -->
+
+> 🔑 **Key concept: nothing waited on a connection.** Over MCP, an agent
+> calls a tool and holds the call open for its answer; MCP has added
+> long-running tasks, but the result still comes back to the caller who
+> asked. A2A hands a task to another agent and gets updates by a stream or
+> a push to a webhook the caller must expose. Here every party wrote signed
+> records in its own repo, in its own time, and the others followed. The
+> car could have driven for a day. And afterwards, anyone let in can check
+> every step, not just the two ends of a call.
+
+![MCP: an agent calls each server, held open, with a token; A2A: a task, then a push to a webhook; records: each party signs its own, the other follows; who can check it later: the two ends, the two ends, anyone let in](sketches/three-ways.svg)
+
+Jitney lost. The concierge let Jitney go from its rides repo the moment it
+chose Hoot: it deleted the record that let Jitney in.
+
+<!-- @demo ask Can Jitney still read the concierge's ride requests? -->
+<!-- @demo fails -->
+
+```bash
+./lab.sh jitney python peek.py concierge
+```
+
+```text
+concierge.lan announces 3 private repo(s); jitney.lan asks each:
+  did:key:...: refused (404): no record lets jitney.lan in
+  did:key:...: refused (404): no record lets jitney.lan in
+  did:key:...: refused (404): no record lets jitney.lan in
+jitney.lan read 0 of 3
+```
+
+No. The tunnel is still there, but no record lets Jitney through. A
+deleted record is the door closed; the next request lets every company back
+in. Hoot is let go too, once the bank has paid it.
+
+<!-- @demo point jitney.terminal -->
+
+<!-- @demo ask So should every tool call become a signed record? When is MCP still the better reach? -->
+
+> 🔑 **Key concept: reach for each where it fits.** MCP is the better reach
+> when one owner's model needs a tool now: local files, a shell, an editor,
+> answers in milliseconds, nothing anyone will audit. Signed records are the
+> better reach when the work crosses owners, runs for minutes or days, fans
+> out to whoever wants it, or moves money that someone will later ask about.
+> It is not either-or: an agent can call its own tools over MCP and deal
+> with everyone else in records.
+
+![reach for MCP: one owner and its own tools, a model waiting in milliseconds, files and a shell, nobody asks later; reach for records: many owners, minutes or days, open bids in parallel, money and who did what](sketches/reach-for.svg)
+
+<!-- @demo chapter 4 "The chain" -->
+<!-- @demo blurb alice walks the whole ride back, from the bank's settlement to alice's own words, and checks every signature on the way. Then the curb, and what all this costs. -->
+
+## Part 4: the chain
+
+The car dropped alice at the airport. Hoot billed the $34 it bid, naming
+the hold, and the bank paid it from the hold and let the other $6 go.
+
+<!-- @demo point map -->
+
+<!-- @demo wait 10 -->
+
+<!-- @demo ask alice wasn't watching any of this. How can alice know it happened the way the records say? -->
 
 ```bash
 ./lab.sh alice python custody.py
 ```
 
+```text
+the ride, walked back from the bank's settlement, as alice:
+settlement  bank.lan       ✓ signed, hash matches  ...
+  fare        hoot.lan       ✓ signed, hash matches  ...
+    hold        bank.lan       ✓ signed, hash matches  ...
+      authorize   concierge.lan  ✓ signed, hash matches  ...
+        quote       hoot.lan       ✓ signed, hash matches  ...
+          request     concierge.lan  ✓ signed, hash matches  ...
+            intent      concierge.lan  ✓ signed, hash matches  ...
+              note        alice.lan      ✓ signed, hash matches  ...
+        allowance   alice.lan      ✓ signed, hash matches  ...
+    booking     concierge.lan  ✓ signed, hash matches  ...
+      quote       jitney.lan     · sealed: alice isn't let in  ...
+    dropoff     cab-17.lan     ✓ signed, hash matches  ...
+      arrival     cab-17.lan     ✓ signed, hash matches  ...
+        dispatch    hoot.lan       ✓ signed, hash matches  ...
+the curb photo: ... bytes, hash matches, saved as curb.svg: is it your curb?
+13 steps verified, 1 sealed from alice, 0 wrong
+```
+
+alice walked back from the bank's settlement through every strong ref to
+alice's own note. Each step came from its owner's private repo, through the
+tunnel, and was checked twice: the owner's signature, and the hash the step
+before it named. One step is sealed: Jitney's losing bid, which alice was
+never let in to read.
+
+<!-- @demo point alice.terminal map -->
+
+> 🔑 **Key concept: a chain of custody, with nothing bolted on.** Every step
+> is signed by the party that took it and names the step before it by its
+> hash. Change one byte anywhere and that link breaks, at that step, for
+> anyone who checks. To get this from tool calls you would add a central
+> log, and a log is only as honest as whoever keeps it. Here there is no
+> keeper: the chain is the records themselves, and it runs as deep as the
+> work went.
+
+![a central log one keeper writes and can edit, against a chain of steps each signed by its own party and pointing at the one before](sketches/chain-not-log.svg)
+
+The last thing alice checked was a photo of the curb, signed by the car.
+
+<!-- @demo ask The car signed the photo. Does that prove the car was at alice's curb? -->
+
+> 🔑 **Key concept: a signature proves who; your eyes check what.** The
+> signature proves cab-17 took the photo, and the hash proves it is the
+> photo the car named. Whether it shows alice's curb, as it looks right now,
+> day or night, only alice can say. A car can't sign a photo of alice's
+> curb without being at alice's curb, so a picture you can check by eye,
+> signed by who took it, is hard to fake.
+
+![the curb photo, signed by cab-17, its hash matching; who took it the signature says, what it shows only alice can say](sketches/curb-photo.svg)
+
+> ⚠️ **Important: what this costs.** Every step is a commit, stored by the
+> party that wrote it. Answers arrive as fast as follows carry them, not in
+> a stream of tokens. Every party has to speak atproto, and keep its DID's
+> host up. A party let into a repo reads all of it: here the repo, not the
+> record, is the unit of privacy. And none of it works unless the bank, the
+> ride companies and the agent are built this way, which they are not
+> today. This guide shows what could be.
+
+The bank trusted alice's signed allowance because alice once told it to.
+A bank could set that up with an OAuth login, if its builders chose. The
+next guide does it with nothing secret on the wire: you sign up to an app
+in your browser, and your browser holds your key.
+
 <!-- @demo end -->
+
+## MCP, A2A and records, side by side
+
+The show's comparison, as a table. MCP and A2A are both moving quickly;
+this is as of late 2026, from their current specifications.
+
+| | MCP | A2A | Signed records (this guide) |
+| --- | --- | --- | --- |
+| The unit | a tool call to a server | a task handed to another agent | a record in the writer's own repo |
+| Who must know whom | the agent knows every server | the agent knows every agent | whoever follows the repo can answer |
+| Long-running work | experimental tasks the caller checks back on | updates by a stream, or a push to a webhook the caller exposes | records land when they land; nothing is held open |
+| Asking many at once | one call per server | one task per agent | one record, any number of answers |
+| Authorization | OAuth 2.1 bearer tokens, for remote servers | standard schemes each agent advertises (OAuth, API keys, ...) | capability records, read through tunnels; no shared secret |
+| Who can check it later | the caller, and the server's own logs | the two agents | anyone let in, step by step, back to the start |
+| Where it shines | one owner's model using its own tools, fast | agents of different owners trading tasks | work across owners that runs long or moves money |
+
+## Things to try
+
+<!-- @demo terminal -->
+
+- Let Jitney win. Lower Jitney's price below $34 in `company.py`,
+  `./lab.sh clean`, and play again. Jitney has no car, so it bids and wins
+  but sends none: the concierge's rules and Jitney's business are separate.
+- Close the bidding at once. Set `BID_SECONDS` to 0 in `concierge.py`:
+  no bid is ever seen in time, so no ride, and no money held.
+- Ask for too much. Have alice ask for a ride "under $60" while the
+  allowance says $40: the bank refuses, and its refusal says why, in the
+  bank's repo where alice can read it.
+
+<!-- @demo /terminal -->
+
+## Where this leads
+
+The next guide is the browser app: you sign up to Geese, a small dating
+app, from your own browser, with nothing secret on the wire, and meet
+alice, bob and eve there.
+
+## Cleanup
+
+```bash
+./lab.sh clean
+```
