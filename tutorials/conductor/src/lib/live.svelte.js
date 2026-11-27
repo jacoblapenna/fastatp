@@ -20,6 +20,7 @@ export const live = $state({
   commits: {}, // step -> a record the conductor signed for members, and their answers so far
   conductor: emptyRepo(), // the conductor's own repo: every record it signs, as it signs it
   verified: {}, // at:// URI -> 'ok' | 'sealed' | 'wrong', as a terminal reported checking it
+  glow: {}, // at:// URI -> when a record that names it landed: it lights up where it is
 });
 
 function emptyRepo() {
@@ -73,6 +74,7 @@ export function connect() {
       live.commits = {};
       live.conductor = emptyRepo();
       live.verified = {};
+      live.glow = {};
       for (const name of msg.manifest.machines) machine(name);
       status(msg);
       for (const ev of msg.events) apply(ev, false);
@@ -191,7 +193,11 @@ function apply(ev, fresh) {
       ...repo,
       records: repo.records.map((r) => {
         const uri = `at://${repo.did}/${r.path}`;
-        m.known[uri] ??= fresh ? Date.now() : 0; // a record new to the page flashes as it lands
+        if (m.known[uri] === undefined) {
+          m.known[uri] = fresh ? Date.now() : 0; // a record new to the page flashes as it lands
+          // and each record it names lights up where it is: read, and acted on
+          if (fresh) for (const named of refs(r.value)) live.glow[named] = Date.now();
+        }
         return { ...r, uri, landed: m.known[uri] };
       }),
     }));
@@ -208,6 +214,23 @@ function apply(ev, fresh) {
     m.procs[step]?.lines.push(ev.line);
     checked(ev.line);
   }
+}
+
+// Every strong ref inside a record ({uri, cid}), wherever it sits.
+export function refs(value, out = []) {
+  if (Array.isArray(value)) value.forEach((v) => refs(v, out));
+  else if (value && typeof value === 'object') {
+    if (typeof value.uri === 'string' && value.uri.startsWith('at://') && 'cid' in value) out.push(value.uri);
+    else Object.values(value).forEach((v) => refs(v, out));
+  }
+  return out;
+}
+
+// Which machine keeps the repo a record lives in, from what the machines report.
+export function ownerOf(uri) {
+  const did = uri.slice(5).split('/')[0];
+  for (const m of Object.values(live.machines)) if (m.private?.some((r) => r.did === did)) return m.name;
+  return null;
 }
 
 // A terminal line that names a record by its at:// address and says how
@@ -281,6 +304,8 @@ export function scriptState(manifest, cursor) {
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
     // what last happened: a command (watch its terminal) or a commit (watch the repos)
     if (['run', 'restart', 'stop', 'commit'].includes(step.kind)) s.last = step.kind;
+    // `close code` puts away the file a command showed; the rest of the layout stays
+    if (step.kind === 'layout' && step.action === 'close' && step.targets.includes('code')) s.code = null;
     if (step.kind === 'layout' && (step.action === 'open' || step.action === 'close')) {
       for (const target of step.targets) step.action === 'open' ? s.open.add(target) : s.open.delete(target);
     } else if (step.kind === 'layout') {

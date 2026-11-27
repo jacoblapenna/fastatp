@@ -525,7 +525,9 @@ async def own_repos(peer) -> list[dict]:
             for path, cid in sorted(mirror.entries.items())
             if not path.startswith(f"{Capability.nsid}/")  # who may read it, not what it says
         ]
-        found.append({"name": name, "did": handle.did, "records": records})
+        # who is let in: the subjects of its live capability records, by name
+        readers = sorted(host(did) for did in live_capabilities(handle.repo))
+        found.append({"name": name, "did": handle.did, "readers": readers, "records": records})
     return found
 
 

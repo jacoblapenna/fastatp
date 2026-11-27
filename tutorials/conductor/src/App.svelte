@@ -8,7 +8,6 @@
   import Caption from './cards/Caption.svelte';
   import MachinePanel from './cards/MachinePanel.svelte';
   import ConductorPanel from './cards/ConductorPanel.svelte';
-  import ToolMap from './cards/ToolMap.svelte';
   import NetDiagram from './cards/NetDiagram.svelte';
   import WireLane from './cards/WireLane.svelte';
   import KeyConcept from './cards/KeyConcept.svelte';
@@ -61,8 +60,8 @@
   // machines, and once a commit is what last happened, the repos are what
   // to watch: each machine's fills its panel until the next command.
   let commits = $derived(live.manifest?.steps.some((s) => s.kind === 'commit') ?? false);
-  // Machines that keep private repos (Hoot's agents) show them, and the map of
-  // the work between them, whenever the step is not a command.
+  // Machines that keep private repos (Hoot's agents) show them, all at once,
+  // whenever the step is not a command: the repos are the screen.
   let privateRepos = $derived(Object.values(live.machines).some((m) => m.private?.length));
   let command = $derived(['run', 'restart', 'stop'].includes(script.step?.kind));
   let repos = $derived((commits && script.last === 'commit') || (privateRepos && !command));
@@ -85,7 +84,7 @@
 
 <svelte:window onkeydown={key} />
 
-<div class="app" class:with-map={privateRepos}>
+<div class="app">
   <header>
     <div class="brand"><BrandWordmark /> <span>· playing {live.manifest?.source ?? ''}</span></div>
     <div class="right">
@@ -113,10 +112,6 @@
     {#if commits}<ConductorPanel {pointed} wide={repos} />{/if}
   </main>
 
-  {#if privateRepos}
-    <div class="maprow"><ToolMap pointed={pointed.has('map')} /></div>
-  {/if}
-
   <footer>
     <div class="fold"><NetDiagram {now} pointed={pointed.has('diagram')} kept={kept.has('diagram')} /></div>
     <div class="fold"><WireLane pointed={pointed.has('wire')} kept={kept.has('wire')} /></div>
@@ -138,9 +133,6 @@
 <style>
   /* one column that never grows past the window: a wide card inside scrolls itself, not the page */
   .app { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
-  /* with the map, the machines and the map share what the caption and the footer leave */
-  .app.with-map { grid-template-rows: auto auto minmax(0, 3fr) minmax(0, 2fr) auto auto; }
-  .maprow { min-height: 0; padding: 0 12px 8px; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--color-border); }
   .brand > span { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-sm); }
   .right { display: flex; gap: 10px; align-items: center; }

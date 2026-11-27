@@ -822,7 +822,9 @@ async def own_repos(peer) -> list[dict]:
             for path, cid in sorted(mirror.entries.items())
             if not path.startswith(f"{Capability.nsid}/")  # who may read it, not what it says
         ]
-        found.append({"name": name, "did": handle.did, "records": records})
+        # who is let in: the subjects of its live capability records, by name
+        readers = sorted(host(did) for did in live_capabilities(handle.repo))
+        found.append({"name": name, "did": handle.did, "readers": readers, "records": records})
     return found
 
 
@@ -1653,10 +1655,14 @@ alice.lan read 3 of 3
 Nothing yet. alice is let into all three, and reads them the way anyone
 would: through the tunnel, checking the signature on each.
 
+<!-- @demo close code -->
+
 The concierge keeps three because privacy is its to compose: one repo for
 what it understood alice to say, one for what it asks the bank, one for what
 it asks the ride companies. Each has its own readers, and alice reads them
 all, because they are alice's errands.
+
+<!-- @demo point concierge.repo -->
 
 Now alice gives the concierge a say-so: it may have alice's bank hold up to
 $40 for a ride, from checking. alice signs it into a private repo of
@@ -1708,17 +1714,23 @@ commits a record by plain means.
 {"uri":"at://did:key:zQ3shReKLwygEnFKs3tAza6fPa4sS55UMUu7xnhBvyuMrePi9/com.example.tutorial.note/3n3ctic7cuqtu", ...}
 ```
 
-The concierge follows alice's private repo. It read the note and wrote two
-records of its own: what it understood, and a ride request for anyone who
-will bid.
-
-<!-- @demo point concierge.repo map -->
+The concierge follows alice's private repo, and its reader has read the
+note: a few rules that turn alice's sentence into where, how much and from
+which account.
 
 > ⚠️ **Important: the reader is a stand-in.** In production a model would
 > read alice's sentence. Here a few rules play its part, and every intent
 > the concierge writes says so, in its `reader` field. What matters is the
 > follow, not the model: a builder chooses the work a follow triggers, a
 > model, rules or a person, and the record names which one did it.
+
+<!-- @demo close code -->
+
+Now watch every repo. The concierge wrote what it understood in its `main`
+repo, which only alice reads, and a ride request in `rides`, which Hoot and
+Jitney are let into while it is open.
+
+<!-- @demo point concierge.repo -->
 
 The request names no company. Hoot and Jitney follow ride requests, so each
 read it and wrote a quote, in its own repo, in its own time.
@@ -1757,6 +1769,8 @@ jitney.lan read 0 of ...
 No. Jitney's machine knocked on Hoot's repo and nothing answered, because
 there is no tunnel between them.
 
+<!-- @demo close code -->
+
 > 🔑 **Key concept: sealed bids.** Hoot and Jitney have no tunnel between
 > them, and neither has a record letting the other in. Neither can wait for
 > the other's bid and then undercut it. The concierge is let into both, so
@@ -1785,6 +1799,8 @@ concierge.lan read 1 of 1
 > rules are the builder's, and they compose on lexicons: a rating, a pickup
 > time, a company alice blocked. Each is a few lines over records.
 
+<!-- @demo close code -->
+
 Nobody here holds all the power. alice gets competition on alice's terms:
 price, car, timing. The companies compete on their niches and learn from
 signed records; a rider who never complains might get the cheapest car at
@@ -1795,8 +1811,6 @@ each machine reporting its own, as the conductor guide shows. In
 production there is no conductor, and no one view of all this exists
 anywhere. That is the point: no central thing made a single call.
 
-<!-- @demo point map -->
-
 <!-- @demo chapter 3 "The ride" -->
 <!-- @demo blurb The bank holds the money for the winner, Hoot sends a car, and the car drives for seventeen minutes with nothing held open. MCP and A2A, side by side. -->
 
@@ -1804,9 +1818,10 @@ anywhere. That is the point: no central thing made a single call.
 
 When bidding closed, the concierge took Hoot's $34 over Jitney's $37, and
 wrote, for the bank, a request to hold alice's $40 for Hoot, naming alice's
-allowance and Hoot's quote.
+allowance and Hoot's quote. Jitney's chip left the concierge's `rides`
+repo at that moment: Jitney is let go.
 
-<!-- @demo point map -->
+<!-- @demo point concierge.repo -->
 
 The bank checked the allowance, its own limits and alice's balance, then
 held the money in a private repo made for this one ride. It let in alice,
@@ -1825,7 +1840,7 @@ bank.lan announces 2 private repo(s); hoot.lan asks each:
 hoot.lan read 1 of 2
 ```
 
-<!-- @demo point hoot.terminal bank.repo -->
+<!-- @demo point hoot.terminal -->
 
 > 🔑 **Key concept: the bank lets the payee see one hold, and nothing
 > else.** The concierge named the payee; the bank opened a repo for this
@@ -1839,12 +1854,14 @@ hoot.lan read 1 of 2
 
 ![the bank's main repo is read by alice and the concierge; this ride's repo, with the hold, is read by alice, the concierge and hoot; jitney reads neither](sketches/hold-repo.svg)
 
+<!-- @demo close code -->
+
 Hoot booked cab-17. The car drove by its own clock, a minute a second here:
 four minutes to alice's curb, a photo of it, seventeen minutes to the
 airport, a signed position every minute, all in the car's own repo. Hoot
 followed the car; the concierge followed Hoot.
 
-<!-- @demo point cab-17.repo map -->
+<!-- @demo point cab-17.repo hoot.repo -->
 
 <!-- @demo ask The ride took twenty-one minutes. What was held open, waiting, all that time? -->
 
@@ -1883,6 +1900,8 @@ in. Hoot is let go too, once the bank has paid it.
 
 <!-- @demo point jitney.terminal -->
 
+<!-- @demo close code -->
+
 <!-- @demo ask So should every tool call become a signed record? When is MCP still the better reach? -->
 
 > 🔑 **Key concept: reach for each where it fits.** MCP is the better reach
@@ -1903,7 +1922,7 @@ in. Hoot is let go too, once the bank has paid it.
 The car dropped alice at the airport. Hoot billed the $34 it bid, naming
 the hold, and the bank paid it from the hold and let the other $6 go.
 
-<!-- @demo point map -->
+<!-- @demo point hoot.repo bank.repo -->
 
 <!-- @demo wait 10 -->
 
@@ -1939,7 +1958,9 @@ tunnel, and was checked twice: the owner's signature, and the hash the step
 before it named. One step is sealed: Jitney's losing bid, which alice was
 never let in to read.
 
-<!-- @demo point alice.terminal map -->
+<!-- @demo point alice.terminal -->
+
+<!-- @demo close code -->
 
 > 🔑 **Key concept: a chain of custody, with nothing bolted on.** Every step
 > is signed by the party that took it and names the step before it by its
@@ -1950,6 +1971,11 @@ never let in to read.
 > work went.
 
 ![a central log one keeper writes and can edit, against a chain of steps each signed by its own party and pointing at the one before](sketches/chain-not-log.svg)
+
+Every card alice checked is marked in its own repo now: ✓ where the
+signature and the hash held, dashed where alice was never let in.
+
+<!-- @demo point concierge.repo bank.repo hoot.repo cab-17.repo -->
 
 The last thing alice checked was a photo of the curb, signed by the car.
 

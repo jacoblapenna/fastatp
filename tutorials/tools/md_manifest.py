@@ -70,7 +70,8 @@ GitHub and fastatp.com do not render:
   <!-- @demo expand eve -->  collapse  focus
                                           frame sizes; focus expands these, collapses the rest
   <!-- @demo open wire -->  close         keep a folded section (alice.repo, bob.tunnel, wire)
-                                          open from here on, or fold it again
+                                          open from here on, or fold it again; `close code`
+                                          puts away the file a command showed
   <!-- @demo point alice.tunnel diagram --> right after a key concept or a paragraph: what it
                                           points at, outlined and opened while it is on
   ![what it shows](sketches/private-repo.svg)
@@ -342,6 +343,7 @@ def parse(text: str) -> dict:
             elif verb in ("expand", "collapse", "focus"):
                 emit({"kind": "layout", "action": verb, "machines": arg.split()})
             elif verb in ("open", "close"):
+                emit_say()  # where the cue sits is when it acts: after the paragraph above it
                 emit({"kind": "layout", "action": verb, "targets": arg.split()})
             elif verb == "chapter":
                 number, _, title = arg.partition(" ")

@@ -51,20 +51,26 @@
 
       <div class="section" class:repo={repos && shown('repo')} class:pointed={isPointed('repo')} data-anchor={anchor('repo')}>
         <button class="h4" onclick={() => (chosen.repo = !shown('repo'))} aria-expanded={shown('repo')}>
-          <span class="tri">{shown('repo') ? '▾' : '▸'}</span> public repo
-          <span class="meta">{m.repo?.records.length ?? 0} record{m.repo?.records.length === 1 ? '' : 's'}{#if m.repo?.rev} · rev {m.repo.rev}{/if}</span>
+          <span class="tri">{shown('repo') ? '▾' : '▸'}</span> {m.private.length ? 'private repos' : 'public repo'}
+          <span class="meta">{#if m.private.length}public: {m.repo?.records.length ?? 0} announcement{m.repo?.records.length === 1 ? '' : 's'}{:else}{m.repo?.records.length ?? 0} record{m.repo?.records.length === 1 ? '' : 's'}{#if m.repo?.rev} · rev {m.repo.rev}{/if}{/if}</span>
         </button>
         {#if shown('repo')}
-          <RepoList records={m.repo?.records ?? []} grow={repos && !m.private.length} />
+          {#if !m.private.length}<RepoList records={m.repo?.records ?? []} grow={repos} />{/if}
           {#if m.private.length}
-            <!-- the machine's own private repos, as it reports them: what its owner sees -->
-            {#each m.private as repo (repo.did)}
-              <div class="h4 private" title={repo.did}>
-                private · {repo.name} <span class="meta">{repo.records.length} record{repo.records.length === 1 ? '' : 's'}</span>
+            <!-- the machine's own private repos, as it reports them: what its owner sees.
+                 Each says who is let in; that is who can follow it. Nothing is sent from here. -->
+            <!-- an empty repo nobody is let into says nothing yet: it waits off screen -->
+            {#each m.private.filter((r) => r.records.length || r.readers?.length) as repo (repo.did)}
+              <div class="repobox" class:grow={repos} title={repo.did}>
+                <div class="h4 private">
+                  {repo.name}
+                  <span class="readers">
+                    {#each repo.readers ?? [] as reader (reader)}<span class="reader">{reader.replace('.lan', '')}</span>{:else}<span class="nobody">nobody let in</span>{/each}
+                  </span>
+                </div>
+                <RepoList records={repo.records} grow={repos} />
               </div>
-              <RepoList records={repo.records} grow={repos} />
             {/each}
-            <div class="muted">private repos, as this machine sees its own; others read them only through the tunnel, if let in</div>
           {:else if id?.channel}
             <div class="channel" title={id.channel}>
               gated channel <code>{id.channel.slice(0, 22)}…</code>
@@ -118,7 +124,12 @@
   .tri { width: 10px; display: inline-block; }
   .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .section.repo { flex: 1 1 0; display: flex; flex-direction: column; min-height: 90px; overflow: auto; }
-  .h4.private { margin-top: 6px; color: var(--color-primary); }
+  .repobox { margin-top: 6px; border: 1px solid var(--color-border); border-radius: 8px; padding: 4px 5px; display: flex; flex-direction: column; min-height: 0; }
+  .repobox.grow { flex: 1 1 0; }
+  .h4.private { margin: 0 0 3px; color: var(--color-primary); flex-wrap: wrap; }
+  .readers { display: inline-flex; flex-wrap: wrap; gap: 3px; margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .reader { font: 10px var(--font-mono); padding: 0 5px; border-radius: 4px; color: var(--color-sealed); border: 1px solid color-mix(in srgb, var(--color-sealed) 50%, transparent); }
+  .nobody { font: 10px var(--font-mono); color: var(--color-text-muted); }
   .channel { font-size: 11.5px; margin-top: 3px; }
   .muted { color: var(--color-text-muted); font-size: 11.5px; }
 </style>
