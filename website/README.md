@@ -8,7 +8,8 @@ uv run python website/build.py           # writes website/_build/
 uv run python website/build.py --serve   # and serves it on :8000
 ```
 
-- `build.py` finds the pages (`FIXED`, plus every `docs/*.md` and ADR),
+- `build.py` finds the pages (`FIXED`, plus every `docs/*.md` under
+  `/resources/`, every ADR and every guide),
   renders them with markdown-it-py, and rewrites links: to another page,
   to that page; to code, to GitHub; a picture, copied beside the page at
   its repo path. A link or `#anchor` that leads nowhere fails the build.
@@ -23,3 +24,7 @@ uv run python website/build.py --serve   # and serves it on :8000
 - `tests/test_website.py` builds the site in the test suite, so a broken
   link fails a pull request. `.github/workflows/site.yml` publishes the
   build to GitHub Pages on every merge to `main`.
+- `site_api.py` writes the API reference: griffe reads each name in
+  `fastatp.__all__` from the source, and the page is markdown that
+  `build.py` renders like any other. A name in backticks in a docstring
+  becomes a link when the site has that page.

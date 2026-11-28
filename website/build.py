@@ -29,6 +29,9 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import site_api  # beside this file, not an installed package
+
 ROOT = Path(__file__).resolve().parent.parent
 HERE = Path(__file__).resolve().parent
 SITE = "https://fastatp.com"
@@ -55,7 +58,8 @@ NAV = (
     ("Tutorials", "/tutorials/"),
     ("README", "/readme/"),
     ("Philosophy", "/philosophy/"),
-    ("Docs", "/docs/"),
+    ("API", "/api/"),
+    ("Resources", "/resources/"),
     ("Decisions", "/decisions/"),
     ("Changelog", "/changelog/"),
 )
@@ -68,6 +72,8 @@ class Page:
     description: str
     markdown: str  # the twin, served beside the page
     src: str | None = None  # repo path, None for a generated page
+    origin: str | None = None  # for an API page: the source file and line it documents
+    generated: bool = False  # written by the build, not a file in the repo
     body: str = ""
     ids: set[str] = field(default_factory=set)
 
@@ -93,7 +99,7 @@ def source_pages() -> dict[str, str]:
     """Repo path -> site URL for every markdown file that is a page."""
     found = {path: url for path, url in FIXED.items() if (ROOT / path).exists()}
     for p in sorted((ROOT / "docs").glob("*.md")):
-        found[f"docs/{p.name}"] = f"/docs/{slug(p.stem)}/"
+        found[f"docs/{p.name}"] = f"/resources/{slug(p.stem)}/"
     for p in sorted((ROOT / "docs/decisions").glob("*.md")):
         name = "" if p.stem == "README" else f"{slug(p.stem)}/"
         found[f"docs/decisions/{p.name}"] = f"/decisions/{name}"
@@ -174,6 +180,8 @@ def plain(inline: Token) -> str:
     for child in inline.children or []:
         if child.type in ("text", "code_inline", "image"):
             out.append(child.content)
+        elif child.type in ("softbreak", "hardbreak"):
+            out.append(" ")
     return "".join(out)
 
 
@@ -204,7 +212,7 @@ class Linker:
         path, _, frag = path.partition("#")
         path = path.rstrip("/")
         target = ROOT / path
-        if not target.exists():
+        if path not in self.pages and not target.exists():
             self.errors.append(f"{self.src}: {href} leads nowhere")
             return href
         page = self.pages.get(path) or self.pages.get(f"{path}/README.md")
@@ -247,7 +255,9 @@ def rewrite_html(chunk: str, link: Linker) -> str:
 
 
 def render(page: Page, pages: dict[str, str], out: Path) -> Linker:
-    md = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
+    # a docstring is text, never markup: `<did>` in one must show, not vanish
+    md = MarkdownIt("commonmark", {"html": not page.generated})
+    md.enable(["table", "strikethrough"])
     assert page.src is not None
     link = Linker(page.src, pages, out)
     tokens = md.parse(page.markdown)
@@ -286,14 +296,60 @@ def render(page: Page, pages: dict[str, str], out: Path) -> Linker:
     return link
 
 
-def docs_index(pages: list[Page]) -> Page:
-    docs = [p for p in pages if p.url.startswith("/docs/")]
-    lines = ["# Docs", ""]
-    lines += [f"- [{p.title}]({p.url}): {p.description}" for p in docs]
-    lines += ["", "Design calls live in the [decision records](/decisions/)."]
+# The resources' front page has no file: it lists docs/, so a note added
+# there is on the site with no site change. Pages link to it by this path.
+RESOURCES = "website/resources/README.md"
+
+
+def resources_index(pages: list[Page]) -> Page:
+    notes = [p for p in pages if p.url.startswith("/resources/")]
+    lines = ["# Resources", ""]
+    lines += ["Background on FastATP and atproto: how it is designed, and how it"]
+    lines += ["compares with the tools nearest to it.", ""]
+    lines += [f"- [{p.title}]({p.url}): {p.description}" for p in notes]
+    lines += ["", "Interactive explainers are on their way, starting with how a repo's"]
+    lines += ["tree keeps its records in order."]
     text = "\n".join(lines) + "\n"
     body = MarkdownIt("commonmark").render(text)
-    return Page("/docs/", "Docs", "FastATP's design notes and comparisons.", text, body=body)
+    return Page(
+        "/resources/",
+        "Resources",
+        "Design notes on FastATP and atproto, and comparisons with nearby tools.",
+        text,
+        body=body,
+    )
+
+
+def api_pages(where: dict[str, str]) -> list[Page]:
+    """The reference pages, added to `where` so every page can link to them."""
+    reference, index = site_api.pages(ROOT)
+    made = [
+        Page(
+            "/api/",
+            "API reference",
+            "Every name fastatp exports, with its signature and docstring.",
+            index,
+            src=f"{site_api.FOLDER}/README.md",
+            generated=True,
+        )
+    ]
+    for ref in reference:
+        made.append(
+            Page(
+                f"/api/{slug(ref.name)}/",
+                ref.name,
+                clip(ref.summary) or f"{ref.name}, in the FastATP API reference.",
+                ref.markdown,
+                src=ref.src,
+                origin=ref.origin,
+                generated=True,
+            )
+        )
+    urls = [p.url for p in made]
+    if len(urls) != len(set(urls)):
+        raise BuildError("two public names share an API page address")
+    where.update({p.src: p.url for p in made if p.src})
+    return made
 
 
 def page_title(page: Page) -> str:
@@ -323,7 +379,8 @@ def layout(page: Page) -> str:
         f'<a href="{url}"{" aria-current=page" if page.url.startswith(url) else ""}>{name}</a>'
         for name, url in NAV
     )
-    source = f'<a href="{GITHUB}/blob/main/{page.src}">Source on GitHub</a> · ' if page.src else ""
+    origin = page.origin if page.generated else page.src
+    source = f'<a href="{GITHUB}/blob/main/{origin}">Source on GitHub</a> · ' if origin else ""
     addresses = footer = ""
     if page.url != "/404/":
         addresses = (
@@ -391,7 +448,9 @@ def last_changed(src: str) -> str | None:
 def sitemap(pages: list[Page]) -> str:
     rows = []
     for p in pages:
-        mod = last_changed(p.src) if p.src else None
+        origin = p.origin.partition("#")[0] if p.origin else None
+        dated = origin if p.generated else p.src
+        mod = last_changed(dated) if dated else None
         lastmod = f"<lastmod>{mod}</lastmod>" if mod else ""
         rows.append(f"  <url><loc>{SITE}{p.url}</loc>{lastmod}</url>")
     return (
@@ -407,9 +466,12 @@ def llms_txt(pages: list[Page]) -> str:
         return f"- [{p.title}]({SITE}{twin_url(p.url)}): {p.description}"
 
     tutorials = [p for p in pages if p.url.startswith("/tutorials/")]
-    main = [p for p in pages if p.url in ("/", "/philosophy/") or p.url.startswith("/docs/")]
+    main = [p for p in pages if p.url in ("/", "/readme/", "/philosophy/")]
+    resources = [p for p in pages if p.url.startswith("/resources/")]
     decisions = [p for p in pages if p.url.startswith("/decisions/")]
-    rest = [p for p in pages if p not in main + decisions + tutorials]
+    reference = [p for p in pages if p.url.startswith("/api/")]
+    listed = main + decisions + tutorials + reference + resources
+    rest = [p for p in pages if p not in listed]
     return "\n".join(
         [
             "# FastATP",
@@ -424,9 +486,17 @@ def llms_txt(pages: list[Page]) -> str:
             "",
             *map(row, tutorials),
             "",
-            "## Docs",
+            "## Start here",
             "",
             *map(row, main),
+            "",
+            "## API reference",
+            "",
+            *map(row, reference),
+            "",
+            "## Resources",
+            "",
+            *map(row, resources),
             "",
             "## Decision records",
             "",
@@ -463,6 +533,8 @@ def build(out: Path) -> list[Page]:
         raise BuildError("website/pages/tutorials.md has no <!-- guides --> marker")
     front.markdown = front.markdown.replace("<!-- guides -->", guide_list(series))
     watched = {f"tutorials/{g.name}.md": g.name for g in series if g.name}
+    pages += api_pages(where)
+    where[RESOURCES] = "/resources/"
 
     errors: list[str] = []
     anchors: list[tuple[str, str]] = []
@@ -474,7 +546,7 @@ def build(out: Path) -> list[Page]:
         # watch it.
         if p.src in watched:
             p.body = p.body.replace("</h1>\n", "</h1>\n" + watch_note(watched[p.src]), 1)
-    pages.insert(1, docs_index(pages))
+    pages.insert(1, resources_index(pages))
 
     ids = {p.url: p.ids for p in pages}
     errors += [

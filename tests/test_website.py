@@ -35,7 +35,15 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, list]:
 def test_every_page_is_written_with_its_markdown_twin(built: tuple[Path, list]) -> None:
     out, pages = built
     site = _site()
-    assert {"/", "/readme/", "/philosophy/", "/tutorials/", "/docs/"} <= {p.url for p in pages}
+    assert {
+        "/",
+        "/readme/",
+        "/philosophy/",
+        "/tutorials/",
+        "/api/",
+        "/resources/",
+        "/decisions/",
+    } <= {p.url for p in pages}
     for page in pages:
         assert (out / page.url.lstrip("/") / "index.html").is_file(), page.url
         assert (out / site.twin_url(page.url).lstrip("/")).is_file(), page.url
@@ -47,6 +55,9 @@ def test_every_page_has_its_own_title_and_a_description(built: tuple[Path, list]
     titles = [site.page_title(p) for p in pages]
     assert len(titles) == len(set(titles))
     assert all(p.description for p in pages), [p.url for p in pages if not p.description]
+    # words on either side of a line break in the source stay two words
+    hosted = next(p for p in pages if p.url == "/resources/hosted-peers/")
+    assert "will not run their own" in hosted.description
 
 
 def test_what_crawlers_and_agents_read_is_there(built: tuple[Path, list]) -> None:
@@ -91,3 +102,25 @@ def test_a_link_that_leads_nowhere_is_an_error(tmp_path: Path) -> None:
     assert not link.errors
     link("docs/NO_SUCH_PAGE.md")
     assert link.errors == ["README.md: docs/NO_SUCH_PAGE.md leads nowhere"]
+
+
+def test_every_public_name_has_a_reference_page(built: tuple[Path, list]) -> None:
+    """The API reference is `fastatp.__all__`, no more and no less."""
+    import fastatp
+
+    out, pages = built
+    site = _site()
+    reference = {p.title: p for p in pages if p.url.startswith("/api/") and p.url != "/api/"}
+    assert set(reference) == set(fastatp.__all__)
+    index = (out / "api/index.html").read_text()
+    for name, page in reference.items():
+        assert f'href="{page.url}"' in index, name
+        assert page.origin and (site.ROOT / page.origin.partition("#")[0]).is_file(), name
+
+
+def test_a_docstring_is_text_and_links_to_the_names_it_mentions(built: tuple[Path, list]) -> None:
+    out, _ = built
+    peer = (out / "api/peer/index.html").read_text()
+    assert '<a href="/api/peerserver/"><code>PeerServer</code></a>' in peer
+    assert 'id="verify"' in peer
+    assert "`did` + `signing_key`" in (out / "api/peer.md").read_text()
