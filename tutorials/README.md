@@ -13,7 +13,7 @@ what happened on the machines.
 | 1 | [GETTING_STARTED.md](GETTING_STARTED.md) | Three sovereign peers on a private LAN: signed records, verified following, a private channel behind a real WireGuard tunnel | runs |
 | 2 | [CONDUCTOR_AND_ORCHESTRA.md](CONDUCTOR_AND_ORCHESTRA.md) | The engine that plays guide 1, taken apart, then put to work: a conductor orchestrates three machines with signed records, from one note to a tune | runs |
 | 3 | [HOOT.md](HOOT.md) | Tool calling as signed records: an agent drops one request, two ride companies bid sealed from each other, a bank holds and pays, a car drives, and alice checks every step back to alice's own words | runs |
-| 4 | The browser app | A person reaching an app from a browser tab with no secret on the wire | next |
+| 4 | [GEESE.md](GEESE.md) | A person reaching an app from a browser tab with no secret on the wire: sign up, log in, and let a second device in and out, while the app keeps the account without holding its key | runs |
 
 Everything they run is shared: `lab/` is the machines on a LAN inside
 Docker and the scripts baked into their image (each guide names its cast,
@@ -53,6 +53,8 @@ plays guide two, whose machines run its own program (the guide names it,
 `<!-- @demo peer orchestra.py -->`, and `lab.sh` reads it), and
 `./lab.sh conductor HOOT` plays guide three, on a cast of six machines of
 its own, each running its own program (`<!-- @demo peer bank bank.py -->`).
+`./lab.sh conductor GEESE` plays guide four, where the app is on the page and
+you use it: the show waits for you at each turn.
 
 Then open <http://localhost:8080> and press **Start**. Each press of **Next**
 is one step: a caption from the guide, or one command on one machine, with
@@ -77,7 +79,10 @@ cd tutorials/lab             # from the repository root
 
 The run fails if a command ends the wrong way (one the guide means to work
 fails, or one it means to be refused goes through) or does not print what
-the listing under it shows. With the lab still up,
+the listing under it shows. A guide with an app (Geese) has turns a person
+takes in it; headless, `tools/hands.py` takes them in a Chrome on your
+computer, so that guide needs fastatp installed (`uv sync`) and a Chrome on
+the path to play. With the lab still up,
 `python tutorials/tools/page_check.py` (from the repository root, with
 fastatp installed and a Chrome on the path) then opens the page in a
 headless browser and looks back through every step: no page errors, a page
@@ -131,6 +136,14 @@ python tutorials/tools/md_embed.py --write tutorials/GETTING_STARTED.md
   them from there. A `<!-- @demo ask ... -->` above a command block or a
   key concept is a question for the viewer to answer before the next press
   shows the answer: one every handful of presses, before most concepts.
+  A guide can show a machine's own web app beside the machines
+  (`<!-- @demo app geese /app/ -->`), as this browser and, once
+  `<!-- @demo open phone -->` opens it, as a second device. A paragraph
+  with `<!-- @demo you app POST /signup -->` under it is then the viewer's
+  turn: the show waits until the app sends that request (a status after it,
+  `... 404`, for one meant to be refused), and the
+  `<!-- @demo do app click #signup -->` lines under it are what the
+  headless play does in the viewer's place.
   A `<!-- @demo fails 2 3 -->` above a command block says its second and
   third commands are meant to fail (a refusal, a ping nobody answers); with
   no numbers, every command in it. Every other command is meant to succeed,

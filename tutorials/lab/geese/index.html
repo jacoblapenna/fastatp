@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Geese</title>
+  <style>
+    :root { --bg: #fbfaf7; --ink: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --accent: #c2410c; --on-accent: #fff; --ok: #256f1c; --bad: #b3243f; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #171716; --ink: #ecebe6; --muted: #a09e97; --line: #34332f; --accent: #fb923c; --on-accent: #1d1d1b; --ok: #8fd16a; --bad: #ff7a85; } }
+    body { margin: 0; padding: 14px 16px; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 2px; }
+    h2 { font-size: 14px; margin: 14px 0 4px; }
+    p { margin: 0 0 8px; color: var(--muted); }
+    section[hidden] { display: none; }
+    .mono { font: 11.5px ui-monospace, monospace; word-break: break-all; }
+    .paper { border: 1px dashed var(--accent); border-radius: 8px; padding: 8px; margin: 8px 0; }
+    button { padding: 6px 12px; border: 0; border-radius: 8px; background: var(--accent); color: var(--on-accent); font: inherit; cursor: pointer; }
+    button.quiet { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; font: 11.5px ui-monospace, monospace; }
+    label { display: block; margin: 6px 0; }
+    ul { list-style: none; padding: 0; margin: 6px 0; }
+    li { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+    li .mono { flex: 1; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <h1>Geese</h1>
+
+  <section id="new" hidden>
+    <p>Sign up with nothing but this browser: no email, no password.</p>
+    <label><input type="checkbox" id="keep"> keep me signed in on this device</label>
+    <button id="signup">Sign up</button>
+    <button id="existing" class="quiet">I already have an account</button>
+    <p class="bad" id="signupError" hidden role="alert"></p>
+  </section>
+
+  <section id="welcome" hidden>
+    <p>Welcome back. This browser remembers your key.</p>
+    <div class="mono" id="saved" aria-live="polite"></div>
+    <p></p>
+    <button id="login">Log in</button>
+    <button id="forget" class="quiet">Forget this device</button>
+  </section>
+
+  <section id="inside" hidden>
+    <p class="ok">You're in.</p>
+    <div class="mono" id="who"></div>
+    <div class="paper" id="paper" hidden>
+      <strong>Your paper key, shown once.</strong> It can replace a lost key. A
+      real app asks you to write it down; nothing here keeps it or sends it.
+      <div class="mono" id="secret"></div>
+    </div>
+    <h2>Your devices</h2>
+    <p>On a new device, choose "I already have an account" and paste its key's name here.</p>
+    <label>that device's key<input type="text" id="device" placeholder="did:key:…"></label>
+    <p></p>
+    <button id="add">Let this device in</button>
+    <ul id="devices"></ul>
+    <button id="signout" class="quiet">Sign out</button>
+  </section>
+
+  <section id="second" hidden>
+    <p>Use an account you already have. This device makes a key of its own; your
+      other device lets it in.</p>
+    <label>your account<input type="text" id="account" placeholder="did:web:…"></label>
+    <div id="mine" hidden>
+      <p>Show this to a device you're signed in on, and let it in there:</p>
+      <div class="mono" id="mypen"></div>
+      <p></p>
+      <button id="login2">Log in</button>
+      <div id="status2" aria-live="polite"></div>
+    </div>
+    <button id="mint">Make this device's key</button>
+  </section>
+
+  <script type="module">
+    // Geese: everything it signs, it signs in this tab, with a pen made here.
+    import init, * as fastatp from '../fastatp/fastatp_wasm.js';
+    import { signUp, logIn, knock, addDevice, removeDevice, remember, recall, forget } from './geese.js';
+
+    const base = new URL('..', location.href); // the app's host: this page's parent
+    const $ = (id) => document.getElementById(id);
+    const show = (id) => {
+      for (const s of document.querySelectorAll('section')) s.hidden = s.id !== id;
+      window.geese = { ...(window.geese ?? {}), screen: id }; // what's showing, for whoever drives the page
+    };
+    let me = null; // this session: the account, its pen, its repo
+    let device = null; // a second device's own pen, while it asks to be let in
+
+    function inside() {
+      const account = Object.assign(document.createElement('span'), { id: 'did', textContent: me.did });
+      $('who').replaceChildren('you are ', account, ` · your key ${me.pen}`);
+      $('devices').replaceChildren(
+        ...Object.keys(me.devices).map((pen) => {
+          const li = document.createElement('li');
+          const name = Object.assign(document.createElement('span'), { className: 'mono', textContent: pen });
+          const out = Object.assign(document.createElement('button'), { className: 'quiet', textContent: 'Remove' });
+          out.onclick = async () => {
+            await removeDevice(me, pen);
+            if ($('keep').checked || (await recall())) await remember(me);
+            inside();
+          };
+          li.append(name, out);
+          return li;
+        }),
+      );
+      window.geese = { ...window.geese, did: me.did, pen: me.pen, devices: Object.keys(me.devices) };
+      show('inside');
+    }
+
+    await init();
+    // the welcome screen: the account this browser remembers, and nothing else
+    function welcome(did) {
+      $('saved').textContent = did;
+      $('saved').className = 'mono';
+    }
+    const saved = await recall().catch(() => null);
+    if (saved) {
+      welcome(saved.did);
+      show('welcome');
+    } else show('new');
+
+    $('signup').onclick = async () => {
+      $('signup').disabled = true;
+      $('signupError').hidden = true;
+      try {
+        me = await signUp(fastatp, base);
+      } catch (e) {
+        $('signupError').textContent = `Couldn't sign up: ${e.message}. Try again.`;
+        $('signupError').hidden = false;
+        return;
+      } finally {
+        $('signup').disabled = false;
+      }
+      // shown first, so a browser that can't store the pen still shows it
+      $('secret').textContent = me.paper;
+      $('paper').hidden = false;
+      delete me.paper; // shown once; not kept
+      if ($('keep').checked) await remember(me);
+      inside();
+    };
+    $('login').onclick = async () => {
+      $('login').disabled = true;
+      try {
+        me = await logIn(fastatp, base, await recall());
+      } catch (e) {
+        $('login').disabled = false;
+        $('saved').className = 'bad';
+        // a 404: Geese keeps no account this key speaks for (a lab cleaned
+        // since, say). Anything else is worth trying again.
+        $('saved').textContent = e.status === 404
+          ? 'Geese has no account for the key this browser remembers. Forget it and sign up again.'
+          : `Couldn't log in: ${e.message}. Try again.`;
+        return;
+      }
+      $('paper').hidden = true;
+      welcome(me.did); // what the welcome screen says next time: no stale error
+      inside();
+    };
+    $('forget').onclick = async () => { await forget(); $('login').disabled = false; show('new'); };
+    $('signout').onclick = async () => {
+      me = null;
+      $('login').disabled = $('signup').disabled = false;
+      const kept = await recall();
+      if (kept) welcome(kept.did);
+      show(kept ? 'welcome' : 'new');
+    };
+    $('add').onclick = async () => {
+      const pen = $('device').value.trim();
+      if (!pen.startsWith('did:key:')) return;
+      await addDevice(me, pen);
+      if (await recall()) await remember(me);
+      $('device').value = '';
+      inside();
+    };
+
+    // the second device
+    $('existing').onclick = () => show('second');
+    $('mint').onclick = async () => {
+      const key = await fastatp.generate_pen();
+      device = { key, pen: await fastatp.pen_did(key) };
+      $('mypen').textContent = device.pen;
+      $('mine').hidden = false;
+      $('mint').hidden = true;
+      window.geese = { ...window.geese, devicePen: device.pen };
+    };
+    $('login2').onclick = async () => {
+      const account = $('account').value.trim();
+      // this device's pen, speaking for the account through the record that lets it in
+      const answer = await knock(fastatp, base, { did: account, pen: device.pen, key: device.key, iss: account });
+      const ok = answer.ok;
+      $('status2').className = ok ? 'ok' : 'bad';
+      $('status2').textContent = ok
+        ? `You're in, on this device, as ${account}.`
+        : `Not let in (${answer.status}): no record in that account lets this device's key in.`;
+      window.geese = { ...window.geese, secondIn: ok };
+    };
+  </script>
+</body>
+</html>

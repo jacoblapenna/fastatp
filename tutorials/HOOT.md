@@ -2174,9 +2174,9 @@ this is as of late 2026, from their current specifications.
 
 ## Where this leads
 
-The next guide is the browser app: you sign up to Geese, a small dating
-app, from your own browser, with nothing secret on the wire, and meet
-alice, bob and eve there.
+The next guide is [Geese](GEESE.md), the browser app: you sign up to a
+small dating app from your own browser, log in again, and add a second
+device, with nothing secret on the wire.
 
 ## Cleanup
 

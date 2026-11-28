@@ -8,6 +8,7 @@
   import Caption from './cards/Caption.svelte';
   import MachinePanel from './cards/MachinePanel.svelte';
   import ConductorPanel from './cards/ConductorPanel.svelte';
+  import AppPanel from './cards/AppPanel.svelte';
   import NetDiagram from './cards/NetDiagram.svelte';
   import WireLane from './cards/WireLane.svelte';
   import KeyConcept from './cards/KeyConcept.svelte';
@@ -53,7 +54,7 @@
     if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') stepNext();
   }
   // what the current step points at: a key concept's targets, or a caption's
-  let pointed = $derived(new Set(concept?.point ?? (script.step?.kind === 'say' ? script.step.point ?? [] : [])));
+  let pointed = $derived(new Set(concept?.point ?? (['say', 'you'].includes(script.step?.kind) ? script.step.point ?? [] : [])));
   let panels = $derived(new Set([...pointed].map((t) => t.split('.')[0])));
   let kept = $derived(script.open); // sections a cue keeps open
   // A score that commits records shows the conductor's repo beside the
@@ -63,6 +64,7 @@
   // Machines that keep private repos (Hoot's agents) show them, all at once,
   // whenever the step is not a command: the repos are the screen.
   let privateRepos = $derived(Object.values(live.machines).some((m) => m.private?.length));
+  let app = $derived(live.manifest?.app ?? null); // a machine's own web app, embedded
   let command = $derived(['run', 'restart', 'stop'].includes(script.step?.kind));
   let repos = $derived((commits && script.last === 'commit') || (privateRepos && !command));
 
@@ -100,9 +102,16 @@
   <Caption {script} back={view.back} />
 
   <main class="machines">
+    {#if app}
+      <!-- the app, as a person meets it; the machines beside it are backstage -->
+      <AppPanel {app} pointed={pointed.has('app')} wire={pointed.has('app.wire')} />
+      {#if kept.has('phone') || panels.has('phone')}
+        <AppPanel {app} device="a second device" pointed={pointed.has('phone')} wire={pointed.has('phone.wire')} />
+      {/if}
+    {/if}
     {#each live.manifest?.machines ?? [] as name (name)}
       <MachinePanel m={live.machines[name]} size={size(name)} active={script.active === name && !concept}
-        focus={focused(name) && !repos} {repos} {pointed} {kept} {now} />
+        focus={focused(name) && !repos} {repos} {pointed} {kept} {now} backstage={!!app} />
       {#if script.code?.machine === name && live.manifest?.files?.[script.code.file]}
         {#key script.code.file + script.code.focus}
           <CodeCard name={script.code.file} file={live.manifest.files[script.code.file]} focus={script.code.focus} />
@@ -118,8 +127,13 @@
   </footer>
 
   <div class="harness">
-    the conductor plays the guide for you: these buttons are you typing its commands.
-    The records, signatures and tunnels are real.
+    {#if app}
+      the app on the left is yours: what you do in it is real, and the show waits for you.
+      The conductor plays the rest. The keys, records and signatures are real.
+    {:else}
+      the conductor plays the guide for you: these buttons are you typing its commands.
+      The records, signatures and tunnels are real.
+    {/if}
   </div>
 
   {#if concept && !menu}

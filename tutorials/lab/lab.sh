@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 self="$PWD/$(basename "$0")"   # this script by its whole path, so it can call itself from here
 # a guide's name, checked before anything is built or cleaned: a typo stops here, not in the conductor
 guide() { [ -f "../$1.md" ] || { echo "no guide called $1: give its name without .md, like CONDUCTOR_AND_ORCHESTRA" >&2; exit 1; }; }
-MACHINES="alice bob eve concierge bank hoot jitney cab-17"   # every machine compose.yml knows
+MACHINES="alice bob eve concierge bank hoot jitney cab-17 geese"   # every machine compose.yml knows
 # a cue's words from the guide, one line per cue, read with sed so the host needs no Python
 cue() { sed -n "s/^<!-- @demo $1 \(.*\) -->$/\1/p" "../$SCORE.md"; }
 machines() { for m in "$@"; do case " $MACHINES " in *" $m "*) ;; *) echo "no machine called $m: the lab has $MACHINES" >&2; exit 1 ;; esac; done; }
@@ -33,13 +33,23 @@ case "${1:-}" in
            docker compose --profile '*' rm -sf "${others[@]}" >/dev/null 2>&1 || true
            CONDUCTOR=did:web:conductor.stage docker compose --profile conductor up --build -d --wait conductor "${cast[@]}"
            echo "the conductor is up: open http://localhost:8080" ;;
-  test)    guide "${2:-GETTING_STARTED}"; "$self" clean >/dev/null 2>&1; SCORE="${2:-GETTING_STARTED}" "$self" conductor >/dev/null
-           docker compose exec -T conductor python play.py --speed "${SPEED:-4}" ;;
+  test)    export SCORE="${2:-GETTING_STARTED}"; guide "$SCORE"; "$self" clean >/dev/null 2>&1; "$self" conductor >/dev/null
+           # a guide with an app has turns the viewer takes in it: hands.py takes them, in a
+           # headless Chrome on this computer, where the page is (<!-- @demo you ... -->)
+           hands=""; if [ -n "$(cue app)" ]; then
+             if command -v uv >/dev/null; then uv run --no-sync python ../tools/hands.py & else python3 ../tools/hands.py & fi
+             hands=$!
+           fi
+           code=0; docker compose exec -T conductor python play.py --speed "${SPEED:-4}" || code=$?
+           if [ -n "$hands" ]; then
+             if [ "$code" = 0 ]; then wait "$hands" || code=$?; else kill "$hands" 2>/dev/null || true; fi
+           fi
+           exit "$code" ;;
   down)    docker compose --profile '*' down ;;
   clean)   docker compose --profile '*' down; docker run --rm -v "$PWD/state:/state" alpine:3.20 sh -c 'rm -rf /state/*' ;;
   logs)    docker compose logs -f --no-log-prefix "${2:?machine}" ;;
   restart) docker compose restart "${2:?machine}" ;;
   tap)     docker compose run --rm tap "${@:2}" ;;
-  alice|bob|eve|concierge|bank|hoot|jitney|cab-17) if [ -t 0 ]; then docker compose exec "$@"; else docker compose exec -T "$@"; fi ;;
+  alice|bob|eve|concierge|bank|hoot|jitney|cab-17|geese) if [ -t 0 ]; then docker compose exec "$@"; else docker compose exec -T "$@"; fi ;;
   *) sed -n '2,11p' "$self"; exit 1 ;;
 esac

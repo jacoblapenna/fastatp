@@ -7,6 +7,13 @@
   import { live, send } from '../lib/live.svelte.js';
 
   let { chapters, current, onClose } = $props();
+  const count = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+  // 1 · 16 presses · 1 command · 1 turn in the app (turns only where the guide has an app)
+  function meta(c) {
+    const parts = [c.number, count(c.presses, 'press', 'presses'), count(c.commands, 'command')];
+    if (c.turns) parts.push(`${count(c.turns, 'turn')} in the app`);
+    return parts.join(' · ');
+  }
   let chosen = $state(null); // the number picked, until the conductor opens it
 
   let busy = $derived(live.mode === 'playing' || live.mode === 'step' || live.concept !== null);
@@ -51,7 +58,7 @@
     {#each chapters as c, i (c.number)}
       {@const s = standing(c, i)}
       <button class="card {s}" onclick={() => pick(c)} disabled={busy || chosen !== null || !live.connected}>
-        <div class="meta">{c.number} · {c.presses} presses · {c.commands} commands</div>
+        <div class="meta">{meta(c)}</div>
         <h2>{c.title}</h2>
         <p class="blurb">{c.blurb}</p>
         <div class="concepts">

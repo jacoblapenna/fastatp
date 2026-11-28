@@ -15,8 +15,10 @@ export const live = $state({
   speed: 1,
   done: false,
   until: null, // a chapter's first step the conductor is hurrying to
+  you: null, // the viewer's turn the conductor is waiting on: they act in the app, and the show moves
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
+  http: [], // requests a browser sent an app through the page: [{machine, host, method, path, query, status}]
   commits: {}, // step -> a record the conductor signed for members, and their answers so far
   conductor: emptyRepo(), // the conductor's own repo: every record it signs, as it signs it
   verified: {}, // at:// URI -> 'ok' | 'sealed' | 'wrong', as a terminal reported checking it
@@ -30,7 +32,7 @@ function emptyRepo() {
 const KEEP = 400; // records the conductor's list keeps on screen; its count says how many there are
 
 // What one press of Next shows; what Back looks at again.
-export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask'];
+export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask', 'you'];
 
 // Looking back: how many visible steps behind the conductor the page is
 // showing. The machines stay where they are, because every step really ran;
@@ -71,6 +73,7 @@ export function connect() {
       live.manifest = msg.manifest;
       live.machines = {};
       live.wire = [];
+      live.http = [];
       live.commits = {};
       live.conductor = emptyRepo();
       live.verified = {};
@@ -95,7 +98,7 @@ export function send(type, extra = {}) {
 
 function status(msg) {
   if (msg.cursor !== live.cursor) view.back = 0; // the show moved on: stop looking back
-  for (const k of ['cursor', 'mode', 'concept', 'speed', 'done', 'until']) live[k] = msg[k];
+  for (const k of ['cursor', 'mode', 'concept', 'speed', 'done', 'until', 'you']) live[k] = msg[k];
 }
 
 // Only the machines the score names get a panel, and only a whole number is
@@ -173,6 +176,11 @@ function apply(ev, fresh) {
       entry.answers[ev.machine] = { text: ev.record?.text ?? '', ms: note?.ms ?? 0 };
     // only a note landing now is played: a tab opened late does not hear the past all at once
     if (fresh && note) play(note, pan(ev.machine));
+    return;
+  }
+  if (ev.type === 'http') {
+    live.http.push(ev); // what a browser sent an app, through the page
+    if (live.http.length > 200) live.http.splice(0, live.http.length - 200);
     return;
   }
   if (ev.type === 'wire') {
@@ -298,8 +306,9 @@ export function scriptState(manifest, cursor) {
     if (step.kind === 'heading') [s.say, s.code, s.ask] = ['', null, ''];
     // a command shows the file it runs, beside its machine, until the next command
     if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
+    if (step.kind === 'you') s.code = step.code ? { ...step.code, machine: manifest.app?.machine } : null; // the route the turn reaches
     if (step.kind === 'commit') s.code = step.code && step.machines.length ? { ...step.code, machine: step.machines[0] } : null;
-    if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];
+    if (step.kind === 'say' || step.kind === 'you') [s.say, s.ask] = [step.text, '']; // a turn is a caption you act on
     if (step.kind === 'ask') s.ask = step.text; // stays up through the command it asks about
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
     // what last happened: a command (watch its terminal) or a commit (watch the repos)

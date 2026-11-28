@@ -19,6 +19,9 @@ GitHub and fastatp.com do not render:
   <!-- @demo machines alice bob eve -->   who is in the cast: the machines that boot, and
                                           no others (`./lab.sh conductor` reads it)
   <!-- @demo peer orchestra.py -->        the program the machines run in place of peer.py
+  <!-- @demo app geese /app/ -->          a machine's own web app, shown on the page as the
+                                          browser in front of you (and, opened with
+                                          `open phone`, as a second device's)
   <!-- @demo peer bank bank.py -->        the program one machine runs; it wins over the
                                           one for all (`./lab.sh conductor` reads both)
   <!-- @demo start -->  <!-- @demo end --> what the screen plays (any number of ranges)
@@ -72,6 +75,20 @@ GitHub and fastatp.com do not render:
   <!-- @demo open wire -->  close         keep a folded section (alice.repo, bob.tunnel, wire)
                                           open from here on, or fold it again; `close code`
                                           puts away the file a command showed
+  <!-- @demo you app POST /signup -->     right under the paragraph that tells the viewer
+                                          what to do in the app: that paragraph is their
+                                          turn. The show waits, with Next off, until the
+                                          app sends this request through the page (a path
+                                          on the app's machine; it starts with the one
+                                          given), answered with a 2xx or with the status
+                                          given after it (... getRepo 404). `app` is this
+                                          browser, `phone` the second device: it is what
+                                          the turn points at
+  <!-- @demo do app click #signup -->     under a `you` cue: what the headless play does
+                                          for the viewer, in order. click <selector>,
+                                          tick <selector> (a checkbox, left ticked),
+                                          copy <selector> <device> <selector> (fill an
+                                          input with what another element says), reload
   <!-- @demo point alice.tunnel diagram --> right after a key concept or a paragraph: what it
                                           points at, outlined and opened while it is on
   ![what it shows](sketches/private-repo.svg)
@@ -83,7 +100,8 @@ GitHub and fastatp.com do not render:
                                           a question before a command, for the viewer to
                                           answer in their head; the next press shows
   <!-- @demo code peer.py "async def commit(" -->
-                                          the next block's commands reach this file, here;
+                                          the next block's commands (or the next turn's
+                                          request) reach this file, here;
                                           a command that runs `python x.py` says so itself
   <!-- @demo terminal -->...<!-- @demo /terminal -->
                                           prose for the person at a terminal ("Ctrl-C it",
@@ -172,7 +190,10 @@ VISIBLE = (
     "concept",
     "chapter",
     "ask",
-)  # one press of Next each
+    "you",
+)  # one press of Next each (a "you" step's press is the viewer's own, in the app)
+DEVICES = ("app", "phone")  # this browser, and the second device
+ACTIONS = {"click": 1, "tick": 1, "copy": 3, "reload": 0}  # what a `do` cue can do, and its words
 LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until they give up
 
 
@@ -181,6 +202,7 @@ def parse(text: str) -> dict:
     peer = "peer.py"  # the program the machines run
     peers: dict[str, str] = {}  # a machine's own program, where the guide gives one
     peer_lines: dict[str, int] = {}  # where each was given, for the error that names it
+    app: dict | None = None  # a machine's own web app, embedded on the page
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
@@ -254,6 +276,13 @@ def parse(text: str) -> dict:
             i += 1
             if verb == "machines":
                 machines = arg.split()
+            elif verb == "app":
+                words = arg.split()
+                if len(words) != 2 or not words[1].startswith("/"):
+                    raise SystemExit(
+                        f"line {i}: @demo app names a machine and a path (geese /app/)"
+                    )
+                app = {"machine": words[0], "path": words[1], "line": i}
             elif verb == "peer":
                 words = arg.split()
                 if len(words) not in (1, 2) or not PROGRAM.match(words[-1]):
@@ -360,9 +389,71 @@ def parse(text: str) -> dict:
             elif verb == "blurb":
                 if steps and steps[-1]["kind"] == "chapter":
                     steps[-1]["blurb"] = arg
+            elif verb == "you":
+                words = arg.split()
+                if app is None:
+                    raise SystemExit(f"line {i}: @demo you needs an app (@demo app ...) above it")
+                if (
+                    len(words) not in (3, 4)
+                    or words[0] not in DEVICES
+                    or words[1] not in ("GET", "POST")
+                    or not words[2].startswith("/")
+                    or (len(words) == 4 and not words[3].isdigit())
+                ):
+                    raise SystemExit(
+                        f"line {i}: @demo you names a device ({' or '.join(DEVICES)}), and the"
+                        " request that says it is done (POST /signup, or GET /path 404)"
+                    )
+                if not say:
+                    raise SystemExit(
+                        f"line {i}: @demo you goes right under the paragraph that tells the"
+                        " viewer what to do"
+                    )
+                turn = say.pop()  # the paragraph just above is the viewer's turn
+                emit_say()
+                emit(
+                    {
+                        "kind": "you",
+                        **turn,
+                        "device": words[0],
+                        "display": " ".join(words[1:]),  # what ends it, carried by its cue
+                        "until": {
+                            "method": words[1],
+                            "path": words[2],
+                            "status": int(words[3]) if len(words) == 4 else None,
+                        },
+                        "do": [],
+                        "point": [words[0]],
+                    }
+                )
+                if code_cue:  # the route the request reaches, beside the app's machine
+                    steps[-1]["code"] = dict(code_cue)
+                    code_cue = None
+            elif verb == "do":
+                words = arg.split()
+                if not steps or steps[-1]["kind"] != "you":
+                    raise SystemExit(f"line {i}: @demo do goes under a @demo you cue")
+                if len(words) < 2 or words[0] not in DEVICES or words[1] not in ACTIONS:
+                    raise SystemExit(
+                        f"line {i}: @demo do names a device and one of {', '.join(ACTIONS)}"
+                    )
+                device, action, rest = words[0], words[1], words[2:]
+                if action in ("click", "tick") and rest:
+                    rest = [" ".join(rest)]  # a selector may have spaces: #devices button
+                if len(rest) != ACTIONS[action] or (action == "copy" and rest[1] not in DEVICES):
+                    raise SystemExit(
+                        f"line {i}: @demo do {action} takes"
+                        + {
+                            "click": " a selector",
+                            "tick": " a selector",
+                            "copy": " a selector, a device and a selector",
+                            "reload": " nothing",
+                        }[action]
+                    )
+                steps[-1]["do"].append({"device": device, "action": action, "args": rest})
             elif verb == "point":
                 emit_say()  # the paragraph just above is the step that points
-                if steps and steps[-1]["kind"] in ("concept", "say"):
+                if steps and steps[-1]["kind"] in ("concept", "say", "you"):
                     steps[-1]["point"] = arg.split()
             else:
                 raise SystemExit(f"line {i}: unknown @demo directive {verb!r}")
@@ -519,7 +610,7 @@ def parse(text: str) -> dict:
             if active:  # the picture goes with the words just above it
                 if say:
                     say[-1]["sketch"] = path
-                elif steps and steps[-1]["kind"] == "say":
+                elif steps and steps[-1]["kind"] in ("say", "you"):
                     steps[-1]["sketch"] = path
                 elif steps and steps[-1]["kind"] == "concept":
                     steps[-1]["sketch"] = path
@@ -570,6 +661,10 @@ def parse(text: str) -> dict:
 
     if commit_cue:
         raise SystemExit(f"line {commit_cue[0]}: @demo commit needs a ```json record under it")
+    if app is not None and app["machine"] not in machines:
+        raise SystemExit(
+            f"line {app['line']}: @demo app is served by {app['machine']}, not in the cast"
+        )
     if strangers := sorted(set(peers) - set(machines)):
         raise SystemExit(
             f"line {peer_lines[strangers[0]]}: @demo peer gives a program to {strangers[0]},"
@@ -583,6 +678,7 @@ def parse(text: str) -> dict:
         "machines": machines,
         "peer": peer,
         "peers": {name: peers.get(name, peer) for name in machines},  # what each machine runs
+        "app": None if app is None else {"machine": app["machine"], "path": app["path"]},
         "chapters": menu,
         "files": files,
         "images": images,
@@ -628,6 +724,7 @@ def chapters(steps: list[dict]) -> list[dict]:
             "concepts": [s["title"] for s in g if s["kind"] == "concept"],
             "presses": sum(1 for s in g if s["kind"] in VISIBLE),
             "commands": sum(1 for s in g if s["kind"] == "run"),
+            "turns": sum(1 for s in g if s["kind"] == "you"),  # what the viewer does in the app
         }
         for g in ordered
     ]

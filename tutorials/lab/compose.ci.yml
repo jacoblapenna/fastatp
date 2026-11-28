@@ -23,6 +23,7 @@ services:
   cab-17: *reads
   concierge: *reads
   jitney: *reads
+  geese: *reads
   conductor:
     build:
       cache_from: ["type=local,src=${LAB_CACHE}"]
