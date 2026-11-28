@@ -35,3 +35,7 @@ uv run python website/build.py --serve   # and serves it on :8000
   `fastatp.__all__` from the source, and the page is markdown that
   `build.py` renders like any other. A name in backticks in a docstring
   becomes a link when the site has that page.
+- Search is Pagefind: after the pages are written, `build.py` runs it over
+  the output and it leaves its index in `pagefind/`. Only an `<article>`
+  marked `data-pagefind-body` is indexed, so the 404 and the search page
+  itself are not. `/search/?q=word` opens with that search made.

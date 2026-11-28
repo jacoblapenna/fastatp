@@ -581,6 +581,7 @@ dev = [
     { name = "libipld" },
     { name = "markdown-it-py" },
     { name = "mypy" },
+    { name = "pagefind", extra = ["bin"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -605,6 +606,7 @@ requires-dist = [
     { name = "libipld", marker = "extra == 'dev'", specifier = ">=3.4" },
     { name = "markdown-it-py", marker = "extra == 'dev'", specifier = ">=3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "pagefind", extras = ["bin"], marker = "extra == 'dev'", specifier = ">=1.6" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
@@ -1085,6 +1087,33 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
+]
+
+[[package]]
+name = "pagefind"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/d0/911ef8922cb5035b2ea53b045c99cc03cbe8916b0238d26cd6d241b0144c/pagefind-1.6.0.tar.gz", hash = "sha256:744864df19d4dc0d75873ec9117e67328a1aaa208151c7acfca5fab03dcc41d8", size = 77717, upload-time = "2026-11-01T11:30:28.636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/5d/73cac7ac098267a65810cc46cac0c96bee7d189d289b3bd75ad0d75b19a7/pagefind-1.6.0-py3-none-any.whl", hash = "sha256:c1ab35dd3573f95a8d8f25f9ffac30db8829577b5945641d1bdbf60620a3bd5c", size = 10239, upload-time = "2026-11-01T11:30:03.039Z" },
+]
+
+[package.optional-dependencies]
+bin = [
+    { name = "pagefind-bin" },
+]
+
+[[package]]
+name = "pagefind-bin"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/16/5e95a899696f298643a3f22d712a8a4c19814bd1bedf8b36a3f92faa60b1/pagefind_bin-1.6.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:9d8f127fa574bf3d06a08ca437f45ade03f9ddfafe08dcb1c804b0145b8cb37b", size = 4554344, upload-time = "2026-11-01T11:30:05.544Z" },
+    { url = "https://files.pythonhosted.org/packages/82/be/91e2bb698e59ab7ba543b7913e9e3d093ef666ead2244ce0c8170edc3e2a/pagefind_bin-1.6.0-py3-none-macosx_12_0_x86_64.whl", hash = "sha256:5f55c560e75431f40b0b89ed1d1c89df74dc7e8a90782ce9385ce495fbfba5a2", size = 4630761, upload-time = "2026-11-01T11:30:07.646Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/1a/17c5d1e8d63ee352266ff94726372b6ef2f7f04bd5ec2c376c1c444a6e7e/pagefind_bin-1.6.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl", hash = "sha256:5622ef851ae4cdd65a15cf62657348c6d490acf92417e772ad27e77b21ad301f", size = 5000740, upload-time = "2026-11-01T11:30:09.251Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/39/f5d11ceeefefab2476a290a971a6764d7d7d28ca992a2710ba29e30d69de/pagefind_bin-1.6.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", hash = "sha256:4210638ca4eeaa26ec337d1903e4de0eae71d842feb1b1fa01055b1787504569", size = 4741287, upload-time = "2026-11-01T11:30:11.16Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/66/fa07ac15c2896ca46a3785e00010d759714e34a05157e2fa3c4dd9667f97/pagefind_bin-1.6.0-py3-none-win_amd64.whl", hash = "sha256:1adb6bf9b9ddce2a28983c8abb85211efdc7ac2d7945a3b55a95561f49f1f185", size = 4790385, upload-time = "2026-11-01T11:30:13.397Z" },
+    { url = "https://files.pythonhosted.org/packages/21/87/2ab55299f2400851fc3b9418f9cd5ca5128b564699b329ba126cf6817d4a/pagefind_bin-1.6.0-py3-none-win_arm64.whl", hash = "sha256:d2928909f37645ba44ff344bbef8b0083e45166a4d8d813101385d5b3f66d698", size = 4657065, upload-time = "2026-11-01T11:30:15.369Z" },
 ]
 
 [[package]]

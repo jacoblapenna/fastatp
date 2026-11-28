@@ -1,6 +1,7 @@
 """fastatp.com builds from the repo's own markdown, and a link that leads nowhere stops it."""
 
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -89,9 +90,10 @@ def test_no_page_needs_javascript_and_no_cue_reaches_one(built: tuple[Path, list
     out, _ = built
     site = _site()
     explainer = out / site.EXPLAINER_URL.strip("/")
+    tools = (explainer, out / "search", out / "pagefind")
     for page in out.rglob("*.html"):
-        if explainer in page.parents:
-            continue  # the one page with something to press; build.py checks its article
+        if any(tool in page.parents for tool in tools):
+            continue  # the explainer (build.py checks its article) and the search box
         text = page.read_text()
         scripts = re.findall(r"<script\b[^>]*>", text)
         assert all("application/ld+json" in s for s in scripts), page
@@ -137,6 +139,20 @@ def test_every_page_carries_the_site_header(built: tuple[Path, list]) -> None:
     for page in out.rglob("index.html"):
         text = page.read_text()
         assert '<header class="top">' in text and 'href="/header.css"' in text, page
+
+
+def test_the_built_site_can_be_searched(built: tuple[Path, list]) -> None:
+    """Pagefind indexed the pages, and the search page loads what it wrote."""
+    out, pages = built
+    entry = json.loads((out / "pagefind/pagefind-entry.json").read_text())
+    indexed = sum(language["page_count"] for language in entry["languages"].values())
+    assert indexed >= len(pages)  # every document; the 404 and the search page are left out
+    search = (out / "search/index.html").read_text()
+    for needed in ("pagefind/pagefind-ui.js", "pagefind/pagefind-ui.css"):
+        assert (out / needed).is_file() and f'"/{needed}"' in search
+    assert "data-pagefind-body" not in search
+    assert "data-pagefind-body" not in (out / "404.html").read_text()
+    assert '<a href="/search/">Search</a>' in (out / "index.html").read_text()
 
 
 def test_the_decisions_page_lists_every_record(built: tuple[Path, list]) -> None:

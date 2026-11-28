@@ -90,6 +90,9 @@ dev = [
     # reads the public API's signatures and docstrings from source, without
     # importing the package, for the site's reference pages (website/api.py)
     "griffe>=1",
+    # indexes the built site into static search files (website/build.py);
+    # the `bin` extra carries the indexer itself, so no Node is needed
+    "pagefind[bin]>=1.6",
 ]
 # Cross-ecosystem interop test (tests/test_sensorthings_interop.py): an UNMODIFIED
 # third-party package flattens a FastATP-exported CAR. It pulls in the MarshalX

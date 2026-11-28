@@ -62,6 +62,7 @@ NAV = (
     ("Resources", "/resources/"),
     ("Decisions", "/decisions/"),
     ("Changelog", "/changelog/"),
+    ("Search", "/search/"),
 )
 
 
@@ -77,6 +78,27 @@ class Page:
     body: str = ""
     ids: set[str] = field(default_factory=set)
 
+
+# The one page that is a tool, not a document: Pagefind's box, in the site's
+# colors. The index it reads is written by `search_index` after the build.
+SEARCH = """<h1>Search</h1>
+<link rel="stylesheet" href="/pagefind/pagefind-ui.css">
+<div id="search"></div>
+<noscript><p>Search needs JavaScript. Every page is also listed in
+<a href="/llms.txt">llms.txt</a> and <a href="/sitemap.xml">sitemap.xml</a>.</p></noscript>
+<script src="/pagefind/pagefind-ui.js"></script>
+<script>
+  const ui = new PagefindUI({
+    element: "#search", showSubResults: true, showImages: false, autofocus: true,
+  });
+  const asked = new URLSearchParams(location.search).get("q");
+  if (asked) ui.triggerSearch(asked);
+</script>
+"""
+
+# Pages that are not documents: no markdown copy, no place in the sitemap,
+# and nothing in them for the search index.
+TOOLS = ("/404/", "/search/")
 
 NOT_FOUND = """<h1>Not found</h1>
 <p>There is no page at this address. <a href="/">Start at the home page</a>.</p>
@@ -336,6 +358,7 @@ def explainers(out: Path, required: bool) -> list[Explainer]:
         raise BuildError("the explainer's index.html has no </head> or #app to put the header by")
     dest = out / EXPLAINER_URL.strip("/")
     shutil.copytree(EXPLAINER_DIST, dest)
+    text = text.replace("<article", "<article data-pagefind-body", 1)  # searched like any page
     # the page is its own build, so the site's header is put into it here
     text = text.replace("</head>", '<link rel="stylesheet" href="/header.css">\n</head>', 1)
     text = text.replace('<div id="app">', header(EXPLAINER_URL) + '\n<div id="app">', 1)
@@ -435,7 +458,7 @@ def layout(page: Page) -> str:
     origin = page.origin if page.generated else page.src
     source = f'<a href="{GITHUB}/blob/main/{origin}">Source on GitHub</a> · ' if origin else ""
     addresses = footer = ""
-    if page.url != "/404/":
+    if page.url not in TOOLS:
         addresses = (
             f'<link rel="canonical" href="{SITE}{page.url}">\n'
             f'<link rel="alternate" type="text/markdown" href="{twin_url(page.url)}">\n'
@@ -461,7 +484,7 @@ def layout(page: Page) -> str:
 <body>
 {header(page.url)}
 <main class="page">
-<article>
+<article{"" if page.url in TOOLS else " data-pagefind-body"}>
 {page.body}</article>
 <footer>{footer}</footer>
 </main>
@@ -569,6 +592,17 @@ def write(out: Path, url_path: str, text: str) -> None:
     dest.write_text(text)
 
 
+def search_index(out: Path) -> None:
+    """Pagefind reads the built pages and writes the search files beside them."""
+    done = subprocess.run(
+        [sys.executable, "-m", "pagefind", "--site", str(out)],
+        capture_output=True,
+        text=True,
+    )
+    if done.returncode != 0 or not (out / "pagefind/pagefind.js").is_file():
+        raise BuildError(f"the search index was not built:\n{done.stdout}{done.stderr}")
+
+
 def decision_list() -> str:
     """The records themselves, listed under the decisions page's own words."""
     rows = []
@@ -624,6 +658,8 @@ def build(out: Path, require_explainers: bool = False) -> list[Page]:
         write(out, twin_url(p.url), p.markdown)
     not_found = Page("/404/", "Not found", "There is no page here.", "", body=NOT_FOUND)
     (out / "404.html").write_text(layout(not_found))
+    search = Page("/search/", "Search", "Search every page of fastatp.com.", "", body=SEARCH)
+    write(out, search.url, layout(search))
 
     brand = out / "brand"
     brand.mkdir(exist_ok=True)
@@ -639,6 +675,7 @@ def build(out: Path, require_explainers: bool = False) -> list[Page]:
     (out / "llms.txt").write_text(llms_txt(pages))
     (out / "CNAME").write_text("fastatp.com\n")
     (out / ".nojekyll").write_text("")
+    search_index(out)
     return pages
 
 

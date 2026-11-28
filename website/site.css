@@ -60,3 +60,17 @@ body { font-size: 17px; line-height: 1.65; }
 .page .note pre { margin: 12px 0 0; }
 
 .page a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* The search box and its results, in the brand's tokens. */
+#search {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--color-accent-text);
+  --pagefind-ui-text: var(--color-text);
+  --pagefind-ui-background: var(--color-surface);
+  --pagefind-ui-border: var(--color-border);
+  --pagefind-ui-tag: var(--color-surface-raised);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: var(--radius-lg);
+  --pagefind-ui-font: var(--font-sans);
+}
+#search mark { background: none; color: var(--color-accent-text); font-weight: 600; }
