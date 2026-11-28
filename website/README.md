@@ -1,7 +1,7 @@
 # Website
 
 fastatp.com, built from the repo's own markdown where it lives: no copies,
-no docs folder. Not tracked yet (in `.git/info/exclude`); see `todo/0018`.
+no docs folder.
 
 ```bash
 uv run python website/build.py           # writes website/_build/
@@ -20,3 +20,6 @@ uv run python website/build.py --serve   # and serves it on :8000
   system, with no JavaScript.
 - The output also carries `sitemap.xml` (dated from git), `robots.txt`,
   `CNAME`, `.nojekyll` and a `404.html`, ready for GitHub Pages.
+- `tests/test_website.py` builds the site in the test suite, so a broken
+  link fails a pull request. `.github/workflows/site.yml` publishes the
+  build to GitHub Pages on every merge to `main`.

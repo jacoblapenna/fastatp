@@ -23,3 +23,5 @@ examples/**/static/
 tutorials/lab/state/
 tutorials/conductor/node_modules/
 tutorials/conductor/dist/
+# fastatp.com as built by website/build.py
+website/_build/
