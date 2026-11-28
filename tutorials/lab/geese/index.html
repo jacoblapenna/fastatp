@@ -127,11 +127,19 @@
     };
     $('login').onclick = async () => {
       $('login').disabled = true;
-      me = await logIn(fastatp, base, await recall());
+      try {
+        me = await logIn(fastatp, base, await recall());
+      } catch {
+        // Geese no longer keeps this account (a lab cleaned since, say): the
+        // key this browser remembers speaks for nothing here
+        $('saved').textContent = 'Geese has no account for the key this browser remembers. Forget it and sign up again.';
+        $('saved').className = 'bad';
+        return;
+      }
       $('paper').hidden = true;
       inside();
     };
-    $('forget').onclick = async () => { await forget(); show('new'); };
+    $('forget').onclick = async () => { await forget(); $('login').disabled = false; show('new'); };
     $('signout').onclick = async () => { me = null; if (!(await recall())) show('new'); else show('welcome'); $('login').disabled = false; };
     $('add').onclick = async () => {
       const pen = $('device').value.trim();

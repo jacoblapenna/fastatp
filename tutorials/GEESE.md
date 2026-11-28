@@ -446,7 +446,7 @@ its own keys, as a phone would.
 
 On the second device, choose **I already have an account**, paste your
 account from this browser, press **Make this device's key**, then **Log
-in**.
+in**. Don't let it in from this browser yet: first see what Geese says.
 <!-- @demo you phone GET /xrpc/com.atproto.sync.getRepo 404 -->
 <!-- @demo do phone click #existing -->
 <!-- @demo do phone copy #account app #did -->

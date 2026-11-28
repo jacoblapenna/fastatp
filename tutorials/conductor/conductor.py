@@ -163,6 +163,10 @@ state = {
 # until: a chapter's first step the show is hurrying to, through the chapters before it
 # you: the viewer's turn the show is waiting on, a step's number
 turn: dict = {}  # that turn: what ends it, when it began, and the event that ends it
+# The app's requests since the last turn began that did not end it: a viewer
+# who does the next step before the show asks has done it, and the next turn
+# takes it when it comes.
+ahead: list[tuple[str, str, str, int]] = []  # (machine, method, path, status)
 env: dict[str, str] = {}  # CH=... captured from a command's output
 subs: dict[str, str] = {}  # an rkey printed in the guide -> the one this run produced
 cue_step: dict[str, int] = {}  # cue path -> score step
@@ -415,10 +419,17 @@ async def your_turn(step: dict) -> None:
     the same as every byte between the page and the app's machine, and the
     request the step names, answered as it says, is the sign it is done. A
     log-in writes no record, so the request is the one sign every turn
-    gives. Skip moves on without it."""
+    gives, and one made since the last turn began, ahead of the show, counts.
+    Skip moves on without it."""
     await cue(step)
     turn.clear()
     turn.update(step=step["id"], until=step["until"], done=asyncio.Event(), saw="")
+    for request in ahead:
+        if ends_turn(*request):
+            turn["saw"] = "{1} {2} {3}, done ahead of the show".format(*request)
+            turn["done"].set()
+            break
+    ahead.clear()
     state["you"] = step["id"]
     await status()
     await turn["done"].wait()
@@ -445,16 +456,23 @@ async def heard(machine: str, host: str, method: str, path: str, query: dict, co
             "status": code,
         }
     )
+    if turn and not turn["done"].is_set() and ends_turn(machine, method, path, code):
+        turn["saw"] = f"{method} {path} {code}"
+        turn["done"].set()
+    else:
+        ahead.append((machine, method, path, code))
+
+
+def ends_turn(machine: str, method: str, path: str, code: int) -> bool:
+    """Whether this request, answered so, is the one the turn waits for."""
     until = turn.get("until")
-    if (
+    return bool(
         until
         and machine == (score.get("app") or {}).get("machine")
         and method == until["method"]
         and path.startswith(until["path"])
         and (code == until["status"] if until["status"] else 200 <= code < 300)
-    ):
-        turn["saw"] = f"{method} {path} {code}"
-        turn["done"].set()
+    )
 
 
 async def commit(step: dict, pace: float) -> None:
