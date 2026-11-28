@@ -33,12 +33,12 @@
     <label><input type="checkbox" id="keep"> keep me signed in on this device</label>
     <button id="signup">Sign up</button>
     <button id="existing" class="quiet">I already have an account</button>
-    <p class="bad" id="signupError" hidden></p>
+    <p class="bad" id="signupError" hidden role="alert"></p>
   </section>
 
   <section id="welcome" hidden>
     <p>Welcome back. This browser remembers your key.</p>
-    <div class="mono" id="saved"></div>
+    <div class="mono" id="saved" aria-live="polite"></div>
     <p></p>
     <button id="login">Log in</button>
     <button id="forget" class="quiet">Forget this device</button>
@@ -70,7 +70,7 @@
       <div class="mono" id="mypen"></div>
       <p></p>
       <button id="login2">Log in</button>
-      <div id="status2"></div>
+      <div id="status2" aria-live="polite"></div>
     </div>
     <button id="mint">Make this device's key</button>
   </section>
