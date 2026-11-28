@@ -39,11 +39,12 @@ export async function signUp(fastatp, base) {
   const domain = home.did.replace('did:web:', ''); // the host your repo lives on
   const pen = await fastatp.generate_pen();
   const born = await fastatp.connection_zero(domain, pen);
-  // The rotation secret is the paper backup that can replace a lost pen. A
-  // real app shows it once, for a drawer; this one keeps no copy and sends none.
   // key: the pen's handle, kept to sign with in this tab (a knock to read your own
   // repo back); a WebCrypto key made unexportable, so it can't be sent even by mistake.
-  const me = { did: born.twin_did, pen: born.pen_did, key: pen, peer: born.take_peer(), base };
+  const me = { did: born.twin_did, pen: born.pen_did, key: pen, peer: born.take_peer(), base, devices: {} };
+  // The rotation secret is the paper backup that can replace a lost pen. It
+  // is handed back once, for the page to show once; nothing keeps or sends it.
+  me.paper = born.rotation_secret;
   await post(base, 'xrpc/dev.fastatp.shelf.putChain', born.chain_json, 'application/json');
   await post(base, `signup?did=${encodeURIComponent(me.did)}`, born.genesis_car, CAR);
   return me;
@@ -61,3 +62,71 @@ export async function write(me, record, rkey = tid()) {
   );
   return { uri: `at://${me.did}/${collection}/${rkey}`, rev: accepted };
 }
+
+// --- logging in: a signature on a one-time challenge, nothing else ---------
+
+// Read a repo as its owner, or as a device the owner let in: ask the host for
+// a one-time challenge, sign it with this tab's pen, and send the signature
+// with the request. No password, no token: the signature is good for this one
+// request and nothing else. `iss` is the account the pen speaks for, when the
+// pen is a second device's rather than the account's own.
+export async function knock(fastatp, base, { did, pen, key, iss }) {
+  const { nonce } = await (await fetch(new URL('xrpc/dev.fastatp.auth.getChallenge', base))).json();
+  const sig = await fastatp.sign_challenge(key, nonce, did);
+  const params = new URLSearchParams({ did, pen, nonce, sig });
+  if (iss) params.set('iss', iss);
+  return fetch(new URL(`xrpc/com.atproto.sync.getRepo?${params}`, base));
+}
+
+// The account's own pen logs in: it reads its repo back, checks the commit
+// was signed by itself, and can write again from where it left off.
+export async function logIn(fastatp, base, saved) {
+  const answer = await knock(fastatp, base, { did: saved.did, pen: saved.pen, key: saved.key });
+  if (!answer.ok) throw new Error(`the host said no (${answer.status})`);
+  const car = new Uint8Array(await answer.arrayBuffer());
+  const peer = await fastatp.BrowserPeer.restore(car, saved.key, saved.pen);
+  return { ...saved, peer, base };
+}
+
+// --- a second device: its own pen, let in by a record ---------------------
+
+// Approve another device: a record in the account's repo saying "this pen
+// speaks for me". Its key never came here; only its public name did.
+export async function addDevice(me, penDid) {
+  const rkey = tid();
+  const record = { $type: 'dev.fastatp.auth.delegation', issuer: me.did, subject: penDid };
+  await write(me, record, rkey);
+  me.devices[penDid] = rkey;
+}
+
+// Sign a device out everywhere: delete the record. Absence is revocation.
+export async function removeDevice(me, penDid) {
+  const rkey = me.devices[penDid];
+  if (!rkey) return;
+  await me.peer.delete_record('dev.fastatp.auth.delegation', rkey);
+  await post(me.base, `push-car?did=${encodeURIComponent(me.did)}`, me.peer.export_car(), CAR);
+  delete me.devices[penDid];
+}
+
+// --- keep me signed in: this device remembers its pen ---------------------
+
+// The pen is a CryptoKey the page can't read the bytes of; IndexedDB can keep
+// the handle itself. Keeping it is a choice the app makes on purpose: a pen
+// left in a browser is that browser being you until it is removed.
+function store(mode, use) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('geese', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('me');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('me', mode);
+      const request = use(tx.objectStore('me'));
+      tx.oncomplete = () => resolve(request?.result);
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+export const remember = (me) =>
+  store('readwrite', (s) => s.put({ did: me.did, pen: me.pen, key: me.key, devices: me.devices }, 'me'));
+export const recall = () => store('readonly', (s) => s.get('me'));
+export const forget = () => store('readwrite', (s) => s.delete('me'));
