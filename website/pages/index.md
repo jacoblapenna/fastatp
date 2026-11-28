@@ -94,7 +94,6 @@ incentives.
 
 ## Resources
 
-[Design notes and comparisons](../resources/README.md): how FastATP is
-designed, and how it differs from the tools nearest to it. Interactive
-explainers of FastATP and atproto are on their way, starting with how a
-repo's tree keeps its records in order.
+[The resources](../resources/README.md): interactive explainers, starting
+with how a repo's tree keeps its records in order, and design notes on how
+FastATP is built and how it differs from the tools nearest to it.

@@ -24,6 +24,11 @@ uv run python website/build.py --serve   # and serves it on :8000
 - `tests/test_website.py` builds the site in the test suite, so a broken
   link fails a pull request. `.github/workflows/site.yml` publishes the
   build to GitHub Pages on every merge to `main`.
+- `explainers/` is a Svelte page built with npm (its README says how).
+  `build.py` carries its `dist/` to `/resources/merkle-trees/` when it has
+  been built, and `--require-explainers` fails the build when it has not.
+- The Decisions page lists every record in `docs/decisions/` under the
+  README's own words.
 - `site_api.py` writes the API reference: griffe reads each name in
   `fastatp.__all__` from the source, and the page is markdown that
   `build.py` renders like any other. A name in backticks in a docstring

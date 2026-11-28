@@ -1,0 +1,45 @@
+/* The reading column and the pieces every resource page shares. Colors,
+   fonts and radii are the brand's tokens; nothing here names a raw one. */
+html, body, #app { height: auto; min-height: 100%; }
+body { font-size: 16px; line-height: 1.6; }
+
+.page { max-width: 732px; margin: 0 auto; padding: 0 16px 72px; }
+.page > header a.home { color: inherit; text-decoration: none; }
+.page > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 0 36px; }
+.page article { display: flex; flex-direction: column; gap: 44px; }
+.page section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.page h1 { font-size: 30px; line-height: 1.2; margin: 0; text-wrap: balance; }
+.page h2 { font-size: 20px; line-height: 1.3; margin: 0; text-wrap: balance; }
+.page p { margin: 0; color: var(--color-text-soft); }
+.page strong { color: var(--color-text); }
+.page a { color: var(--color-accent-text); }
+.page ul { margin: 0; padding-left: 20px; color: var(--color-text-soft); display: flex; flex-direction: column; gap: 6px; }
+.page figure { margin: 0; }
+.page figcaption { color: var(--color-text-muted); font-size: 14px; margin-top: 8px; }
+.kicker { font-size: var(--text-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-accent-text); font-weight: 600; }
+.lede { font-size: 18px; color: var(--color-text) !important; }
+.mono { font-family: var(--font-mono); font-size: 0.88em; }
+
+.tablewrap { overflow-x: auto; }
+.page table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+.page th, .page td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); vertical-align: top; color: var(--color-text-soft); }
+.page th { color: var(--color-text-muted); font-weight: 500; font-size: var(--text-sm); letter-spacing: 0.04em; text-transform: uppercase; }
+.zero { color: var(--color-accent-text); font-weight: 700; }
+.rest { color: var(--color-text-muted); }
+
+/* A live piece: something to press, and what it shows. */
+.lab { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 18px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.lab button { font-weight: 600; font-size: 14px; padding: 8px 14px; }
+.lab button.primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.lab button[aria-pressed='true'] { border-color: var(--color-primary); }
+.lab button:focus-visible, .lab input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.said { font-size: 14px; color: var(--color-text-muted); min-height: 1.6em; }
+.drawing { overflow-x: auto; background: var(--color-bg); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
+
+/* How often each outcome came up: a row per outcome. */
+.tally { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tally .row { display: grid; grid-template-columns: 110px 1fr 72px; gap: 10px; align-items: center; color: var(--color-text-soft); }
+.tally .bar { height: 10px; background: var(--color-surface-raised); border-radius: 5px; overflow: hidden; }
+.tally .bar i { display: block; height: 100%; background: var(--color-primary); }
+.tally .n { text-align: right; color: var(--color-text-muted); }

@@ -25,3 +25,7 @@ tutorials/conductor/node_modules/
 tutorials/conductor/dist/
 # fastatp.com as built by website/build.py
 website/_build/
+# the site's explainers: a Svelte page built with npm
+website/explainers/node_modules/
+website/explainers/dist/
+website/explainers/dist-ssr/

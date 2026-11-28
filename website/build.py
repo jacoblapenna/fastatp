@@ -301,14 +301,52 @@ def render(page: Page, pages: dict[str, str], out: Path) -> Linker:
 RESOURCES = "website/resources/README.md"
 
 
-def resources_index(pages: list[Page]) -> Page:
+# The explainers are a Svelte page built by npm (website/explainers); the
+# site carries what that build left in dist/, at this address.
+EXPLAINER_DIST = HERE / "explainers" / "dist"
+EXPLAINER_URL = "/resources/merkle-trees/"
+
+
+@dataclass
+class Explainer:
+    url: str
+    title: str
+    description: str
+
+
+def explainers(out: Path, required: bool) -> list[Explainer]:
+    """Copy the built explainer into the site, if `npm run build` has made one."""
+    index = EXPLAINER_DIST / "index.html"
+    if not index.is_file():
+        if required:
+            raise BuildError(
+                "no built explainer: run `npm ci && npm run build` in website/explainers"
+            )
+        return []
+    text = index.read_text()
+    title = re.search(r"<title>(.*?)</title>", text, re.S)
+    described = re.search(r'<meta name="description" content="([^"]*)"', text)
+    if not title or not described:
+        raise BuildError("the explainer's index.html needs a <title> and a description")
+    if "<article" not in text or "<h1" not in text:
+        # prerender.js writes the article into the page; without it the page
+        # is blank until its script runs, and blank to a crawler
+        raise BuildError("the explainer was built without its article: use `npm run build`")
+    shutil.copytree(EXPLAINER_DIST, out / EXPLAINER_URL.strip("/"))
+    name = html.unescape(title.group(1)).split("|")[0].strip()
+    return [Explainer(EXPLAINER_URL, name, html.unescape(described.group(1)))]
+
+
+def resources_index(pages: list[Page], live: list[Explainer]) -> Page:
     notes = [p for p in pages if p.url.startswith("/resources/")]
     lines = ["# Resources", ""]
     lines += ["Background on FastATP and atproto: how it is designed, and how it"]
     lines += ["compares with the tools nearest to it.", ""]
+    if live:
+        lines += ["## Explainers", "", "One idea each, with something to press.", ""]
+        lines += [f"- [{e.title}]({e.url}): {e.description}" for e in live]
+        lines += ["", "## Design notes", ""]
     lines += [f"- [{p.title}]({p.url}): {p.description}" for p in notes]
-    lines += ["", "Interactive explainers are on their way, starting with how a repo's"]
-    lines += ["tree keeps its records in order."]
     text = "\n".join(lines) + "\n"
     body = MarkdownIt("commonmark").render(text)
     return Page(
@@ -445,8 +483,8 @@ def last_changed(src: str) -> str | None:
     return done.stdout.strip() or None
 
 
-def sitemap(pages: list[Page]) -> str:
-    rows = []
+def sitemap(pages: list[Page], live: list[Explainer]) -> str:
+    rows = [f"  <url><loc>{SITE}{e.url}</loc></url>" for e in live]
     for p in pages:
         origin = p.origin.partition("#")[0] if p.origin else None
         dated = origin if p.generated else p.src
@@ -518,7 +556,16 @@ def write(out: Path, url_path: str, text: str) -> None:
     dest.write_text(text)
 
 
-def build(out: Path) -> list[Page]:
+def decision_list() -> str:
+    """The records themselves, listed under the decisions page's own words."""
+    rows = []
+    for p in sorted((ROOT / "docs/decisions").glob("[0-9]*.md")):
+        title = p.read_text().splitlines()[0].removeprefix("# ")
+        rows.append(f"- [{title}]({p.name})")
+    return "\n## The records\n\n" + "\n".join(rows) + "\n"
+
+
+def build(out: Path, require_explainers: bool = False) -> list[Page]:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -533,6 +580,7 @@ def build(out: Path) -> list[Page]:
         raise BuildError("website/pages/tutorials.md has no <!-- guides --> marker")
     front.markdown = front.markdown.replace("<!-- guides -->", guide_list(series))
     watched = {f"tutorials/{g.name}.md": g.name for g in series if g.name}
+    next(p for p in pages if p.url == "/decisions/").markdown += decision_list()
     pages += api_pages(where)
     where[RESOURCES] = "/resources/"
 
@@ -546,7 +594,8 @@ def build(out: Path) -> list[Page]:
         # watch it.
         if p.src in watched:
             p.body = p.body.replace("</h1>\n", "</h1>\n" + watch_note(watched[p.src]), 1)
-    pages.insert(1, resources_index(pages))
+    live = explainers(out, require_explainers)
+    pages.insert(1, resources_index(pages, live))
 
     ids = {p.url: p.ids for p in pages}
     errors += [
@@ -571,7 +620,7 @@ def build(out: Path) -> list[Page]:
     (out / "site.css").write_text(
         (BRAND_SRC / "base.css").read_text() + (HERE / "site.css").read_text()
     )
-    (out / "sitemap.xml").write_text(sitemap(pages))
+    (out / "sitemap.xml").write_text(sitemap(pages, live))
     (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\n\nSitemap: {SITE}/sitemap.xml\n")
     (out / "llms.txt").write_text(llms_txt(pages))
     (out / "CNAME").write_text("fastatp.com\n")
@@ -583,9 +632,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=HERE / "_build")
     parser.add_argument("--serve", action="store_true", help="serve the build on :8000")
+    parser.add_argument(
+        "--require-explainers",
+        action="store_true",
+        help="fail when website/explainers has not been built (the deploy passes this)",
+    )
     args = parser.parse_args(argv)
     try:
-        pages = build(args.out)
+        pages = build(args.out, args.require_explainers)
     except BuildError as e:
         print(f"build failed:\n{e}", file=sys.stderr)
         return 1

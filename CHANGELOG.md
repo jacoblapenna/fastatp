@@ -28,7 +28,9 @@ To upgrade safely within one minor line, pin with `~=`, for example
   markdown copy beside it, listed in `llms.txt`, and a link that leads
   nowhere fails the build. Merges to `main` publish it to GitHub Pages.
   It carries an API reference: a page for each name in `fastatp.__all__`,
-  with its signature and docstring read from the source.
+  with its signature and docstring read from the source. The notes in
+  `docs/` are its Resources, beside the first interactive explainer: how
+  a repo's tree keeps its records in order while its shape changes.
 - The second tutorial, `tutorials/CONDUCTOR_AND_ORCHESTRA.md`: the demo
   engine that plays the first guide, taken apart, then put to work. Bob
   checks one cue and its result from the two repos alone; the machines

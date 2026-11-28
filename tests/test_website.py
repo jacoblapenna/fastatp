@@ -87,7 +87,11 @@ def test_every_guide_in_the_series_has_a_page(built: tuple[Path, list]) -> None:
 
 def test_no_page_needs_javascript_and_no_cue_reaches_one(built: tuple[Path, list]) -> None:
     out, _ = built
+    site = _site()
+    explainer = out / site.EXPLAINER_URL.strip("/")
     for page in out.rglob("*.html"):
+        if explainer in page.parents:
+            continue  # the one page with something to press; build.py checks its article
         text = page.read_text()
         scripts = re.findall(r"<script\b[^>]*>", text)
         assert all("application/ld+json" in s for s in scripts), page
@@ -124,3 +128,13 @@ def test_a_docstring_is_text_and_links_to_the_names_it_mentions(built: tuple[Pat
     assert '<a href="/api/peerserver/"><code>PeerServer</code></a>' in peer
     assert 'id="verify"' in peer
     assert "`did` + `signing_key`" in (out / "api/peer.md").read_text()
+
+
+def test_the_decisions_page_lists_every_record(built: tuple[Path, list]) -> None:
+    out, _ = built
+    site = _site()
+    front = (out / "decisions/index.html").read_text()
+    records = sorted((site.ROOT / "docs/decisions").glob("[0-9]*.md"))
+    assert records
+    for record in records:
+        assert f'href="/decisions/{site.slug(record.stem)}/"' in front, record.name

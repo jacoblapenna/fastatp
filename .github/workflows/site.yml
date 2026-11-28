@@ -1,15 +1,18 @@
 # Builds fastatp.com from the repo's own markdown (website/build.py) and
-# publishes it to GitHub Pages on every merge to main. Whether the site
-# builds is checked before that: tests/test_website.py builds it in the test
-# workflow, so a broken link fails the pull request, not this deploy.
+# publishes it to GitHub Pages on every merge to main. Whether the pages
+# build is checked before that: tests/test_website.py builds them in the test
+# workflow, so a broken link fails the pull request, not this deploy. The
+# explainers (website/explainers, a Svelte page) need Node, so they are built
+# and tested here, on pull requests too; only a push to main deploys.
 #
-# Pinned like test.yml: actions by commit SHA, dependencies by uv.lock, uv by
-# version below.
+# Pinned like test.yml: actions by commit SHA, dependencies by uv.lock and
+# package-lock.json, uv and Node by version below.
 name: site
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions: {}
@@ -20,7 +23,7 @@ env:
 
 # one deploy at a time, and a running one finishes
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -39,10 +42,22 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # bumped by hand (Dependabot can't update it); keep in step with test.yml
+          node-version: "22.23.4"
+      - name: Build and test the explainers (from package-lock.json)
+        working-directory: website/explainers
+        run: |
+          npm ci
+          npm test
+          npm run build
       - name: Install (from uv.lock)
         run: uv sync --locked --extra dev
       - name: Build the site
-        run: uv run --no-sync python website/build.py --out "$RUNNER_TEMP/site"
+        run: >
+          uv run --no-sync python website/build.py
+          --require-explainers --out "$RUNNER_TEMP/site"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/site
@@ -50,6 +65,7 @@ jobs:
   deploy:
     name: deploy
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       pages: write
