@@ -405,7 +405,8 @@ it, because you ticked keep me signed in.
 <!-- @demo ask Geese keeps no session and no password for you. What can your browser show it to get your repo back? -->
 <!-- @demo code geese.py "def owner_pen(" -->
 
-Reload this browser with ↻, then press **Log in**.
+Reload the app with ↻ at the top of its panel (reloading the whole page
+works too), then press **Log in**.
 <!-- @demo you app GET /xrpc/com.atproto.sync.getRepo -->
 <!-- @demo do app reload -->
 <!-- @demo do app click #login -->
