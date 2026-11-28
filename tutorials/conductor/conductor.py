@@ -158,8 +158,11 @@ state = {
     "speed": 1.0,
     "done": False,
     "until": None,
+    "you": None,
 }
 # until: a chapter's first step the show is hurrying to, through the chapters before it
+# you: the viewer's turn the show is waiting on, a step's number
+turn: dict = {}  # that turn: what ends it, when it began, and the event that ends it
 env: dict[str, str] = {}  # CH=... captured from a command's output
 subs: dict[str, str] = {}  # an rkey printed in the guide -> the one this run produced
 cue_step: dict[str, int] = {}  # cue path -> score step
@@ -337,8 +340,9 @@ async def cue(step: dict, command: str = "", record: str = "") -> int:
 # these. A key concept waits for Got it, and Got it is also Next: the step
 # the concept set up follows without another press. Play (auto) paces
 # everything by the speed instead.
-VISIBLE = ("run", "restart", "stop", "commit", "say", "concept", "chapter", "ask")
-PAUSES = tuple(k for k in VISIBLE if k != "concept")
+VISIBLE = ("run", "restart", "stop", "commit", "say", "concept", "chapter", "ask", "you")
+# A viewer's turn is a press too: what they do in the app moves the show on.
+PAUSES = tuple(k for k in VISIBLE if k not in ("concept", "you"))
 
 
 async def perform(step: dict) -> None:
@@ -384,6 +388,9 @@ async def perform(step: dict) -> None:
     if kind == "commit":
         await commit(step, pace)
         return
+    if kind == "you":
+        await your_turn(step)
+        return
     await cue(step)  # the rest of the score is in the repo too: the show is a record
     if kind == "heading":
         await asyncio.sleep(1.5 * pace)
@@ -399,6 +406,51 @@ async def perform(step: dict) -> None:
             await wake.wait()
     elif kind == "wait":
         await asyncio.sleep(step["seconds"])
+
+
+async def your_turn(step: dict) -> None:
+    """The viewer's turn: they do something in the app, and the show waits for it.
+
+    Nobody reports what they did. The app's request goes through the relay,
+    the same as every byte between the page and the app's machine, and the
+    request the step names, answered as it says, is the sign it is done. A
+    log-in writes no record, so the request is the one sign every turn
+    gives. Skip moves on without it."""
+    await cue(step)
+    turn.clear()
+    turn.update(step=step["id"], until=step["until"], done=asyncio.Event(), saw="")
+    state["you"] = step["id"]
+    await status()
+    await turn["done"].wait()
+    await tell({"type": "you", "t": time.time(), "step": step["id"], "saw": turn["saw"]})
+    state["you"] = None
+    turn.clear()
+    await status()
+
+
+async def heard(machine: str, method: str, path: str, query: dict, code: int) -> None:
+    """A request the page made of an app, through the relay: told, and maybe the turn's end."""
+    await tell(
+        {
+            "type": "http",
+            "machine": machine,
+            "t": time.time(),
+            "method": method,
+            "path": path,
+            "query": query,  # what crossed: no password, no token, nothing to steal
+            "status": code,
+        }
+    )
+    until = turn.get("until")
+    if (
+        until
+        and machine == (score.get("app") or {}).get("machine")
+        and method == until["method"]
+        and path.startswith(until["path"])
+        and (code == until["status"] if until["status"] else 200 <= code < 300)
+    ):
+        turn["saw"] = f"{method} {path} {code}"
+        turn["done"].set()
 
 
 async def commit(step: dict, pace: float) -> None:
@@ -547,8 +599,10 @@ async def browser(ws: WebSocket) -> None:
     try:
         while True:
             msg = json.loads(await ws.receive_text())
-            if msg["type"] not in ("play", "pause", "step", "gotit", "speed", "chapter"):
+            if msg["type"] not in ("play", "pause", "step", "gotit", "speed", "chapter", "skip"):
                 continue
+            if msg["type"] == "skip" and not turn:
+                continue  # nothing to skip: not signed
             if msg["type"] == "speed" and (speed := speed_from(msg.get("value"))) is None:
                 continue  # not a speed: nothing is signed and nothing changes
             await write(
@@ -558,6 +612,9 @@ async def browser(ws: WebSocket) -> None:
                 state["mode"] = {"play": "playing", "pause": "paused", "step": "step"}[msg["type"]]
             elif msg["type"] == "gotit":
                 state["concept"] = None
+            elif msg["type"] == "skip":
+                turn["saw"] = "skipped"
+                turn["done"].set()
             elif msg["type"] == "speed":
                 state["speed"] = speed
             elif msg["type"] == "chapter":
@@ -624,13 +681,32 @@ async def relay(request) -> Response:
     if name not in score["machines"]:
         return Response("not in this show's cast", status_code=404)
     forward = {k: v for k, v in request.headers.items() if k.lower() in ("content-type", "accept")}
+    body = await request.body()
     async with httpx.AsyncClient(timeout=30) as http:
-        answer = await http.request(
+        for _ in range(20):  # a machine that is still starting gets a few seconds
+            try:
+                answer = await http.request(
+                    request.method,
+                    f"http://{name}.stage/{request.path_params['path']}",
+                    params=request.query_params,
+                    content=body,
+                    headers=forward,
+                )
+                break
+            except httpx.ConnectError:
+                await asyncio.sleep(0.5)
+        else:
+            return Response(f"{name} is not answering yet; reload in a moment", status_code=502)
+    kind = answer.headers.get("content-type", "")
+    if not any(
+        k in kind for k in ("html", "javascript", "wasm", "css")
+    ):  # not the page's own files
+        await heard(
+            name,
             request.method,
-            f"http://{name}.stage/{request.path_params['path']}",
-            params=request.query_params,
-            content=await request.body(),
-            headers=forward,
+            "/" + request.path_params["path"],
+            dict(request.query_params),
+            answer.status_code,
         )
     return Response(
         answer.content,

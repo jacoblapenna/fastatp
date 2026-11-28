@@ -15,6 +15,11 @@ cue names, who must stay silent. A command left running may be stopped by
 the guide's own Ctrl-C; a command that was not left running and is killed
 anyway took too long, and that is wrong too.
 
+A step that is the viewer's turn (`<!-- @demo you ... -->`) is done in the
+app, by hands: `hands.py`, on the computer the page is on, plays them in a
+headless Chrome while this plays the rest. Each turn must end with the
+request the score names; a turn skipped, or never ended, is wrong.
+
 The score also carries the listing the guide prints under a command block,
 and what the commands really printed is held to it (`listing_problems`):
 every line the guide shows must have been printed, in the guide's order.
@@ -145,6 +150,7 @@ async def main() -> int:
     procs: dict[int, dict] = {}
     ended: set[int] = set()
     committed: set[int] = set()  # commit steps whose wait for answers is over
+    turned: set[int] = set()  # the viewer's turns that ended
     wrong: list[str] = []
     for _ in range(60):  # the conductor may still be starting
         try:
@@ -186,6 +192,9 @@ async def main() -> int:
                             wrong.append(
                                 f"step {step['id']} never finished: {step['display'][:70]}"
                             )
+                    for step in steps:
+                        if step["kind"] == "you" and step["id"] not in turned:
+                            wrong.append(f"step {step['id']}, your turn, never ended: no hands?")
                     meant = sum(1 for s in steps if s.get("fails"))
                     print(f"{len(ended)} commands ended, {meant} of them meant to fail")
                     compared = 0
@@ -219,6 +228,13 @@ async def main() -> int:
                 elif ev["type"] == "answer":
                     if steps[ev["step"]].get("records") is None:  # a sequence is too many to list
                         print(f"            └ {ev['machine']} answered: {ev['uri']}")
+                elif ev["type"] == "you":
+                    turned.add(ev["step"])
+                    text = steps[ev["step"]]["text"]
+                    print(f"{ev['step']:4d} you    {text[:62]}")
+                    print(f"            └ {ev['saw']}")
+                    if ev["saw"] == "skipped":
+                        wrong.append(f"step {ev['step']}: your turn was skipped, not done")
                 elif ev["type"] == "commit-end":
                     committed.add(ev["step"])
                     if problem := commit_verdict(steps[ev["step"]], ev["silent"], ev.get("meant")):

@@ -13,6 +13,9 @@
   }
   let src = $derived(`${origin()}/${app.machine}.lan${app.path}`);
   let anchor = $derived(device === 'this browser' ? 'app' : 'phone');
+  let frame = $state(null);
+  // a browser's reload: the app starts again from what this device keeps
+  const reload = () => frame && (frame.src = src);
 </script>
 
 <section class="panel" class:pointed data-anchor={anchor}>
@@ -20,8 +23,9 @@
     <span class="dot"></span>
     <strong>{device}</strong>
     <span class="where" title={src}>{src.replace(/^\/\//, '')}</span>
+    <button class="reload" onclick={reload} title="reload, as a browser does">↻</button>
   </header>
-  <iframe title="{app.machine}: {device}" {src} data-device={anchor}></iframe>
+  <iframe bind:this={frame} title="{app.machine}: {device}" {src} data-device={anchor}></iframe>
 </section>
 
 <style>
@@ -33,5 +37,6 @@
   header { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--color-border); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary); align-self: center; }
   .where { font: 11px var(--font-mono); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .reload { margin-left: auto; background: none; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-soft); cursor: pointer; padding: 0 7px; font-size: 13px; }
   iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 </style>

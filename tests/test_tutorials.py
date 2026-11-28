@@ -33,8 +33,9 @@ GUIDES = {"GETTING_STARTED.md": 8, "CONDUCTOR_AND_ORCHESTRA.md": 4, "HOOT.md": 8
 
 # The steps the headless play holds to an outcome: a command that must end as
 # the guide says, a reboot that must come back, a committed record whose
-# members must answer (or stay silent). A chapter is one of these or more.
-OUTCOMES = ("run", "restart", "commit")
+# members must answer (or stay silent), a viewer's turn in the app that must
+# end with the request it names. A chapter is one of these or more.
+OUTCOMES = ("run", "restart", "commit", "you")
 
 
 @pytest.mark.parametrize("guide", GUIDES)
@@ -639,3 +640,54 @@ def test_a_guide_can_show_a_machine_s_app():
     for bad in ("<!-- @demo app bob /app/ -->", "<!-- @demo app geese app/ -->"):
         with pytest.raises(SystemExit):
             md_manifest.parse(f"<!-- @demo machines geese -->\n{bad}\n")
+
+
+def test_a_viewer_takes_a_turn_in_the_app():
+    """`@demo you` makes the paragraph above it the viewer's turn: the show
+    waits for the request it names, and `@demo do` lines are the hands the
+    headless play uses in its place."""
+    md_manifest = _tool("md_manifest")
+    head = "<!-- @demo machines geese -->\n<!-- @demo app geese /app/ -->\n<!-- @demo start -->\n"
+    page = head + (
+        "Geese is one machine.\n\n"
+        "Paste your account and press Log in.\n"
+        "<!-- @demo you phone GET /xrpc/com.atproto.sync.getRepo 404 -->\n"
+        "<!-- @demo do phone copy #account app #did -->\n"
+        "<!-- @demo do phone click #devices button -->\n"
+        "<!-- @demo do app reload -->\n"
+    )
+    steps = md_manifest.parse(page)["steps"]
+    assert [s["kind"] for s in steps] == ["say", "you"]
+    turn = steps[1]
+    assert turn["text"] == "Paste your account and press Log in."
+    assert turn["point"] == ["phone"]
+    assert turn["until"] == {
+        "method": "GET",
+        "path": "/xrpc/com.atproto.sync.getRepo",
+        "status": 404,
+    }
+    assert turn["do"] == [
+        {"device": "phone", "action": "copy", "args": ["#account", "app", "#did"]},
+        {"device": "phone", "action": "click", "args": ["#devices button"]},
+        {"device": "app", "action": "reload", "args": []},
+    ]
+    with_status = md_manifest.parse(head + "Sign up.\n<!-- @demo you app POST /signup -->\n")
+    assert with_status["steps"][0]["until"]["status"] is None  # any 2xx
+    for bad in (
+        "<!-- @demo you app POST /signup -->",  # no paragraph above: nothing to tell the viewer
+        "Go.\n<!-- @demo you laptop POST /signup -->",  # no such device
+        "Go.\n<!-- @demo you app PUT /signup -->",
+        "Go.\n<!-- @demo you app POST signup -->",
+        "Go.\n<!-- @demo you app POST /signup ok -->",
+        "Go.\n\n<!-- @demo do app click #signup -->",  # a do with no turn
+        "Go.\n<!-- @demo you app POST /signup -->\n<!-- @demo do app press #signup -->",
+        "Go.\n<!-- @demo you app POST /signup -->\n<!-- @demo do app copy #a #b -->",
+        "Go.\n<!-- @demo you app POST /signup -->\n<!-- @demo do app reload now -->",
+    ):
+        with pytest.raises(SystemExit):
+            md_manifest.parse(head + bad + "\n")
+    with pytest.raises(SystemExit):  # a turn needs an app to take it in
+        md_manifest.parse(
+            "<!-- @demo machines geese -->\n<!-- @demo start -->\n"
+            "Go.\n<!-- @demo you app POST /signup -->\n"
+        )

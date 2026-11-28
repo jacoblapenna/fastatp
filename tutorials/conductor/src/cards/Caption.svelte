@@ -1,13 +1,13 @@
 <script>
   // The guide's own words for what is happening now.
   import { md } from '../lib/md.js';
-  import { live, picture } from '../lib/live.svelte.js';
+  import { live, picture, send } from '../lib/live.svelte.js';
 
   let { script, back = 0 } = $props();
   let svg = $state(null); // the caption's picture, from the conductor's repo
 
   $effect(() => {
-    const path = script.step?.kind === 'say' ? script.step.sketch : null;
+    const path = ['say', 'you'].includes(script.step?.kind) ? script.step.sketch : null;
     svg = null;
     if (!path) return;
     // a slow picture must not land on a later step: only the newest ask may answer
@@ -17,7 +17,7 @@
   });
 </script>
 
-<div class="caption" class:reading={script.step?.kind === 'say'} class:back class:opening={script.step?.kind === 'chapter'}>
+<div class="caption" class:reading={script.step?.kind === 'say'} class:turn={script.step?.kind === 'you'} class:back class:opening={script.step?.kind === 'chapter'}>
   <div class="where">
     {#if script.chapter}<span class="chapter">Chapter {script.chapter.number}</span>{/if}
     {script.part}{#if script.section}<span class="sep">›</span>{script.section}{/if}
@@ -38,7 +38,18 @@
     </div>
     {#if svg}<div class="picture">{@html svg}</div>{/if}
   </div>
-  {#if script.step?.kind === 'run' || script.step?.kind === 'restart'}
+  {#if script.step?.kind === 'you'}
+    <!-- the viewer's turn: what they do in the app is the press that moves the show -->
+    <div class="now">
+      <span>{script.step.device === 'phone' ? 'a second device' : 'this browser'}</span>
+      {#if live.you === script.step.id && !back}
+        your turn: do it in the app, and the show goes on
+        <button class="skip" onclick={() => send('skip')}>skip</button>
+      {:else}
+        done
+      {/if}
+    </div>
+  {:else if script.step?.kind === 'run' || script.step?.kind === 'restart'}
     <div class="now"><span>{script.step.machine}</span> {script.step.display}</div>
   {:else if script.step?.kind === 'stop'}
     <div class="now"><span>{script.step.machine}</span> Ctrl-C</div>
@@ -61,6 +72,9 @@
   .caption.reading { background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface)); }
   .caption.reading .text { font-size: 15.5px; color: var(--color-text); }
   .where { color: var(--color-accent-text); font-weight: 600; font-size: 13px; }
+  .caption.turn { background: color-mix(in srgb, var(--color-highlight) 12%, var(--color-surface)); }
+  .caption.turn .text { font-size: 15.5px; color: var(--color-text); }
+  .skip { margin-left: 10px; background: none; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-muted); font: inherit; font-size: 12px; padding: 1px 8px; cursor: pointer; }
   .caption.back { background: color-mix(in srgb, var(--color-highlight) 8%, var(--color-surface)); }
   .caption.opening { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)); }
   .chapter { color: var(--color-text-muted); font-weight: 500; margin-right: 10px; }

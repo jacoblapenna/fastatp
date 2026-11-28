@@ -21,6 +21,7 @@ fastatp already depends on.
 """
 
 import asyncio
+import contextlib
 import json
 import shutil
 import subprocess
@@ -41,6 +42,7 @@ VISIBLE = (
     "concept",
     "chapter",
     "ask",
+    "you",
 )  # one press of Next each
 WIDTH, HEIGHT = 1500, 1000
 
@@ -172,13 +174,18 @@ async def check(page: Page, url: str) -> list[str]:
     return found
 
 
-async def main(url: str) -> int:
-    chrome = next(
+class NoChrome(Exception):
+    """Chrome is missing or would not start; the message says which, and what it said."""
+
+
+@contextlib.asynccontextmanager
+async def chrome(*flags: str):
+    """A headless Chrome's one tab, as a Page, for as long as the block runs."""
+    found = next(
         (c for c in ("google-chrome", "chromium", "chromium-browser") if shutil.which(c)), None
     )
-    if chrome is None:
-        print("no Chrome or Chromium found; the page was not checked")
-        return 1
+    if found is None:
+        raise NoChrome("no Chrome or Chromium found")
     # Chrome can still be writing its profile as it exits; a leftover file is not our failure
     with (
         tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile,
@@ -186,7 +193,7 @@ async def main(url: str) -> int:
     ):
         browser = subprocess.Popen(
             [
-                chrome,
+                found,
                 "--headless=new",
                 "--disable-gpu",
                 "--no-sandbox",
@@ -194,6 +201,7 @@ async def main(url: str) -> int:
                 "--remote-debugging-port=0",  # any free port; Chrome writes which one below
                 f"--user-data-dir={profile}",
                 f"--window-size={WIDTH},{HEIGHT}",
+                *flags,
                 "about:blank",
             ],
             stdout=subprocess.DEVNULL,
@@ -210,21 +218,29 @@ async def main(url: str) -> int:
             if not (port_file.exists() and port_file.read_text().strip()):
                 ended = browser.poll()
                 why = f"exited with {ended}" if ended is not None else "wrote no debugging port"
-                print(f"{chrome} did not start ({why}); the page was not checked. It said:")
                 log.seek(0)
-                print(log.read().decode(errors="replace")[-2000:] or "(nothing)")
-                return 1
+                said = log.read().decode(errors="replace")[-2000:] or "(nothing)"
+                raise NoChrome(f"{found} did not start ({why}). It said:\n{said}")
             port = port_file.read_text().split()[0]
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=10) as response:
                 tab = next(t for t in json.load(response) if t["type"] == "page")
             async with websockets.connect(tab["webSocketDebuggerUrl"], max_size=None) as socket:
-                try:
-                    found = await check(Page(socket), url.rstrip("/"))
-                except (TimeoutError, RuntimeError) as e:
-                    found = [f"the check could not finish: {e or 'the page stopped answering'}"]
+                yield Page(socket)
         finally:
             browser.terminate()
             browser.wait()
+
+
+async def main(url: str) -> int:
+    try:
+        async with chrome() as page:
+            try:
+                found = await check(page, url.rstrip("/"))
+            except (TimeoutError, RuntimeError) as e:
+                found = [f"the check could not finish: {e or 'the page stopped answering'}"]
+    except NoChrome as e:
+        print(f"{e}; the page was not checked")
+        return 1
     for line in found:
         print(f"WRONG: {line}")
     print("the page holds together" if not found else f"{len(found)} things wrong with the page")

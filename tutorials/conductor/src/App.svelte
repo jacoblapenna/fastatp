@@ -54,7 +54,7 @@
     if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') stepNext();
   }
   // what the current step points at: a key concept's targets, or a caption's
-  let pointed = $derived(new Set(concept?.point ?? (script.step?.kind === 'say' ? script.step.point ?? [] : [])));
+  let pointed = $derived(new Set(concept?.point ?? (['say', 'you'].includes(script.step?.kind) ? script.step.point ?? [] : [])));
   let panels = $derived(new Set([...pointed].map((t) => t.split('.')[0])));
   let kept = $derived(script.open); // sections a cue keeps open
   // A score that commits records shows the conductor's repo beside the

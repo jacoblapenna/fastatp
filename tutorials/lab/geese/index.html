@@ -89,7 +89,8 @@
     let device = null; // a second device's own pen, while it asks to be let in
 
     function inside() {
-      $('who').textContent = `you are ${me.did} · your key ${me.pen}`;
+      const account = Object.assign(document.createElement('span'), { id: 'did', textContent: me.did });
+      $('who').replaceChildren('you are ', account, ` · your key ${me.pen}`);
       $('devices').replaceChildren(
         ...Object.keys(me.devices).map((pen) => {
           const li = document.createElement('li');

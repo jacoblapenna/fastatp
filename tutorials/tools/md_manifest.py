@@ -75,6 +75,20 @@ GitHub and fastatp.com do not render:
   <!-- @demo open wire -->  close         keep a folded section (alice.repo, bob.tunnel, wire)
                                           open from here on, or fold it again; `close code`
                                           puts away the file a command showed
+  <!-- @demo you app POST /signup -->     right under the paragraph that tells the viewer
+                                          what to do in the app: that paragraph is their
+                                          turn. The show waits, with Next off, until the
+                                          app sends this request through the page (a path
+                                          on the app's machine; it starts with the one
+                                          given), answered with a 2xx or with the status
+                                          given after it (... getRepo 404). `app` is this
+                                          browser, `phone` the second device: it is what
+                                          the turn points at
+  <!-- @demo do app click #signup -->     under a `you` cue: what the headless play does
+                                          for the viewer, in order. click <selector>,
+                                          tick <selector> (a checkbox, left ticked),
+                                          copy <selector> <device> <selector> (fill an
+                                          input with what another element says), reload
   <!-- @demo point alice.tunnel diagram --> right after a key concept or a paragraph: what it
                                           points at, outlined and opened while it is on
   ![what it shows](sketches/private-repo.svg)
@@ -175,7 +189,10 @@ VISIBLE = (
     "concept",
     "chapter",
     "ask",
-)  # one press of Next each
+    "you",
+)  # one press of Next each (a "you" step's press is the viewer's own, in the app)
+DEVICES = ("app", "phone")  # this browser, and the second device
+ACTIONS = {"click": 1, "tick": 1, "copy": 3, "reload": 0}  # what a `do` cue can do, and its words
 LONG_RUNNING = ("follow.py", "tail.py")  # these stay up until Ctrl-C, or until they give up
 
 
@@ -371,9 +388,67 @@ def parse(text: str) -> dict:
             elif verb == "blurb":
                 if steps and steps[-1]["kind"] == "chapter":
                     steps[-1]["blurb"] = arg
+            elif verb == "you":
+                words = arg.split()
+                if app is None:
+                    raise SystemExit(f"line {i}: @demo you needs an app (@demo app ...) above it")
+                if (
+                    len(words) not in (3, 4)
+                    or words[0] not in DEVICES
+                    or words[1] not in ("GET", "POST")
+                    or not words[2].startswith("/")
+                    or (len(words) == 4 and not words[3].isdigit())
+                ):
+                    raise SystemExit(
+                        f"line {i}: @demo you names a device ({' or '.join(DEVICES)}), and the"
+                        " request that says it is done (POST /signup, or GET /path 404)"
+                    )
+                if not say:
+                    raise SystemExit(
+                        f"line {i}: @demo you goes right under the paragraph that tells the"
+                        " viewer what to do"
+                    )
+                turn = say.pop()  # the paragraph just above is the viewer's turn
+                emit_say()
+                emit(
+                    {
+                        "kind": "you",
+                        **turn,
+                        "device": words[0],
+                        "until": {
+                            "method": words[1],
+                            "path": words[2],
+                            "status": int(words[3]) if len(words) == 4 else None,
+                        },
+                        "do": [],
+                        "point": [words[0]],
+                    }
+                )
+            elif verb == "do":
+                words = arg.split()
+                if not steps or steps[-1]["kind"] != "you":
+                    raise SystemExit(f"line {i}: @demo do goes under a @demo you cue")
+                if len(words) < 2 or words[0] not in DEVICES or words[1] not in ACTIONS:
+                    raise SystemExit(
+                        f"line {i}: @demo do names a device and one of {', '.join(ACTIONS)}"
+                    )
+                device, action, rest = words[0], words[1], words[2:]
+                if action == "click" and rest:
+                    rest = [" ".join(rest)]  # a selector may have spaces: #devices button
+                if len(rest) != ACTIONS[action] or (action == "copy" and rest[1] not in DEVICES):
+                    raise SystemExit(
+                        f"line {i}: @demo do {action} takes"
+                        + {
+                            "click": " a selector",
+                            "tick": " a selector",
+                            "copy": " a selector, a device and a selector",
+                            "reload": " nothing",
+                        }[action]
+                    )
+                steps[-1]["do"].append({"device": device, "action": action, "args": rest})
             elif verb == "point":
                 emit_say()  # the paragraph just above is the step that points
-                if steps and steps[-1]["kind"] in ("concept", "say"):
+                if steps and steps[-1]["kind"] in ("concept", "say", "you"):
                     steps[-1]["point"] = arg.split()
             else:
                 raise SystemExit(f"line {i}: unknown @demo directive {verb!r}")
@@ -530,7 +605,7 @@ def parse(text: str) -> dict:
             if active:  # the picture goes with the words just above it
                 if say:
                     say[-1]["sketch"] = path
-                elif steps and steps[-1]["kind"] == "say":
+                elif steps and steps[-1]["kind"] in ("say", "you"):
                     steps[-1]["sketch"] = path
                 elif steps and steps[-1]["kind"] == "concept":
                     steps[-1]["sketch"] = path
@@ -644,6 +719,7 @@ def chapters(steps: list[dict]) -> list[dict]:
             "concepts": [s["title"] for s in g if s["kind"] == "concept"],
             "presses": sum(1 for s in g if s["kind"] in VISIBLE),
             "commands": sum(1 for s in g if s["kind"] == "run"),
+            "turns": sum(1 for s in g if s["kind"] == "you"),  # what the viewer does in the app
         }
         for g in ordered
     ]

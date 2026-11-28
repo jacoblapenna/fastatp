@@ -21,8 +21,43 @@ Geese is one machine: the app's host.
 ./lab.sh geese curl -s localhost/whoami
 ```
 
+Tick keep me signed in, then press Sign up.
+<!-- @demo you app POST /signup -->
+<!-- @demo do app tick #keep -->
+<!-- @demo do app click #signup -->
+
+Reload this browser, then press Log in.
+<!-- @demo you app GET /xrpc/com.atproto.sync.getRepo -->
+<!-- @demo do app reload -->
+<!-- @demo do app click #login -->
+
 A second device is the same app, with storage of its own.
 
 <!-- @demo open phone -->
+
+On the second device, choose I already have an account, paste your account,
+make this device's key, and press Log in.
+<!-- @demo you phone GET /xrpc/com.atproto.sync.getRepo 404 -->
+<!-- @demo do phone click #existing -->
+<!-- @demo do phone copy #account app #did -->
+<!-- @demo do phone click #mint -->
+<!-- @demo do phone click #login2 -->
+
+In this browser, paste the second device's key and press Let this device in.
+<!-- @demo you app POST /push-car -->
+<!-- @demo do app copy #device phone #mypen -->
+<!-- @demo do app click #add -->
+
+On the second device, press Log in again.
+<!-- @demo you phone GET /xrpc/com.atproto.sync.getRepo 200 -->
+<!-- @demo do phone click #login2 -->
+
+In this browser, remove the second device.
+<!-- @demo you app POST /push-car -->
+<!-- @demo do app click #devices button -->
+
+On the second device, press Log in once more.
+<!-- @demo you phone GET /xrpc/com.atproto.sync.getRepo 404 -->
+<!-- @demo do phone click #login2 -->
 
 <!-- @demo end -->

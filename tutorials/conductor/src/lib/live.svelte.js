@@ -15,6 +15,7 @@ export const live = $state({
   speed: 1,
   done: false,
   until: null, // a chapter's first step the conductor is hurrying to
+  you: null, // the viewer's turn the conductor is waiting on: they act in the app, and the show moves
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
   commits: {}, // step -> a record the conductor signed for members, and their answers so far
@@ -30,7 +31,7 @@ function emptyRepo() {
 const KEEP = 400; // records the conductor's list keeps on screen; its count says how many there are
 
 // What one press of Next shows; what Back looks at again.
-export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask'];
+export const VISIBLE = ['run', 'restart', 'stop', 'commit', 'say', 'concept', 'chapter', 'ask', 'you'];
 
 // Looking back: how many visible steps behind the conductor the page is
 // showing. The machines stay where they are, because every step really ran;
@@ -95,7 +96,7 @@ export function send(type, extra = {}) {
 
 function status(msg) {
   if (msg.cursor !== live.cursor) view.back = 0; // the show moved on: stop looking back
-  for (const k of ['cursor', 'mode', 'concept', 'speed', 'done', 'until']) live[k] = msg[k];
+  for (const k of ['cursor', 'mode', 'concept', 'speed', 'done', 'until', 'you']) live[k] = msg[k];
 }
 
 // Only the machines the score names get a panel, and only a whole number is
@@ -299,7 +300,7 @@ export function scriptState(manifest, cursor) {
     // a command shows the file it runs, beside its machine, until the next command
     if (step.kind === 'run') s.code = step.code ? { ...step.code, machine: step.machine } : null;
     if (step.kind === 'commit') s.code = step.code && step.machines.length ? { ...step.code, machine: step.machines[0] } : null;
-    if (step.kind === 'say') [s.say, s.ask] = [step.text, ''];
+    if (step.kind === 'say' || step.kind === 'you') [s.say, s.ask] = [step.text, '']; // a turn is a caption you act on
     if (step.kind === 'ask') s.ask = step.text; // stays up through the command it asks about
     if (step.kind === 'run' || step.kind === 'restart') s.active = step.machine;
     // what last happened: a command (watch its terminal) or a commit (watch the repos)

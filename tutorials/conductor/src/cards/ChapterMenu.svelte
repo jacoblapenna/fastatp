@@ -51,7 +51,7 @@
     {#each chapters as c, i (c.number)}
       {@const s = standing(c, i)}
       <button class="card {s}" onclick={() => pick(c)} disabled={busy || chosen !== null || !live.connected}>
-        <div class="meta">{c.number} · {c.presses} presses · {c.commands} commands</div>
+        <div class="meta">{c.number} · {c.presses} presses · {c.commands} commands{#if c.turns} · {c.turns} turns in the app{/if}</div>
         <h2>{c.title}</h2>
         <p class="blurb">{c.blurb}</p>
         <div class="concepts">
