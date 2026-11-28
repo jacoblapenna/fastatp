@@ -19,6 +19,9 @@ GitHub and fastatp.com do not render:
   <!-- @demo machines alice bob eve -->   who is in the cast: the machines that boot, and
                                           no others (`./lab.sh conductor` reads it)
   <!-- @demo peer orchestra.py -->        the program the machines run in place of peer.py
+  <!-- @demo app geese /app/ -->          a machine's own web app, shown on the page as the
+                                          browser in front of you (and, opened with
+                                          `open phone`, as a second device's)
   <!-- @demo peer bank bank.py -->        the program one machine runs; it wins over the
                                           one for all (`./lab.sh conductor` reads both)
   <!-- @demo start -->  <!-- @demo end --> what the screen plays (any number of ranges)
@@ -181,6 +184,7 @@ def parse(text: str) -> dict:
     peer = "peer.py"  # the program the machines run
     peers: dict[str, str] = {}  # a machine's own program, where the guide gives one
     peer_lines: dict[str, int] = {}  # where each was given, for the error that names it
+    app: dict | None = None  # a machine's own web app, embedded on the page
     steps: list[dict] = []
     active = False
     say: list[dict] = []  # prose since the last step: a caption per paragraph
@@ -254,6 +258,13 @@ def parse(text: str) -> dict:
             i += 1
             if verb == "machines":
                 machines = arg.split()
+            elif verb == "app":
+                words = arg.split()
+                if len(words) != 2 or not words[1].startswith("/"):
+                    raise SystemExit(
+                        f"line {i}: @demo app names a machine and a path (geese /app/)"
+                    )
+                app = {"machine": words[0], "path": words[1], "line": i}
             elif verb == "peer":
                 words = arg.split()
                 if len(words) not in (1, 2) or not PROGRAM.match(words[-1]):
@@ -570,6 +581,10 @@ def parse(text: str) -> dict:
 
     if commit_cue:
         raise SystemExit(f"line {commit_cue[0]}: @demo commit needs a ```json record under it")
+    if app is not None and app["machine"] not in machines:
+        raise SystemExit(
+            f"line {app['line']}: @demo app is served by {app['machine']}, not in the cast"
+        )
     if strangers := sorted(set(peers) - set(machines)):
         raise SystemExit(
             f"line {peer_lines[strangers[0]]}: @demo peer gives a program to {strangers[0]},"
@@ -583,6 +598,7 @@ def parse(text: str) -> dict:
         "machines": machines,
         "peer": peer,
         "peers": {name: peers.get(name, peer) for name in machines},  # what each machine runs
+        "app": None if app is None else {"machine": app["machine"], "path": app["path"]},
         "chapters": menu,
         "files": files,
         "images": images,

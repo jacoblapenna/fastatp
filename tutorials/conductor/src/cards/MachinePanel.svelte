@@ -9,7 +9,7 @@
   import RepoList from './RepoList.svelte';
   import WgPeers from './WgPeers.svelte';
 
-  let { m, size, active, focus = false, repos = false, pointed = new Set(), kept = new Set(), now } = $props();
+  let { m, size, active, focus = false, repos = false, backstage = false, pointed = new Set(), kept = new Set(), now } = $props();
   let id = $derived(m.identity);
   let chosen = $state({ repo: false, tunnel: false, terminal: false }); // what the viewer opened by hand
   let last = $derived(m.order.length ? m.procs[m.order.at(-1)].display.replace(`./lab.sh ${m.name} `, '') : '');
@@ -29,6 +29,9 @@
     <strong>{m.name}.lan</strong>
     {#if id}<span class="did">{id.did}</span>{/if}
   </header>
+  {#if backstage}
+    <div class="backstage">backstage: a real app shows you none of this</div>
+  {/if}
 
   {#if size === 'collapsed'}
     <div class="summary">
@@ -105,6 +108,7 @@
   header .did { font: 11px var(--font-mono); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-danger); align-self: center; }
   .dot.up { background: var(--color-verified); }
+  .backstage { padding: 3px 10px; font-size: 11px; color: var(--color-text-muted); background: var(--color-terminal-bg); border-bottom: 1px dashed var(--color-border); }
   .summary { padding: 8px 10px; color: var(--color-text-muted); font-size: 12px; }
   .body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 6px 6px 6px; gap: 4px; }
   .section { flex: 0 0 auto; padding: 3px 4px; border-radius: 8px; transition: box-shadow 0.3s; }

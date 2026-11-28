@@ -8,6 +8,7 @@
   import Caption from './cards/Caption.svelte';
   import MachinePanel from './cards/MachinePanel.svelte';
   import ConductorPanel from './cards/ConductorPanel.svelte';
+  import AppPanel from './cards/AppPanel.svelte';
   import NetDiagram from './cards/NetDiagram.svelte';
   import WireLane from './cards/WireLane.svelte';
   import KeyConcept from './cards/KeyConcept.svelte';
@@ -63,6 +64,7 @@
   // Machines that keep private repos (Hoot's agents) show them, all at once,
   // whenever the step is not a command: the repos are the screen.
   let privateRepos = $derived(Object.values(live.machines).some((m) => m.private?.length));
+  let app = $derived(live.manifest?.app ?? null); // a machine's own web app, embedded
   let command = $derived(['run', 'restart', 'stop'].includes(script.step?.kind));
   let repos = $derived((commits && script.last === 'commit') || (privateRepos && !command));
 
@@ -100,9 +102,16 @@
   <Caption {script} back={view.back} />
 
   <main class="machines">
+    {#if app}
+      <!-- the app, as a person meets it; the machines beside it are backstage -->
+      <AppPanel {app} pointed={pointed.has('app')} />
+      {#if kept.has('phone') || pointed.has('phone')}
+        <AppPanel {app} device="a second device" pointed={pointed.has('phone')} />
+      {/if}
+    {/if}
     {#each live.manifest?.machines ?? [] as name (name)}
       <MachinePanel m={live.machines[name]} size={size(name)} active={script.active === name && !concept}
-        focus={focused(name) && !repos} {repos} {pointed} {kept} {now} />
+        focus={focused(name) && !repos} {repos} {pointed} {kept} {now} backstage={!!app} />
       {#if script.code?.machine === name && live.manifest?.files?.[script.code.file]}
         {#key script.code.file + script.code.focus}
           <CodeCard name={script.code.file} file={live.manifest.files[script.code.file]} focus={script.code.focus} />

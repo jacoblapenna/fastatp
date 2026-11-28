@@ -27,12 +27,13 @@ from pathlib import Path
 
 import peer  # this machine's peer, exactly as guide one left it
 import uvicorn
+from dids import resolver
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from fastatp import DIDServer, crypto
+from fastatp import DIDServer, RepoMirror, crypto
 from fastatp.browser import browser_peer_assets
 from fastatp.crypto import PublicKey
 from fastatp.did.document import DIDDocument
@@ -122,6 +123,30 @@ async def push_car(request: Request) -> Response:
     return JSONResponse({"accepted": handle.repo.rev})
 
 
+async def mine(request: Request) -> JSONResponse:
+    """/mine: the repos this host keeps for people who signed up, as the host
+    sees them. Only this machine may ask; the demo shows it backstage. Each is
+    read back like any reader would, signature and every hash checked: the
+    host can show them, and can't have written a byte of them."""
+    if (denied := peer.local_only(request)) is not None:
+        return denied
+    found = []
+    for did, handle in hosted.items():
+        mirror = RepoMirror(
+            did, resolver=resolver()
+        )  # the identity's document, as anyone resolves it
+        await mirror.load_checkpoint(handle.repo.export_car())
+        records = [
+            {"path": path, "cid": cid.encode(), "value": mirror.get_record(*path.split("/"))}
+            for path, cid in sorted(mirror.entries.items())
+        ]
+        name = did.rsplit(":", 1)[-1][
+            :8
+        ]  # a name a person would never choose: a slice of the key's hash
+        found.append({"name": name, "did": did, "readers": ["its own pen"], "records": records})
+    return JSONResponse(found)
+
+
 async def main() -> None:
     app = await peer.boot()
     gate = BrowserGate()  # a browser reads its own repo by signing a one-time challenge
@@ -139,6 +164,7 @@ async def main() -> None:
         gate.route(),
         Route("/signup", signup, methods=["POST"]),
         Route("/push-car", push_car, methods=["POST"]),
+        Route("/mine", mine),
         Route("/", lambda request: RedirectResponse("/app/")),
         Mount("/app", StaticFiles(directory=APP, html=True)),
         Mount("/fastatp", browser_peer_assets()),

@@ -627,3 +627,15 @@ def test_hoot_is_a_playable_score():
     ]
     last = score["chapters"][-1]["start"]
     assert runs[-1]["cmd"] == "python custody.py" and steps.index(runs[-1]) > last
+
+
+def test_a_guide_can_show_a_machine_s_app():
+    """`@demo app geese /app/` names a machine's own web app for the page to
+    show as the browser in front of you; the machine must be in the cast."""
+    md_manifest = _tool("md_manifest")
+    score = md_manifest.parse("<!-- @demo machines geese -->\n<!-- @demo app geese /app/ -->\n")
+    assert score["app"] == {"machine": "geese", "path": "/app/"}
+    assert md_manifest.parse("<!-- @demo machines geese -->\n")["app"] is None
+    for bad in ("<!-- @demo app bob /app/ -->", "<!-- @demo app geese app/ -->"):
+        with pytest.raises(SystemExit):
+            md_manifest.parse(f"<!-- @demo machines geese -->\n{bad}\n")
