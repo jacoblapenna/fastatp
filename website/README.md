@@ -39,3 +39,9 @@ uv run python website/build.py --serve   # and serves it on :8000
   the output and it leaves its index in `pagefind/`. Only an `<article>`
   marked `data-pagefind-body` is indexed, so the 404 and the search page
   itself are not. `/search/?q=word` opens with that search made.
+- `pages/status.md` is "Where FastATP stands": each check it claims links
+  to the test that makes it, so a test that moves fails the build.
+  `llms.txt` lists it first, then the README and the philosophy, then the
+  guides in series order; `llms-full.txt` is those core pages in one file.
+  `DESCRIPTIONS` in `build.py` holds the one-line descriptions written by
+  hand; every other page is described by its first paragraph.

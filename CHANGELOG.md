@@ -32,7 +32,9 @@ To upgrade safely within one minor line, pin with `~=`, for example
   `docs/` are its Resources, beside the first interactive explainer: how
   a repo's tree keeps its records in order while its shape changes.
   Every page can be searched from `/search/`, from an index built with
-  the site.
+  the site. "Where FastATP stands" says what has been checked and by
+  what, what has not, and the known limits; `llms.txt` leads with it, and
+  `llms-full.txt` carries the core pages in one file.
 - The second tutorial, `tutorials/CONDUCTOR_AND_ORCHESTRA.md`: the demo
   engine that plays the first guide, taken apart, then put to work. Bob
   checks one cue and its result from the two repos alone; the machines

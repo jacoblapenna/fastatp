@@ -163,3 +163,29 @@ def test_the_decisions_page_lists_every_record(built: tuple[Path, list]) -> None
     assert records
     for record in records:
         assert f'href="/decisions/{site.slug(record.stem)}/"' in front, record.name
+
+
+def test_a_model_is_told_what_to_read_first(built: tuple[Path, list]) -> None:
+    """llms.txt leads with where the project stands, then the guides in the order they build."""
+    out, _ = built
+    site = _site()
+    llms = (out / "llms.txt").read_text()
+    assert site.NOT_FASTAPI in llms
+    order = ["## Start here", "/status.md", "/readme.md", "## Tutorials", "/tutorials/agents.md"]
+    order += [f"/tutorials/{site.slug(g.name)}.md" for g in site.guides() if g.name]
+    order += ["## API reference", "## Resources", "## Decision records"]
+    places = [llms.index(mark) for mark in order]
+    assert places == sorted(places), order
+    full = (out / "llms-full.txt").read_text()
+    for url in ("/status/", "/readme/", "/philosophy/", "/tutorials/agents/"):
+        assert f"Source: {site.SITE}{url}" in full
+
+
+def test_the_status_page_links_to_what_it_cites(built: tuple[Path, list]) -> None:
+    """Each claim of a check names its test; the build already failed if one had moved."""
+    out, _ = built
+    site = _site()
+    status = (out / "status/index.html").read_text()
+    for cited in ("tests/test_goat_oracle.py", "tests/vectors/PROVENANCE.md", "rust/crates"):
+        assert f"{site.GITHUB}/" in status and cited in status, cited
+    assert 'href="/status/"' in (out / "index.html").read_text()

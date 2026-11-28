@@ -72,13 +72,16 @@ Most people will meet this library through a coding agent, so the site is
 built for one. Give yours either of these:
 
 - <https://fastatp.com/llms.txt>: every page on this site, each with a
-  markdown copy.
+  markdown copy. <https://fastatp.com/llms-full.txt> is the core of it in
+  one file.
 - [The page for coding agents](../../tutorials/AGENTS.md): how an agent
   runs a tutorial by itself, in about five minutes, and answers from what
   the machines did.
 
 ## Dive in
 
+- [Where it stands](status.md): what has been checked and by what, what
+  has not, and the known limits.
 - [The README](../../README.md): what FastATP does, and how to install it.
 - [The philosophy](../../PHILOSOPHY.md): the seven tenets, and what they
   forbid.

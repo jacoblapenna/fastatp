@@ -432,6 +432,9 @@ def json_ld() -> str:
         "@type": "SoftwareSourceCode",
         "name": "FastATP",
         "description": PROJECT["description"],
+        # for search engines and models, which confuse the two names; a
+        # person on the site sees the brand on every page
+        "disambiguatingDescription": NOT_FASTAPI,
         "url": SITE,
         "codeRepository": GITHUB,
         "programmingLanguage": "Python",
@@ -535,12 +538,50 @@ def sitemap(pages: list[Page], live: list[Explainer]) -> str:
     )
 
 
+# What a reader who has ten seconds, or a model deciding what to fetch, is
+# told about the pages that matter most. Every other page is described by
+# its own first paragraph.
+DESCRIPTIONS = {
+    "/status/": (
+        "What has been checked and by what, what has not been done, and the known limits: "
+        "the page to read before deciding whether FastATP fits."
+    ),
+    "/readme/": (
+        "What FastATP does, how it compares with MCP and A2A and when they fit better, "
+        "how to install it, and a five-minute example that signs a record and verifies it."
+    ),
+    "/philosophy/": "The seven tenets FastATP is held to, and what each one forbids.",
+    "/tutorials/": (
+        "The guides in order, and how to watch one played on your own machine in Docker."
+    ),
+    "/tutorials/readme/": (
+        "How the tutorials run: typed along, watched in the browser, or played headless."
+    ),
+    "/changelog/": "Every release, with breaking changes listed under their own heading.",
+    "/decisions/": "The architecture decision records: one design call per file.",
+}
+
+# The pages a model should read first, and the ones llms-full.txt carries whole.
+CORE = ("/status/", "/readme/", "/philosophy/", "/tutorials/agents/", "/")
+NOT_FASTAPI = "The name is FastATP, for the AT Protocol (atproto). It is not FastAPI."
+
+
+def tutorials_in_order(pages: list[Page]) -> list[Page]:
+    """For an agent first, then the front page, then the guides as numbered."""
+    by_url = {p.url: p for p in pages if p.url.startswith("/tutorials/")}
+    order = ["/tutorials/agents/", "/tutorials/"]
+    order += [f"/tutorials/{slug(g.name)}/" for g in guides() if g.name]
+    first = [by_url.pop(url) for url in order if url in by_url]
+    return first + list(by_url.values())
+
+
 def llms_txt(pages: list[Page]) -> str:
     def row(p: Page) -> str:
         return f"- [{p.title}]({SITE}{twin_url(p.url)}): {p.description}"
 
-    tutorials = [p for p in pages if p.url.startswith("/tutorials/")]
-    main = [p for p in pages if p.url in ("/", "/readme/", "/philosophy/")]
+    by_url = {p.url: p for p in pages}
+    main = [by_url[url] for url in CORE if url in by_url and not url.startswith("/tutorials/")]
+    tutorials = tutorials_in_order(pages)
     resources = [p for p in pages if p.url.startswith("/resources/")]
     decisions = [p for p in pages if p.url.startswith("/decisions/")]
     reference = [p for p in pages if p.url.startswith("/api/")]
@@ -552,17 +593,20 @@ def llms_txt(pages: list[Page]) -> str:
             "",
             f"> {PROJECT['description']}",
             "",
+            NOT_FASTAPI,
+            "",
             "Each page on this site has a markdown copy: replace the trailing",
             "slash of its address with `.md` (the home page is `/index.md`).",
+            f'The pages under "Start here" are also in one file: {SITE}/llms-full.txt.',
             f"The source is {GITHUB}.",
-            "",
-            "## Tutorials",
-            "",
-            *map(row, tutorials),
             "",
             "## Start here",
             "",
             *map(row, main),
+            "",
+            "## Tutorials",
+            "",
+            *map(row, tutorials),
             "",
             "## API reference",
             "",
@@ -582,6 +626,18 @@ def llms_txt(pages: list[Page]) -> str:
             "",
         ]
     )
+
+
+def llms_full(pages: list[Page]) -> str:
+    """The core pages' markdown in one file, for a reader that fetches once."""
+    by_url = {p.url: p for p in pages}
+    parts = [f"# FastATP\n\n> {PROJECT['description']}\n\n{NOT_FASTAPI}\n"]
+    for url in CORE:
+        if url == "/":
+            continue  # the landing page is the maintainer's essay, linked from the others
+        page = by_url[url]
+        parts.append(f"---\n\nSource: {SITE}{page.url}\n\n{page.markdown.strip()}\n")
+    return "\n".join(parts)
 
 
 def write(out: Path, url_path: str, text: str) -> None:
@@ -621,6 +677,8 @@ def build(out: Path, require_explainers: bool = False) -> list[Page]:
     landing = next(p for p in pages if p.url == "/")
     landing.title, landing.description = "FastATP", PROJECT["description"]
     next(p for p in pages if p.url == "/readme/").title = "README"
+    for p in pages:
+        p.description = p.description or DESCRIPTIONS.get(p.url, "")
     series = guides()
     front = next(p for p in pages if p.url == "/tutorials/")
     if "<!-- guides -->" not in front.markdown:
@@ -673,6 +731,7 @@ def build(out: Path, require_explainers: bool = False) -> list[Page]:
     (out / "sitemap.xml").write_text(sitemap(pages, live))
     (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\n\nSitemap: {SITE}/sitemap.xml\n")
     (out / "llms.txt").write_text(llms_txt(pages))
+    (out / "llms-full.txt").write_text(llms_full(pages))
     (out / "CNAME").write_text("fastatp.com\n")
     (out / ".nojekyll").write_text("")
     search_index(out)
