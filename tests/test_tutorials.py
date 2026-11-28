@@ -29,7 +29,12 @@ def _tool(name: str):
 
 # Every guide, and how many lab files it quotes in full. CI plays each one
 # (the tutorial job in .github/workflows/test.yml has the same list).
-GUIDES = {"GETTING_STARTED.md": 8, "CONDUCTOR_AND_ORCHESTRA.md": 4, "HOOT.md": 8}
+GUIDES = {
+    "GETTING_STARTED.md": 8,
+    "CONDUCTOR_AND_ORCHESTRA.md": 4,
+    "HOOT.md": 8,
+    "GEESE.md": 1,
+}
 
 # The steps the headless play holds to an outcome: a command that must end as
 # the guide says, a reboot that must come back, a committed record whose
@@ -197,6 +202,8 @@ def test_a_cue_carries_its_whole_step(guide):
         seen.add(cue.action)
         if kind in ("say", "ask"):
             assert cue.text == step["text"]
+        elif kind == "you":  # the viewer's turn, and the request that ends it
+            assert cue.text == step["text"] and cue.display == step["display"]
         elif kind == "concept":
             assert cue.title == step["title"] and cue.text == step["body"]
             assert cue.style in ("key", "important", "tip")
@@ -222,6 +229,9 @@ def test_a_cue_carries_its_whole_step(guide):
         return
     if guide == "HOOT.md":
         assert {"say", "concept", "heading", "run", "wait", "chapter", "ask"} <= seen
+        return
+    if guide == "GEESE.md":
+        assert {"say", "concept", "heading", "run", "you", "open", "chapter", "ask"} <= seen
         return
     assert {
         "say",
@@ -660,6 +670,7 @@ def test_a_viewer_takes_a_turn_in_the_app():
     assert [s["kind"] for s in steps] == ["say", "you"]
     turn = steps[1]
     assert turn["text"] == "Paste your account and press Log in."
+    assert turn["display"] == "GET /xrpc/com.atproto.sync.getRepo 404"
     assert turn["point"] == ["phone"]
     assert turn["until"] == {
         "method": "GET",

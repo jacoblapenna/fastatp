@@ -428,12 +428,16 @@ async def your_turn(step: dict) -> None:
     await status()
 
 
-async def heard(machine: str, method: str, path: str, query: dict, code: int) -> None:
-    """A request the page made of an app, through the relay: told, and maybe the turn's end."""
+async def heard(machine: str, host: str, method: str, path: str, query: dict, code: int) -> None:
+    """A request the page made of an app, through the relay: told, and maybe the turn's end.
+
+    host is the name the browser used for this computer: the page tells its
+    two devices apart by it (localhost or 127.0.0.1)."""
     await tell(
         {
             "type": "http",
             "machine": machine,
+            "host": host,
             "t": time.time(),
             "method": method,
             "path": path,
@@ -703,6 +707,7 @@ async def relay(request) -> Response:
     ):  # not the page's own files
         await heard(
             name,
+            request.url.hostname or "",
             request.method,
             "/" + request.path_params["path"],
             dict(request.query_params),

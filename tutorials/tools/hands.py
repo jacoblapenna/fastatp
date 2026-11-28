@@ -112,7 +112,8 @@ async def play(page: Page, url: str) -> int:
     socket_url = url.replace("http", "ws", 1) + "/ws"
     for _ in range(60):  # the conductor may still be starting
         try:
-            ws = await websockets.connect(socket_url, max_size=None)
+            # read only between turns: an unbounded queue keeps keepalive pings answered
+            ws = await websockets.connect(socket_url, max_size=None, max_queue=None)
             break
         except (OSError, websockets.exceptions.InvalidMessage):
             await asyncio.sleep(0.5)

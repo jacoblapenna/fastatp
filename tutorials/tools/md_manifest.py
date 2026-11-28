@@ -100,7 +100,8 @@ GitHub and fastatp.com do not render:
                                           a question before a command, for the viewer to
                                           answer in their head; the next press shows
   <!-- @demo code peer.py "async def commit(" -->
-                                          the next block's commands reach this file, here;
+                                          the next block's commands (or the next turn's
+                                          request) reach this file, here;
                                           a command that runs `python x.py` says so itself
   <!-- @demo terminal -->...<!-- @demo /terminal -->
                                           prose for the person at a terminal ("Ctrl-C it",
@@ -415,6 +416,7 @@ def parse(text: str) -> dict:
                         "kind": "you",
                         **turn,
                         "device": words[0],
+                        "display": " ".join(words[1:]),  # what ends it, carried by its cue
                         "until": {
                             "method": words[1],
                             "path": words[2],
@@ -424,6 +426,9 @@ def parse(text: str) -> dict:
                         "point": [words[0]],
                     }
                 )
+                if code_cue:  # the route the request reaches, beside the app's machine
+                    steps[-1]["code"] = dict(code_cue)
+                    code_cue = None
             elif verb == "do":
                 words = arg.split()
                 if not steps or steps[-1]["kind"] != "you":

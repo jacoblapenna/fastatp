@@ -4,7 +4,9 @@
   // same app on the other name for this computer (localhost and 127.0.0.1
   // are two origins), so it has storage of its own, and keys of its own:
   // to the browser, it is another device.
-  let { app, device = 'this browser', pointed = false } = $props();
+  import { live } from '../lib/live.svelte.js';
+
+  let { app, device = 'this browser', pointed = false, wire = false } = $props();
 
   function origin() {
     if (device === 'this browser') return '';
@@ -16,6 +18,15 @@
   let frame = $state(null);
   // a browser's reload: the app starts again from what this device keeps
   const reload = () => frame && (frame.src = src);
+
+  // What this device sent the app, newest last: everything that crossed the
+  // wire, so a viewer can see there is no password or token in any of it.
+  let me = $derived(device === 'this browser' ? location.hostname : origin().split('//')[1]?.split(':')[0]);
+  let sent = $derived(live.http.filter((h) => h.host === me && h.machine === app.machine).slice(-4));
+  const short = (v) => (String(v).length > 12 ? `${String(v).slice(0, 10)}…` : v); // enough to see each field
+  const shown = (h) =>
+    h.path.replace(/^\/xrpc\//, '') +
+    (Object.keys(h.query).length ? '?' + Object.entries(h.query).map(([k, v]) => `${k}=${short(v)}`).join('&') : '');
 </script>
 
 <section class="panel" class:pointed data-anchor={anchor}>
@@ -26,6 +37,14 @@
     <button class="reload" onclick={reload} title="reload, as a browser does">↻</button>
   </header>
   <iframe bind:this={frame} title="{app.machine}: {device}" {src} data-device={anchor}></iframe>
+  <div class="sent" class:pointed={wire} data-anchor="{anchor}.wire">
+    <div class="label">what {device} sent {app.machine}, all of it</div>
+    {#each sent as h, i (h.t + ':' + i)}
+      <div class="line"><span class="method">{h.method}</span> {shown(h)} <span class:bad={h.status >= 400}>→ {h.status}</span></div>
+    {:else}
+      <div class="line quiet">nothing yet</div>
+    {/each}
+  </div>
 </section>
 
 <style>
@@ -38,5 +57,12 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary); align-self: center; }
   .where { font: 11px var(--font-mono); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .reload { margin-left: auto; background: none; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-soft); cursor: pointer; padding: 0 7px; font-size: 13px; }
+  .sent { border-top: 1px solid var(--color-border); padding: 6px 10px; background: var(--color-terminal-bg); font: 11px var(--font-mono); color: var(--color-text-soft); min-height: 76px; }
+  .sent.pointed { box-shadow: inset 0 0 0 2px var(--color-highlight); }
+  .sent .label { color: var(--color-text-muted); font-family: var(--font-sans, system-ui); font-size: 11px; margin-bottom: 2px; }
+  .sent .line { word-break: break-all; }
+  .sent .method { color: var(--color-accent-text); }
+  .sent .bad { color: var(--color-danger); }
+  .sent .quiet { color: var(--color-text-muted); }
   iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 </style>

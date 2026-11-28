@@ -104,9 +104,9 @@
   <main class="machines">
     {#if app}
       <!-- the app, as a person meets it; the machines beside it are backstage -->
-      <AppPanel {app} pointed={pointed.has('app')} />
-      {#if kept.has('phone') || pointed.has('phone')}
-        <AppPanel {app} device="a second device" pointed={pointed.has('phone')} />
+      <AppPanel {app} pointed={pointed.has('app')} wire={pointed.has('app.wire')} />
+      {#if kept.has('phone') || panels.has('phone')}
+        <AppPanel {app} device="a second device" pointed={pointed.has('phone')} wire={pointed.has('phone.wire')} />
       {/if}
     {/if}
     {#each live.manifest?.machines ?? [] as name (name)}
@@ -127,8 +127,13 @@
   </footer>
 
   <div class="harness">
-    the conductor plays the guide for you: these buttons are you typing its commands.
-    The records, signatures and tunnels are real.
+    {#if app}
+      the app on the left is yours: what you do in it is real, and the show waits for you.
+      The conductor plays the rest. The keys, records and signatures are real.
+    {:else}
+      the conductor plays the guide for you: these buttons are you typing its commands.
+      The records, signatures and tunnels are real.
+    {/if}
   </div>
 
   {#if concept && !menu}
