@@ -576,9 +576,12 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "griffe" },
     { name = "hatchling" },
     { name = "libipld" },
+    { name = "markdown-it-py" },
     { name = "mypy" },
+    { name = "pagefind", extra = ["bin"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -597,10 +600,13 @@ requires-dist = [
     { name = "atproto-sensorthings", marker = "extra == 'interop'" },
     { name = "cryptography", specifier = ">=50" },
     { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.100" },
+    { name = "griffe", marker = "extra == 'dev'", specifier = ">=1" },
     { name = "hatchling", marker = "extra == 'dev'" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "libipld", marker = "extra == 'dev'", specifier = ">=3.4" },
+    { name = "markdown-it-py", marker = "extra == 'dev'", specifier = ">=3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "pagefind", extras = ["bin"], marker = "extra == 'dev'", specifier = ">=1.6" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
@@ -613,6 +619,41 @@ requires-dist = [
     { name = "websockets", specifier = ">=12" },
 ]
 provides-extras = ["fastapi", "dev", "interop"]
+
+[[package]]
+name = "griffe"
+version = "2.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "griffecli" },
+    { name = "griffelib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/33/a4/be055b9ced02e39ac0ab85960e0ed3d8c6017c03e90965e77ff276684418/griffe-2.4.1.tar.gz", hash = "sha256:766123e26ec35b2ead63202e9e43ec309d876085d571b7df288256cd6fe4a3ef", size = 450805, upload-time = "2026-10-22T11:20:02.532Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/93/67a1814b4b13e9a5cc02510dbfa1d3937603140192a701c96d861b272611/griffe-2.4.1-py3-none-any.whl", hash = "sha256:ca58ccdb1d8590ad062fad837a875dd704f94acf7a0104795a098a991ceaf728", size = 5100, upload-time = "2026-10-22T11:19:58.365Z" },
+]
+
+[[package]]
+name = "griffecli"
+version = "2.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "griffelib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/8e/d3130e17ae27c900f8f76c96ceb2f02edfe0c7db0366b49e033f81ff81d7/griffecli-2.4.1.tar.gz", hash = "sha256:6db9acad984990b08c833ab5ec73d5a604e317b2290074d04c91ca9e52d35a7b", size = 61762, upload-time = "2026-10-22T11:20:01.054Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/dc/5cdbbbfd1a9e8c0e9b6b8b6e6d839e67f82cb138b77cf74856e5b80527de/griffecli-2.4.1-py3-none-any.whl", hash = "sha256:1678938e7b75a0aa34d3e408d550707a192f5297c3005aa0f92660648c30bc0a", size = 11774, upload-time = "2026-10-22T11:19:57.134Z" },
+]
+
+[[package]]
+name = "griffelib"
+version = "2.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/e2/0f5d8ed08766bc6dcd3eebf5a6623d83cbca33a6e4c90aef57156ce745ad/griffelib-2.4.1.tar.gz", hash = "sha256:40c028dd2e623f464423f0e11e3c553158f1cf4f1368239a370534d73e1407ff", size = 245153, upload-time = "2026-10-22T11:20:03.705Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/02/1156d5f5307f573b901b14373848b84e69ca6cab09169b8cc97d16a181f9/griffelib-2.4.1-py3-none-any.whl", hash = "sha256:76bc562f936ad1ce198d2cf6d0731bd5c92a7d934b69ef828ef22ee0ffdb62ce", size = 172983, upload-time = "2026-10-22T11:19:59.843Z" },
+]
 
 [[package]]
 name = "h11"
@@ -1046,6 +1087,33 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
+]
+
+[[package]]
+name = "pagefind"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/d0/911ef8922cb5035b2ea53b045c99cc03cbe8916b0238d26cd6d241b0144c/pagefind-1.6.0.tar.gz", hash = "sha256:744864df19d4dc0d75873ec9117e67328a1aaa208151c7acfca5fab03dcc41d8", size = 77717, upload-time = "2026-11-01T11:30:28.636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/5d/73cac7ac098267a65810cc46cac0c96bee7d189d289b3bd75ad0d75b19a7/pagefind-1.6.0-py3-none-any.whl", hash = "sha256:c1ab35dd3573f95a8d8f25f9ffac30db8829577b5945641d1bdbf60620a3bd5c", size = 10239, upload-time = "2026-11-01T11:30:03.039Z" },
+]
+
+[package.optional-dependencies]
+bin = [
+    { name = "pagefind-bin" },
+]
+
+[[package]]
+name = "pagefind-bin"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/16/5e95a899696f298643a3f22d712a8a4c19814bd1bedf8b36a3f92faa60b1/pagefind_bin-1.6.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:9d8f127fa574bf3d06a08ca437f45ade03f9ddfafe08dcb1c804b0145b8cb37b", size = 4554344, upload-time = "2026-11-01T11:30:05.544Z" },
+    { url = "https://files.pythonhosted.org/packages/82/be/91e2bb698e59ab7ba543b7913e9e3d093ef666ead2244ce0c8170edc3e2a/pagefind_bin-1.6.0-py3-none-macosx_12_0_x86_64.whl", hash = "sha256:5f55c560e75431f40b0b89ed1d1c89df74dc7e8a90782ce9385ce495fbfba5a2", size = 4630761, upload-time = "2026-11-01T11:30:07.646Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/1a/17c5d1e8d63ee352266ff94726372b6ef2f7f04bd5ec2c376c1c444a6e7e/pagefind_bin-1.6.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl", hash = "sha256:5622ef851ae4cdd65a15cf62657348c6d490acf92417e772ad27e77b21ad301f", size = 5000740, upload-time = "2026-11-01T11:30:09.251Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/39/f5d11ceeefefab2476a290a971a6764d7d7d28ca992a2710ba29e30d69de/pagefind_bin-1.6.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", hash = "sha256:4210638ca4eeaa26ec337d1903e4de0eae71d842feb1b1fa01055b1787504569", size = 4741287, upload-time = "2026-11-01T11:30:11.16Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/66/fa07ac15c2896ca46a3785e00010d759714e34a05157e2fa3c4dd9667f97/pagefind_bin-1.6.0-py3-none-win_amd64.whl", hash = "sha256:1adb6bf9b9ddce2a28983c8abb85211efdc7ac2d7945a3b55a95561f49f1f185", size = 4790385, upload-time = "2026-11-01T11:30:13.397Z" },
+    { url = "https://files.pythonhosted.org/packages/21/87/2ab55299f2400851fc3b9418f9cd5ca5128b564699b329ba126cf6817d4a/pagefind_bin-1.6.0-py3-none-win_arm64.whl", hash = "sha256:d2928909f37645ba44ff344bbef8b0083e45166a4d8d813101385d5b3f66d698", size = 4657065, upload-time = "2026-11-01T11:30:15.369Z" },
 ]
 
 [[package]]

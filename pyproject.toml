@@ -59,7 +59,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jacoblapenna/fastatp"
+Homepage = "https://fastatp.com"
+Documentation = "https://fastatp.com/api/"
 Repository = "https://github.com/jacoblapenna/fastatp"
 Philosophy = "https://github.com/jacoblapenna/fastatp/blob/main/PHILOSOPHY.md"
 Issues = "https://github.com/jacoblapenna/fastatp/issues"
@@ -83,6 +84,15 @@ dev = [
     # from whatever is newest on PyPI that day (uv build --no-build-isolation)
     "hatchling",
     "twine",
+    # renders the repo's markdown into fastatp.com (website/build.py); the
+    # site's test builds it, so a broken link fails here, not after a merge
+    "markdown-it-py>=3",
+    # reads the public API's signatures and docstrings from source, without
+    # importing the package, for the site's reference pages (website/api.py)
+    "griffe>=1",
+    # indexes the built site into static search files (website/build.py);
+    # the `bin` extra carries the indexer itself, so no Node is needed
+    "pagefind[bin]>=1.6",
 ]
 # Cross-ecosystem interop test (tests/test_sensorthings_interop.py): an UNMODIFIED
 # third-party package flattens a FastATP-exported CAR. It pulls in the MarshalX
@@ -103,8 +113,9 @@ packages = ["fastatp"]
 [tool.hatch.build.targets.sdist]
 # the tutorials (Docker lab, demo engine, conductor page) are the repo's, not
 # the package's: they run against the tree, never ship in a source archive.
-# The brand folder (logo files and their generator) is the repo's too.
-exclude = ["tutorials/", "brand/"]
+# The brand folder (logo files and their generator) is the repo's too, and so
+# is the website's builder.
+exclude = ["tutorials/", "brand/", "website/"]
 
 [tool.uv]
 # uv.lock's bytes depend on the uv that writes them. CI pins UV_VERSION in

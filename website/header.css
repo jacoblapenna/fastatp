@@ -1,0 +1,18 @@
+/* The header every page of the site has. It is its own file so a page the
+   builder did not write (an explainer) can link it without the reading
+   column's rules. Colors are the brand's tokens. */
+.top {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 8px 20px; max-width: 900px; margin: 0 auto; padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.top .home {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 19px; color: var(--color-text); text-decoration: none;
+}
+.top nav { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px; }
+.top nav a { color: var(--color-text-soft); text-decoration: none; }
+.top nav a:hover, .top nav a[aria-current] { color: var(--color-accent-text); }
+.top nav a[aria-current] { text-decoration: underline; text-underline-offset: 5px; }
+
+.top a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }

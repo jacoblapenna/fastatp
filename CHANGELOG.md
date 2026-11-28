@@ -22,6 +22,19 @@ To upgrade safely within one minor line, pin with `~=`, for example
   to use the uv CI pins.
 
 ### Docs
+- fastatp.com: `website/build.py` builds the site from the markdown
+  already in the repo (the README, the philosophy, `docs/`, the decision
+  records and every tutorial), read where it lives. Each page has a
+  markdown copy beside it, listed in `llms.txt`, and a link that leads
+  nowhere fails the build. Merges to `main` publish it to GitHub Pages.
+  It carries an API reference: a page for each name in `fastatp.__all__`,
+  with its signature and docstring read from the source. The notes in
+  `docs/` are its Resources, beside the first interactive explainer: how
+  a repo's tree keeps its records in order while its shape changes.
+  Every page can be searched from `/search/`, from an index built with
+  the site. "Where FastATP stands" says what has been checked and by
+  what, what has not, and the known limits; `llms.txt` leads with it, and
+  `llms-full.txt` carries the core pages in one file.
 - The second tutorial, `tutorials/CONDUCTOR_AND_ORCHESTRA.md`: the demo
   engine that plays the first guide, taken apart, then put to work. Bob
   checks one cue and its result from the two repos alone; the machines

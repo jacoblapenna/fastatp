@@ -1,0 +1,76 @@
+
+/* The site's reading column. Colors, fonts and radii are the brand's tokens
+   (tutorials/conductor/src/brand/tokens.css); nothing here names a raw one. */
+html, body { height: auto; min-height: 100%; }
+body { font-size: 17px; line-height: 1.65; }
+
+.page { max-width: 760px; margin: 0 auto; padding: 32px 16px 72px; }
+.page article { min-width: 0; overflow-wrap: anywhere; }
+.page h1 { font-size: 32px; line-height: 1.2; margin: 0 0 20px; text-wrap: balance; }
+.page h2 { font-size: 23px; line-height: 1.3; margin: 44px 0 12px; text-wrap: balance; }
+.page h3 { font-size: 19px; margin: 32px 0 10px; }
+.page h4 { font-size: 17px; margin: 24px 0 8px; }
+.page h1[align] img { max-width: 100%; height: auto; }
+.page p, .page li { color: var(--color-text-soft); }
+.page p { margin: 0 0 16px; }
+.page strong { color: var(--color-text); }
+.page a { color: var(--color-accent-text); text-underline-offset: 3px; }
+.page ul, .page ol { padding-left: 24px; margin: 0 0 16px; }
+.page li + li { margin-top: 4px; }
+.page img { max-width: 100%; height: auto; }
+.page hr { border: 0; border-top: 1px solid var(--color-border-subtle); margin: 32px 0; }
+
+.page blockquote {
+  margin: 0 0 16px; padding: 12px 16px;
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-surface); border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.page blockquote > :last-child { margin-bottom: 0; }
+
+.page pre {
+  margin: 0 0 16px; padding: 12px 14px; overflow-x: auto;
+  background: var(--color-code-bg); border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-lg); font-size: 14px; line-height: 1.5;
+}
+.page pre code { border: 0; padding: 0; background: none; font-size: inherit; }
+
+.page table {
+  display: block; overflow-x: auto; border-collapse: collapse;
+  margin: 0 0 16px; font-size: 15px;
+}
+.page th, .page td {
+  text-align: left; vertical-align: top; padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-soft);
+}
+.page th { color: var(--color-text); font-weight: 600; }
+
+.page footer {
+  margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--color-border-subtle);
+  font-size: 14px; color: var(--color-text-muted);
+}
+.page footer a { color: var(--color-text-muted); }
+
+/* The site's own word in a page: where to start, how to watch a guide. */
+.page .note {
+  margin: 0 0 24px; padding: 14px 16px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary); border-radius: var(--radius-lg);
+}
+.page .note p { margin: 0; }
+.page .note pre { margin: 12px 0 0; }
+
+.page a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* The search box and its results, in the brand's tokens. */
+#search {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--color-accent-text);
+  --pagefind-ui-text: var(--color-text);
+  --pagefind-ui-background: var(--color-surface);
+  --pagefind-ui-border: var(--color-border);
+  --pagefind-ui-tag: var(--color-surface-raised);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: var(--radius-lg);
+  --pagefind-ui-font: var(--font-sans);
+}
+#search mark { background: none; color: var(--color-accent-text); font-weight: 600; }
