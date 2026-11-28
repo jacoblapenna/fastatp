@@ -19,7 +19,9 @@ npm test         # the tree logic, checked against node's own SHA-256
 npm run build    # a static page in dist/, with the article written into it
 ```
 
-Add `?theme=light` or `?theme=dark` to the address to force a theme.
+Add `?theme=light` or `?theme=dark` to the address to force a theme. The
+page has no header of its own: `website/build.py` puts the site's header
+above it on fastatp.com, so `npm run dev` shows the article alone.
 
 ## How it is put together
 

@@ -332,7 +332,14 @@ def explainers(out: Path, required: bool) -> list[Explainer]:
         # prerender.js writes the article into the page; without it the page
         # is blank until its script runs, and blank to a crawler
         raise BuildError("the explainer was built without its article: use `npm run build`")
-    shutil.copytree(EXPLAINER_DIST, out / EXPLAINER_URL.strip("/"))
+    if "</head>" not in text or '<div id="app">' not in text:
+        raise BuildError("the explainer's index.html has no </head> or #app to put the header by")
+    dest = out / EXPLAINER_URL.strip("/")
+    shutil.copytree(EXPLAINER_DIST, dest)
+    # the page is its own build, so the site's header is put into it here
+    text = text.replace("</head>", '<link rel="stylesheet" href="/header.css">\n</head>', 1)
+    text = text.replace('<div id="app">', header(EXPLAINER_URL) + '\n<div id="app">', 1)
+    (dest / "index.html").write_text(text)
     name = html.unescape(title.group(1)).split("|")[0].strip()
     return [Explainer(EXPLAINER_URL, name, html.unescape(described.group(1)))]
 
@@ -411,12 +418,20 @@ def json_ld() -> str:
     return f'<script type="application/ld+json">{json.dumps(data)}</script>'
 
 
+def header(url: str) -> str:
+    """The site's header, with the tab for `url` marked as the current one."""
+    nav = "".join(
+        f'<a href="{to}"{" aria-current=page" if url.startswith(to) else ""}>{name}</a>'
+        for name, to in NAV
+    )
+    return f"""<header class="top">
+<a class="home" href="/"><img src="/brand/favicon.svg" alt="" width="28" height="28">FastATP</a>
+<nav>{nav}<a href="{GITHUB}">GitHub</a></nav>
+</header>"""
+
+
 def layout(page: Page) -> str:
     esc = html.escape
-    nav = "".join(
-        f'<a href="{url}"{" aria-current=page" if page.url.startswith(url) else ""}>{name}</a>'
-        for name, url in NAV
-    )
     origin = page.origin if page.generated else page.src
     source = f'<a href="{GITHUB}/blob/main/{origin}">Source on GitHub</a> · ' if origin else ""
     addresses = footer = ""
@@ -435,6 +450,7 @@ def layout(page: Page) -> str:
 <meta name="description" content="{esc(page.description)}">
 {addresses}<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/header.css">
 <link rel="stylesheet" href="/site.css">
 <meta property="og:type" content="website">
 <meta property="og:title" content="{esc(page_title(page))}">
@@ -443,10 +459,7 @@ def layout(page: Page) -> str:
 {json_ld() if page.url == "/" else ""}
 </head>
 <body>
-<header class="top">
-<a class="home" href="/"><img src="/brand/favicon.svg" alt="" width="28" height="28">FastATP</a>
-<nav>{nav}<a href="{GITHUB}">GitHub</a></nav>
-</header>
+{header(page.url)}
 <main class="page">
 <article>
 {page.body}</article>
@@ -617,6 +630,7 @@ def build(out: Path, require_explainers: bool = False) -> list[Page]:
     for name in BRAND_FILES:
         shutil.copyfile(ROOT / "brand" / name, brand / name)
     (out / "tokens.css").write_text(themed_tokens())
+    shutil.copyfile(HERE / "header.css", out / "header.css")
     (out / "site.css").write_text(
         (BRAND_SRC / "base.css").read_text() + (HERE / "site.css").read_text()
     )

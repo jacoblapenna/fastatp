@@ -17,7 +17,8 @@ uv run python website/build.py --serve   # and serves it on :8000
   `/philosophy.md`), listed in `llms.txt`.
 - The look is the conductor's brand: `tokens.css` and `base.css` are read
   from `tutorials/conductor/src/brand/`, never copied into this folder.
-  `site.css` is the reading column. The light theme follows the reader's
+  `header.css` is the header every page has, and `site.css` is the
+  reading column. The light theme follows the reader's
   system, with no JavaScript.
 - The output also carries `sitemap.xml` (dated from git), `robots.txt`,
   `CNAME`, `.nojekyll` and a `404.html`, ready for GitHub Pages.
@@ -26,7 +27,8 @@ uv run python website/build.py --serve   # and serves it on :8000
   build to GitHub Pages on every merge to `main`.
 - `explainers/` is a Svelte page built with npm (its README says how).
   `build.py` carries its `dist/` to `/resources/merkle-trees/` when it has
-  been built, and `--require-explainers` fails the build when it has not.
+  been built, puts the site's header into it, and with
+  `--require-explainers` fails the build when it has not been built.
 - The Decisions page lists every record in `docs/decisions/` under the
   README's own words.
 - `site_api.py` writes the API reference: griffe reads each name in

@@ -130,6 +130,15 @@ def test_a_docstring_is_text_and_links_to_the_names_it_mentions(built: tuple[Pat
     assert "`did` + `signing_key`" in (out / "api/peer.md").read_text()
 
 
+def test_every_page_carries_the_site_header(built: tuple[Path, list]) -> None:
+    """Explainers included: they are their own build, and the header is put into them."""
+    out, _ = built
+    assert (out / "header.css").is_file()
+    for page in out.rglob("index.html"):
+        text = page.read_text()
+        assert '<header class="top">' in text and 'href="/header.css"' in text, page
+
+
 def test_the_decisions_page_lists_every_record(built: tuple[Path, list]) -> None:
     out, _ = built
     site = _site()
