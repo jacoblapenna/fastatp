@@ -33,6 +33,7 @@
     <label><input type="checkbox" id="keep"> keep me signed in on this device</label>
     <button id="signup">Sign up</button>
     <button id="existing" class="quiet">I already have an account</button>
+    <p class="bad" id="signupError" hidden></p>
   </section>
 
   <section id="welcome" hidden>
@@ -110,16 +111,26 @@
     }
 
     await init();
+    // the welcome screen: the account this browser remembers, and nothing else
+    function welcome(did) {
+      $('saved').textContent = did;
+      $('saved').className = 'mono';
+    }
     const saved = await recall().catch(() => null);
     if (saved) {
-      $('saved').textContent = saved.did;
+      welcome(saved.did);
       show('welcome');
     } else show('new');
 
     $('signup').onclick = async () => {
       $('signup').disabled = true;
+      $('signupError').hidden = true;
       try {
         me = await signUp(fastatp, base);
+      } catch (e) {
+        $('signupError').textContent = `Couldn't sign up: ${e.message}. Try again.`;
+        $('signupError').hidden = false;
+        return;
       } finally {
         $('signup').disabled = false;
       }
@@ -145,13 +156,16 @@
         return;
       }
       $('paper').hidden = true;
+      welcome(me.did); // what the welcome screen says next time: no stale error
       inside();
     };
     $('forget').onclick = async () => { await forget(); $('login').disabled = false; show('new'); };
     $('signout').onclick = async () => {
       me = null;
       $('login').disabled = $('signup').disabled = false;
-      show((await recall()) ? 'welcome' : 'new');
+      const kept = await recall();
+      if (kept) welcome(kept.did);
+      show(kept ? 'welcome' : 'new');
     };
     $('add').onclick = async () => {
       const pen = $('device').value.trim();

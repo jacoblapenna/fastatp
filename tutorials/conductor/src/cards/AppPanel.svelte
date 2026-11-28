@@ -4,6 +4,7 @@
   // same app on the other name for this computer (localhost and 127.0.0.1
   // are two origins), so it has storage of its own, and keys of its own:
   // to the browser, it is another device.
+  import { tick } from 'svelte';
   import { live } from '../lib/live.svelte.js';
 
   let { app, device = 'this browser', pointed = false, wire = false } = $props();
@@ -25,9 +26,13 @@
   let me = $derived(device === 'this browser' ? location.hostname : origin().split('//')[1]?.split(':')[0]);
   let sent = $derived(live.http.filter((h) => h.host === me && h.machine === app.machine));
   let strip = $state(null);
+  let stick = true; // at the bottom: keep following the newest, as RepoList does
+  const scrolled = () => strip && (stick = strip.scrollTop + strip.clientHeight >= strip.scrollHeight - 12);
   $effect(() => {
-    sent.length; // the newest request in view as each lands
-    if (strip) strip.scrollTop = strip.scrollHeight;
+    sent.length; // each request as it lands
+    tick().then(() => {
+      if (strip && stick) strip.scrollTop = strip.scrollHeight;
+    });
   });
   const short = (v) => (String(v).length > 12 ? `${String(v).slice(0, 10)}…` : v); // enough to see each field
   const shown = (h) =>
@@ -43,7 +48,7 @@
     <button class="reload" onclick={reload} title="reload, as a browser does" aria-label="reload the app">↻</button>
   </header>
   <iframe bind:this={frame} title="{app.machine}: {device}" {src} data-device={anchor}></iframe>
-  <div class="sent" bind:this={strip} class:pointed={wire} data-anchor="{anchor}.wire">
+  <div class="sent" bind:this={strip} onscroll={scrolled} class:pointed={wire} data-anchor="{anchor}.wire">
     <div class="label">every request {device} made of {app.machine}: method, path, query (bodies are signed repos)</div>
     {#each sent as h, i (h.t + ':' + i)}
       <div class="line"><span class="method">{h.method}</span> {shown(h)} <span class:bad={h.status >= 400}>→ {h.status}</span></div>
