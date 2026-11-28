@@ -9,6 +9,7 @@ cd tutorials/lab         # from the repository root
 ./lab.sh test            # GETTING_STARTED.md, on fresh machines; about five minutes
 ./lab.sh test CONDUCTOR_AND_ORCHESTRA   # guide two, the same way
 ./lab.sh test HOOT                      # guide three: six machines, tool calling as records
+./lab.sh test GEESE                     # guide four: an app in the browser; needs uv sync and Chrome
 ```
 
 Then tell the user what you saw, in their terms: which machine ran what,
@@ -32,7 +33,9 @@ failed, or one it means to be refused went through.
   since 5.6; Docker Desktop includes it). The probe is in
   [GETTING_STARTED.md](GETTING_STARTED.md), under Setup.
 - Nothing else on the host. Python, fastatp and the page are built into the
-  images.
+  images. Geese is the exception: its turns in the app are taken by
+  `tools/hands.py` in a headless Chrome on the host, so it needs Chrome or
+  Chromium on the path and fastatp installed here (`uv sync`).
 
 ## What it is tested against
 
@@ -70,6 +73,10 @@ updates a guide after the lab changes).
   conducts ... x30` for a sequence it signs one record at a time. Each
   member it names must answer with a signed record in its own repo, except
   one the guide marks as meant to stay silent; a `✗` names any that did not.
+- In guide four, `you` lines are the viewer's turns in the app, each with
+  the request that ended it: `└ POST /signup 201`, or `└ GET
+  /xrpc/com.atproto.sync.getRepo 404` for the second device refused. A turn
+  skipped, or never ended, is wrong; `hands:` lines are what `hands.py` did.
 - A full run of Getting Started is 46 commands and 21 key concepts.
 
 ## Other ways to run
@@ -90,10 +97,10 @@ updates a guide after the lab changes).
 | [GETTING_STARTED.md](GETTING_STARTED.md) | yes | sovereign peers, signed records, verified following, a private channel behind WireGuard |
 | [CONDUCTOR_AND_ORCHESTRA.md](CONDUCTOR_AND_ORCHESTRA.md) | yes | orchestrating work with signed records: a task in the asker's repo, its result in the worker's, sequence and fan-out, a worker that was offline catching up |
 | [HOOT.md](HOOT.md) | yes | tool calling as signed records, against MCP and A2A: one open request and sealed bids, an allowance the bank checks, each agent composing who reads which private repo, and a chain of custody checked step by step back to the start |
+| [GEESE.md](GEESE.md) | yes, with Chrome | authentication with no secret on the wire: a pen made in the browser that never leaves it, sign-up and log-in by signature, a second device let in and out by a record, and the incentives signed records let a builder compose |
 
 The guides are a series, each building on the last, and they arrive one at
-a time: after these three comes the browser app (a person reaching an app
-with no secret on the wire).
+a time.
 
 ## Do not
 

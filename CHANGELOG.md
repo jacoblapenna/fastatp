@@ -70,6 +70,28 @@ To upgrade safely within one minor line, pin with `~=`, for example
   marking each one verified or sealed. `<!-- @demo close code -->` puts a
   command's file away. A late tab replays only each machine's newest view,
   and a just-landed record no longer blinks out when the next view arrives.
+- The fourth tutorial, `tutorials/GEESE.md`: a person reaching an app from
+  a browser tab with no secret on the wire. You sign up to Geese, a small
+  dating app, from your own browser: the pen is a non-extractable WebCrypto
+  key made in the tab, and Geese keeps your repo and your DID's chain
+  without ever holding it. You log in again by signing a one-time
+  challenge, let a second device in with a delegation record in your repo,
+  and take it out by deleting the record. The paper key, "keep me signed
+  in", and the incentives signed records let a builder compose are key
+  concepts. The lab gains `geese.py`, Geese's host (`peer.py` unchanged
+  plus a shelf, `/signup` and `/push-car`, adapted from
+  `examples/hosted_peer/`), and the app under `tutorials/lab/geese/`; the
+  lab image builds the browser peer from the tree. CI plays it on every
+  pull request.
+- The demo engine gains a machine's own web app on the conductor's page
+  (`<!-- @demo app geese /app/ -->`), shown as this browser and as a second
+  device, each with what it sent the app, field by field. The conductor
+  relays the app's pages over the stage network, since Docker Desktop
+  publishes only its ports to the browser. A paragraph with `<!-- @demo you
+  app POST /signup -->` under it is the viewer's turn: the show waits until
+  the app sends that request. Headless, `tutorials/tools/hands.py` takes
+  the turns in Chrome, doing what the guide's `<!-- @demo do ... -->` lines
+  say, and `lab.sh test` runs it beside the play.
 
 ## [0.3.0] - 2026-11-20
 

@@ -291,8 +291,11 @@ jobs:
     # command ends the wrong way (one meant to work fails, or one meant to be
     # refused goes through), if a command does not print what the guide's
     # listing shows, or if a record the conductor commits is not answered as
-    # the guide says. Then it opens the conductor's page in a headless
-    # Chrome and looks back through every step of the show it just played.
+    # the guide says. A guide with an app has turns the viewer takes in it:
+    # tools/hands.py takes them in a headless Chrome on the runner while the
+    # play runs, and the play fails a turn that never ends. Then it opens the
+    # conductor's page in a headless Chrome and looks back through every step
+    # of the show it just played.
     #
     # One entry per guide: a new tutorial adds its file's name here (and its
     # score to tutorials/lab/Dockerfile, and its name to GUIDES in
@@ -303,7 +306,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        guide: [GETTING_STARTED, CONDUCTOR_AND_ORCHESTRA, HOOT]
+        guide: [GETTING_STARTED, CONDUCTOR_AND_ORCHESTRA, HOOT, GEESE]
     env:
       GUIDE: ${{ matrix.guide }}
       # every build in this job, the play's own `up --build` included, goes to
@@ -361,15 +364,16 @@ jobs:
           # the build wrote the layers it used beside the old folder: keep only those
           rm -rf "$LAB_CACHE"
           mv "$LAB_CACHE-new" "$LAB_CACHE"
-      - name: Play the guide headless
-        run: tutorials/lab/lab.sh test "$GUIDE"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
       - name: Install (from uv.lock)
-        # for the page check below, which talks to Chrome over a websocket
+        # before the play: a guide's turns in its app are taken by hands.py,
+        # and the page check after it, both talking to Chrome over a websocket
         run: uv sync --locked
+      - name: Play the guide headless
+        run: tutorials/lab/lab.sh test "$GUIDE"
       - name: Look at the page the show was played on
         # the runner image ships Chrome; the check says so by name if it is gone
         run: uv run --no-sync python tutorials/tools/page_check.py http://localhost:8080
@@ -379,7 +383,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/lab"
           cd tutorials/lab
           docker compose --profile conductor ps -a > "$RUNNER_TEMP/lab/containers.txt" 2>&1 || true
-          for name in alice bob eve conductor; do
+          # every machine the lab knows: a guide's cast is some of them
+          for name in $(docker compose --profile '*' config --services); do
             docker compose --profile conductor logs --no-color "$name" \
               > "$RUNNER_TEMP/lab/$name.log" 2>&1 || true
           done
