@@ -82,7 +82,7 @@ export async function knock(fastatp, base, { did, pen, key, iss }) {
 // was signed by itself, and can write again from where it left off.
 export async function logIn(fastatp, base, saved) {
   const answer = await knock(fastatp, base, { did: saved.did, pen: saved.pen, key: saved.key });
-  if (!answer.ok) throw new Error(`the host said no (${answer.status})`);
+  if (!answer.ok) throw Object.assign(new Error(`the host said no (${answer.status})`), { status: answer.status });
   const car = new Uint8Array(await answer.arrayBuffer());
   const peer = await fastatp.BrowserPeer.restore(car, saved.key, saved.pen);
   return { ...saved, peer, base };
@@ -95,8 +95,10 @@ export async function logIn(fastatp, base, saved) {
 export async function addDevice(me, penDid) {
   const rkey = tid();
   const record = { $type: 'dev.fastatp.auth.delegation', issuer: me.did, subject: penDid };
-  await write(me, record, rkey);
+  // kept before the push: if the push fails, the record is still in this
+  // repo and goes with the next one, so its Remove button must exist
   me.devices[penDid] = rkey;
+  await write(me, record, rkey);
 }
 
 // Sign a device out everywhere: delete the record. Absence is revocation.

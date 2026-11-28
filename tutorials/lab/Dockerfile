@@ -19,7 +19,12 @@ COPY scripts/wasm-tools.env scripts/install-wasm-tools.sh scripts/build-wasm.sh 
 COPY rust/Cargo.lock ./rust/
 RUN scripts/install-wasm-tools.sh /opt/wasm-tools   # checks wasm-bindgen against Cargo.lock
 COPY rust ./rust
-RUN mkdir -p fastatp/browser && PATH="/opt/wasm-tools:$PATH" scripts/build-wasm.sh
+# The crates downloaded and compiled are kept between builds (cache mounts,
+# never in the image), so a change to pyproject.toml or rust/ rebuilds only
+# what it touched; the bundle the next stage copies is written outside them.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/rust/target \
+    mkdir -p fastatp/browser && PATH="/opt/wasm-tools:$PATH" scripts/build-wasm.sh
 
 FROM python:3.12-slim AS machine
 RUN apt-get update \

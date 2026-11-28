@@ -14,21 +14,28 @@ person would. It never tells the conductor anything: the app's request,
 through the page, is what moves the show on.
 
 The second device is the same app on the other name for this computer, a
-different site to Chrome, which runs it in a process of its own. That
-keeps its storage apart, as a second device's is, and also out of reach
-of a driver on the first frame's process; Chrome is started with site
-isolation off here so one driver can reach both frames. The storage stays
-apart: it belongs to the origin, not the process.
+different site to Chrome. A normal Chrome runs it in a process of its own,
+out of reach of a driver on the first frame's process, so this Chrome is
+started with site isolation off: here both frames share one process, and
+one driver reaches both. Their storage stays apart all the same, as two
+devices' would: storage belongs to the origin, not the process.
 
 It ends when the show does. Needs a Chrome or Chromium on the path.
 """
 
 import asyncio
 import json
+import signal
 import sys
+import time
 
 import websockets
 from page_check import NoChrome, Page, chrome
+
+
+class ScriptError(RuntimeError):
+    """A script run in the app's frame threw."""
+
 
 FRAME = "document.querySelector('iframe[data-device={device}]')"
 SHOWING = "[...document.querySelectorAll('section')].some(s => !s.hidden)"  # the app has started
@@ -63,13 +70,19 @@ class Hands:
             returnByValue=True,
             awaitPromise=True,
         )
+        if "exceptionDetails" in result:  # the script threw: say so, not "falsy"
+            details = result["exceptionDetails"]
+            raise ScriptError(details.get("exception", {}).get("description") or details["text"])
         return result.get("result", {}).get("value")
 
     async def until(self, device: str, expression: str, what: str, seconds: float = 20) -> None:
-        for _ in range(int(seconds * 10)):
+        deadline = time.monotonic() + seconds  # by the clock: finding a frame can take a while
+        while time.monotonic() < deadline:
             try:
                 if await self.js(device, expression):
                     return
+            except ScriptError:
+                raise
             except RuntimeError:
                 pass  # the frame is between pages
             await asyncio.sleep(0.1)
@@ -149,6 +162,9 @@ async def play(page: Page, url: str) -> int:
 
 
 async def main(url: str) -> int:
+    # `lab.sh test` stops this with SIGTERM when the play fails: end through
+    # the `finally`s, so the Chrome it started goes too
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
     try:
         # one driver for both devices' frames: see the docstring
         isolation = (

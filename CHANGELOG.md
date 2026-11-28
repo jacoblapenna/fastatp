@@ -77,7 +77,7 @@ To upgrade safely within one minor line, pin with `~=`, for example
   without ever holding it. You log in again by signing a one-time
   challenge, let a second device in with a delegation record in your repo,
   and take it out by deleting the record. The paper key, "keep me signed
-  in", and the incentives signed records let a builder compose are key
+  in", and the incentives a builder can compose from signed records are key
   concepts. The lab gains `geese.py`, Geese's host (`peer.py` unchanged
   plus a shelf, `/signup` and `/push-car`, adapted from
   `examples/hosted_peer/`), and the app under `tutorials/lab/geese/`; the

@@ -18,7 +18,7 @@ export const live = $state({
   you: null, // the viewer's turn the conductor is waiting on: they act in the app, and the show moves
   machines: {}, // name -> what that machine reported
   wire: [], // packets the machines put on the LAN, newest last
-  http: [], // requests a browser sent an app through the page: [{host, method, path, query, status}]
+  http: [], // requests a browser sent an app through the page: [{machine, host, method, path, query, status}]
   commits: {}, // step -> a record the conductor signed for members, and their answers so far
   conductor: emptyRepo(), // the conductor's own repo: every record it signs, as it signs it
   verified: {}, // at:// URI -> 'ok' | 'sealed' | 'wrong', as a terminal reported checking it

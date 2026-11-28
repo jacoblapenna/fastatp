@@ -635,8 +635,10 @@ async def browser(ws: WebSocket) -> None:
             elif msg["type"] == "gotit":
                 state["concept"] = None
             elif msg["type"] == "skip":
-                turn["saw"] = "skipped"
-                turn["done"].set()
+                # the turn may have ended while the press was being signed
+                if turn and not turn["done"].is_set():
+                    turn["saw"] = "skipped"
+                    turn["done"].set()
             elif msg["type"] == "speed":
                 state["speed"] = speed
             elif msg["type"] == "chapter":

@@ -438,7 +438,7 @@ def parse(text: str) -> dict:
                         f"line {i}: @demo do names a device and one of {', '.join(ACTIONS)}"
                     )
                 device, action, rest = words[0], words[1], words[2:]
-                if action == "click" and rest:
+                if action in ("click", "tick") and rest:
                     rest = [" ".join(rest)]  # a selector may have spaces: #devices button
                 if len(rest) != ACTIONS[action] or (action == "copy" and rest[1] not in DEVICES):
                     raise SystemExit(

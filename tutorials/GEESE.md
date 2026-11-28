@@ -150,7 +150,10 @@ identities whose key, the pen, never leaves the browser that minted it:
 
 This host never holds a pen and never signs for anyone it hosts. A hosted
 repo is frozen here: it changes only by a whole repo, signed elsewhere,
-replacing it. The host can drop or delay a push; it cannot forge one.
+replacing it. The host can drop or delay a push; it cannot forge one. It
+does serve the app's code, though, and code it serves runs beside the pen:
+the pen's bytes can't be read out, but that code could ask it to sign. A
+real app keeps those two apart, or pins its code where users can check it.
 
 Adapted from examples/hosted_peer/builder.py in this repository, which
 runs the same pattern end to end; this is lab code, not library code.
@@ -179,6 +182,7 @@ from fastatp.server.peer_server import RepoHandle
 
 APP = Path(__file__).resolve().parent / "geese"  # the app: a page and the module it runs
 
+CAR_LIMIT = 8 * 1024 * 1024  # a whole repo from a browser; anything bigger is refused unread
 chains: dict[str, dict] = {}  # slug -> a hosted identity's continuity chain, as shelved
 hosted: dict[str, RepoHandle] = {}  # DID -> the repo this host keeps for it
 
@@ -186,8 +190,11 @@ hosted: dict[str, RepoHandle] = {}  # DID -> the repo this host keeps for it
 def head_key(did: str) -> PublicKey:
     """The identity's current signing key, from the newest page of its shelved chain.
 
-    Read again on every use, so a rotated pen takes effect at once."""
-    entry = chains.get(did.rsplit(":", 1)[-1])
+    Read again on every use, so a rotated pen takes effect at once. Only a
+    DID on this host's own name: the shelf keeps chains by slug alone."""
+    prefix = f"did:web:{peer.domain}:"
+    slug = did.removeprefix(prefix)
+    entry = chains.get(slug) if did.startswith(prefix) and ":" not in slug else None
     if entry is None:
         raise KeyError(f"{did} is not shelved here")
     head = DIDDocument.from_json_dict(entry["chain"][-1]["document"])
@@ -218,6 +225,21 @@ def shelve(slug: str, chain) -> None:
     chains[slug] = chain.to_json()
 
 
+async def car_body(request: Request) -> bytes | None:
+    """The request's body, a CAR, or None once it passes CAR_LIMIT: read no further."""
+    if int(request.headers.get("content-length") or 0) > CAR_LIMIT:
+        return None
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > CAR_LIMIT:
+            return None
+    return bytes(body)
+
+
+TOO_BIG = JSONResponse({"error": "TooLarge", "message": f"over {CAR_LIMIT} bytes"}, status_code=413)
+
+
 async def signup(request: Request) -> Response:
     """A browser's first repo: 'keep this for me'. The chain must be shelved first."""
     did = request.query_params.get("did", "")
@@ -225,9 +247,11 @@ async def signup(request: Request) -> Response:
         key = head_key(did)
     except KeyError:
         return JSONResponse({"error": "NotShelved"}, status_code=404)
+    if (car := await car_body(request)) is None:
+        return TOO_BIG
     repo = Repo(did, None)  # frozen: this host has no pen for it, so it can never write it
     try:
-        await repo.import_car(await request.body(), verify_key=key)
+        await repo.import_car(car, verify_key=key)
         hosted[did] = await peer.server.register(repo, owner_pull=owner_pen)
     except FastATPError as e:
         return JSONResponse({"error": "BadCar", "message": str(e)}, status_code=400)
@@ -244,12 +268,12 @@ async def push_car(request: Request) -> Response:
     handle = hosted.get(did)
     if handle is None:
         return JSONResponse({"error": "NotHosted"}, status_code=404)
+    if (car := await car_body(request)) is None:
+        return TOO_BIG
     try:
         # The signature must be the current pen's, and the state newer than the
         # one held: a signed state can be replayed, and must never roll back.
-        await handle.repo.import_car(
-            await request.body(), verify_key=head_key(did), newer_than=handle.repo.rev
-        )
+        await handle.repo.import_car(car, verify_key=head_key(did), newer_than=handle.repo.rev)
     except StaleCheckpoint as e:
         return JSONResponse({"error": "Stale", "message": str(e)}, status_code=409)
     except FastATPError as e:
@@ -266,10 +290,9 @@ async def mine(request: Request) -> JSONResponse:
     if (denied := peer.local_only(request)) is not None:
         return denied
     found = []
-    for did, handle in hosted.items():
-        mirror = RepoMirror(
-            did, resolver=resolver()
-        )  # the identity's document, as anyone resolves it
+    resolve = resolver()  # the identities' documents, as anyone resolves them
+    for did, handle in list(hosted.items()):  # a sign-up may land while this reads
+        mirror = RepoMirror(did, resolver=resolve)
         await mirror.load_checkpoint(handle.repo.export_car())
         records = [
             {"path": path, "cid": cid.encode(), "value": mirror.get_record(*path.split("/"))}
@@ -427,7 +450,10 @@ your pen's public name, the challenge, and a signature over them.
 > 🔑 **Key concept: the host can withhold, never forge.** Your repo came
 > back signed by your pen, and the browser checked that signature before
 > using it. A host that went wrong could send nothing, or an old copy. It
-> could not send words you never signed.
+> could not send words you never signed. One honest limit: Geese also
+> serves the app's code, and that code runs beside your pen. It can't read
+> the pen out, but code a bad host served could ask it to sign. A real app
+> keeps the two apart, or pins its code where you can check it.
 
 <!-- @demo point app -->
 
@@ -524,19 +550,21 @@ nothing kept on that device.
 ![two accounts: one with a history of records, one brand new and empty](sketches/fresh-account.svg)
 
 > 🔑 **Key concept: an account is free, and a new one looks new.** It took a
-> second and cost nothing. Signing proves who wrote a record; it does nothing
-> about spam. What it does give is history no one can fake: a burned account
+> second and cost nothing. On its own, a signature proves who wrote a record
+> and does nothing about spam. What it does give is history no one can fake,
+> and that is what incentives can be built on: a burned account
 > can be swapped for a fresh one, and the fresh one has nothing behind it.
 > A reset is visible, not impossible.
 
 > 🔑 **Key concept: privacy is composable, and it can pay for
 > authenticity.** Signed records make spam and fake accounts costly, and
 > real human interaction cheaper, and the market emerges from those
-> incentives. In a dating app: how often someone reaches out can be public
-> while whom they reach stays private, so ten times anyone's normal rate is
-> visible to all. Free accounts with scarce reach-outs make a bot expensive.
-> Reports are signed records anyone can count. What's good for the goose:
-> each person's behaviour adds up to a safer place for everyone.
+> incentives. None of this is built here; it is what a dating app could
+> compose. How often someone reaches out could be public while whom they
+> reach stays private, so ten times anyone's normal rate would be visible to
+> all. Free accounts with scarce reach-outs would make a bot expensive.
+> Reports could be signed records anyone can count. What's good for the
+> goose: each person's behaviour adds up to a safer place for everyone.
 
 ![what each person does is countable; who they do it to stays private](sketches/incentives.svg)
 
